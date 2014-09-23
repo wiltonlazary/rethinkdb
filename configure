@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2010-2015 RethinkDB, all rights reserved.
+# Copyright 2010-2016 RethinkDB, all rights reserved.
 
 # This script detects the build settings local to the local build
 # environment and saves them in the config.mk file.
@@ -20,6 +20,8 @@ init () {
     min_browserify_version=3.0.0
     max_browserify_version=12.0.1
     min_python_version=2.6.0
+    
+    osx_min_version=10.7
 
     must_fetch_list='bluebird v8'
     please_fetch_list="handlebars gtest re2 $must_fetch_list"
@@ -95,6 +97,7 @@ configure () {
         require stdlib
         case "$OS" in
             Darwin) var_append LDFLAGS -lc++
+                    var_append LDFLAGS -mmacosx-version-min="$osx_min_version"
                     var_append CXXFLAGS -stdlib=libc++ ;;
             *) var_append LDFLAGS -lstdc++ ;;
         esac
