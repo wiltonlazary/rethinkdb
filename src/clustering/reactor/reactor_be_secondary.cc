@@ -225,7 +225,8 @@ void reactor_t::be_secondary(region_t region, store_view_t *svs, const clone_ptr
 
                 /* We have found a broadcaster (a master to track) so now we
                  * need to backfill to get up to date. */
-                directory_entry.set(reactor_business_card_t::secondary_backfilling_t(backfill_location));
+                directory_entry.set(reactor_business_card_t::secondary_backfilling_t(
+                    backfill_location, current_microtime()));
 
                 cross_thread_signal_t ct_interruptor(interruptor, svs->home_thread());
                 cross_thread_watchable_variable_t<boost::optional<boost::optional<broadcaster_business_card_t> > > ct_broadcaster(broadcaster, svs->home_thread());

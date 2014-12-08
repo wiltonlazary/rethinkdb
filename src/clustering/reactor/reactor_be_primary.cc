@@ -19,6 +19,7 @@
 #include "config/args.hpp"
 #include "stl_utils.hpp"
 #include "store_view.hpp"
+#include "time.hpp"
 
 reactor_t::backfill_candidate_t::backfill_candidate_t(version_range_t _version_range, std::vector<backfill_location_t> _places_to_get_this_version, bool _present_in_our_store)
     : version_range(_version_range), places_to_get_this_version(_places_to_get_this_version),
@@ -407,7 +408,8 @@ bool reactor_t::attempt_backfill_from_peers(directory_entry_t *directory_entry,
     }
 
     /* Tell the other peers which backfills we're waiting on. */
-    directory_entry->set(reactor_business_card_t::primary_when_safe_t(backfills));
+    directory_entry->set(reactor_business_card_t::primary_when_safe_t(
+        backfills, current_microtime()));
 
     /* Since these don't actually modify peers behavior, just allow
      * them to query the backfiller for progress reports there's no

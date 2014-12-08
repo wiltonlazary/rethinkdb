@@ -24,6 +24,8 @@ public:
             cluster_semilattice_metadata_t> > _semilattice_view,
         const clone_ptr_t<watchable_t<change_tracking_map_t<
             peer_id_t, cluster_directory_metadata_t> > > &_directory_view,
+        watchable_map_t<std::pair<peer_id_t, namespace_id_t>,
+            namespace_directory_metadata_t> *_reactor_directory_view,
         server_name_client_t *_name_client,
         admin_identifier_format_t _identifier_format);
 
@@ -52,11 +54,14 @@ private:
 
     mailbox_manager_t *mailbox_manager;
 
-    boost::shared_ptr< semilattice_readwrite_view_t<
+    boost::shared_ptr<semilattice_readwrite_view_t<
         cluster_semilattice_metadata_t> > semilattice_view;
 
     clone_ptr_t<watchable_t<change_tracking_map_t<peer_id_t,
         cluster_directory_metadata_t> > > directory_view;
+
+    watchable_map_t<std::pair<peer_id_t, namespace_id_t>,
+        namespace_directory_metadata_t> *reactor_directory_view;
 
     server_name_client_t *name_client;
 

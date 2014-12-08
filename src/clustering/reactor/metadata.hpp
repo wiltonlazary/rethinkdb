@@ -16,6 +16,7 @@
 #include "http/json/json_adapter.hpp"
 #include "rpc/semilattice/joins/macros.hpp"
 #include "rpc/serialize_macros.hpp"
+#include "time.hpp"
 
 /* `reactor_business_card_t` is the way that each peer tells peers what's
 currently happening on this server. Each `reactor_business_card_t` only applies
@@ -48,11 +49,16 @@ class primary_when_safe_t {
 public:
     primary_when_safe_t() { }
 
-    explicit primary_when_safe_t(const std::vector<backfill_location_t> &_backfills_waited_on)
-        : backfills_waited_on(_backfills_waited_on)
+    explicit primary_when_safe_t(
+            const std::vector<backfill_location_t> &_backfills_waited_on,
+            microtime_t _start_time)
+        : backfills_waited_on(_backfills_waited_on),
+          start_time(_start_time)
     { }
     std::vector<backfill_location_t> backfills_waited_on;
-    RDB_MAKE_ME_EQUALITY_COMPARABLE_1(primary_when_safe_t, backfills_waited_on);
+    microtime_t start_time;
+    RDB_MAKE_ME_EQUALITY_COMPARABLE_2(
+        primary_when_safe_t, backfills_waited_on, start_time);
 };
 
 RDB_MAKE_SERIALIZABLE_1(primary_when_safe_t, backfills_waited_on);
@@ -144,12 +150,16 @@ class secondary_backfilling_t {
 public:
     secondary_backfilling_t() { }
 
-    explicit secondary_backfilling_t(backfill_location_t  _backfill)
-        : backfill(_backfill)
+    explicit secondary_backfilling_t(
+            backfill_location_t _backfill,
+            microtime_t _start_time)
+        : backfill(_backfill),
+          start_time(_start_time)
     { }
 
     backfill_location_t backfill;
-    RDB_MAKE_ME_EQUALITY_COMPARABLE_1(secondary_backfilling_t, backfill);
+    microtime_t start_time;
+    RDB_MAKE_ME_EQUALITY_COMPARABLE_2(secondary_backfilling_t, backfill, start_time);
 };
 
 RDB_MAKE_SERIALIZABLE_1(secondary_backfilling_t, backfill);

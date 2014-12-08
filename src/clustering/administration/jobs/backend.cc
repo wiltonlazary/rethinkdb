@@ -1,13 +1,18 @@
 // Copyright 2010-2014 RethinkDB, all rights reserved.
 #include "clustering/administration/jobs/backend.hpp"
 
+#include <functional>
+#include <iostream>  // REMOVE
 #include <set>
+#include <tuple>
 
 #include "clustering/administration/datum_adapter.hpp"
+#include "clustering/administration/jobs/backfill.hpp"
 #include "clustering/administration/jobs/manager.hpp"
 #include "clustering/administration/jobs/report.hpp"
 #include "clustering/administration/main/watchable_fields.hpp"
 #include "concurrency/cross_thread_signal.hpp"
+#include "rpc/connectivity/peer_id.hpp"
 
 jobs_artificial_table_backend_t::jobs_artificial_table_backend_t(
         mailbox_manager_t *_mailbox_manager,
@@ -15,11 +20,14 @@ jobs_artificial_table_backend_t::jobs_artificial_table_backend_t(
             cluster_semilattice_metadata_t> > _semilattice_view,
         const clone_ptr_t<watchable_t<change_tracking_map_t<
             peer_id_t, cluster_directory_metadata_t> > > &_directory_view,
+        watchable_map_t<std::pair<peer_id_t, namespace_id_t>,
+            namespace_directory_metadata_t> *_reactor_directory_view,
         server_name_client_t *_name_client,
         admin_identifier_format_t _identifier_format)
     : mailbox_manager(_mailbox_manager),
       semilattice_view(_semilattice_view),
       directory_view(_directory_view),
+      reactor_directory_view(_reactor_directory_view),
       name_client(_name_client),
       identifier_format(_identifier_format) {
 }
@@ -68,9 +76,14 @@ void jobs_artificial_table_backend_t::get_all_job_reports(
     if (interruptor->is_pulsed()) {
         throw interrupted_exc_t();
     }
+
+    std::vector<backfill_job_t> backfill_jobs =
+        get_all_backfill_jobs(reactor_directory_view);
+    get_all_backfill_jobs_progress(
+        reactor_directory_view, mailbox_manager, &backfill_jobs);
+
+    std::cout << backfill_jobs.size() << std::endl;
 }
-
-
 
 bool jobs_artificial_table_backend_t::read_all_rows_as_vector(
         signal_t *interruptor,

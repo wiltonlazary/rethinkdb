@@ -352,6 +352,7 @@ admin_artificial_tables_t::admin_artificial_tables_t(
             _mailbox_manager,
             _semilattice_view,
             _directory_view,
+            _reactor_directory_view,
             _name_client,
             static_cast<admin_identifier_format_t>(i)));
     }
