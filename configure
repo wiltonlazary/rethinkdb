@@ -98,7 +98,8 @@ configure () {
         case "$OS" in
             Darwin) var_append LDFLAGS -lc++
                     var_append LDFLAGS -mmacosx-version-min="$osx_min_version"
-                    var_append CXXFLAGS -stdlib=libc++ ;;
+                    var_append CXXFLAGS -stdlib=libc++
+                    var_append CXXFLAGS -mmacosx-version-min="$osx_min_version" ;;
             *) var_append LDFLAGS -lstdc++ ;;
         esac
     fi
