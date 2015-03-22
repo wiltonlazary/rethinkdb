@@ -130,7 +130,7 @@ class ConnectionInstance(object):
         message = decodeUTF(response[:-1]).split('\n')[0]
 
         if message != 'SUCCESS':
-            self.close(False, None)
+            yield self.close(False, None)
             if message == "ERROR: Incorrect authorization key":
                 raise ReqlAuthError(self._parent.host, self._parent.port)
             else:
@@ -221,7 +221,7 @@ class ConnectionInstance(object):
                     raise ReqlDriverError("Unexpected response received.")
         except Exception as ex:
             if not self._closing:
-                self.close(False, None, ex)
+                yield self.close(False, None, ex)
 
 
 # Wrap functions from the base connection class that may throw - these will
