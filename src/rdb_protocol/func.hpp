@@ -150,19 +150,24 @@ protected:
 // function as their argument.
 
 counted_t<const func_t> new_constant_func(datum_t obj,
-                                          backtrace_id_t bt);
+                                          backtrace_id_t bt,
+                                          term_storage_t *term_storage);
 
 counted_t<const func_t> new_pluck_func(datum_t obj,
-                                       backtrace_id_t bt);
+                                       backtrace_id_t bt,
+                                       term_storage_t *term_storage);
 
 counted_t<const func_t> new_get_field_func(datum_t obj,
-                                           backtrace_id_t bt);
+                                           backtrace_id_t bt,
+                                           term_storage_t *term_storage);
 
 counted_t<const func_t> new_eq_comparison_func(datum_t obj,
-                                               backtrace_id_t bt);
+                                               backtrace_id_t bt,
+                                               term_storage_t *term_storage);
 
 counted_t<const func_t> new_page_func(datum_t method,
-                                      backtrace_id_t bt);
+                                      backtrace_id_t bt,
+                                      term_storage_t *term_storage);
 
 class js_result_visitor_t : public boost::static_visitor<val_t *> {
 public:

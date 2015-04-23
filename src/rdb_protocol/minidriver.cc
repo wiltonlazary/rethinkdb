@@ -44,7 +44,7 @@ reql_t boolean(bool b) {
 void reql_t::copy_optargs_from_term(const Term &from) {
     for (int i = 0; i < from.optargs_size(); ++i) {
         const Term_AssocPair &o = from.optargs(i);
-        add_arg(r::optarg(o.key(), o.val()));
+        add_arg(r->optarg(o.key(), o.val()));
     }
 }
 

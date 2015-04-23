@@ -221,14 +221,12 @@ private:
             if (idx.has() && idx_str == tbl_pkey) {
                 auto row = pb::dummy_var_t::DISTINCT_ROW;
                 std::vector<sym_t> distinct_args{dummy_var_to_sym(row)}; // NOLINT(readability/braces) yes we bloody well do need the ;
-                protob_t<Term> body(make_counted_term());
-                {
-                    r::reql_t f = r::var(row)[idx_str];
-                    body->Swap(&f.get());
-                }
-                propagate_backtrace(body.get(), backtrace());
+                minidriver_context_t r(env->env->term_storage, backtrace())
+                const raw_term_t *body = r.var(row)[idx_str].raw_term();
+                map_wire_func_t mwf(body, std::vector<sym_t>(1, dummy_var_to_sym(row)),
+                                    backtrace());
+
                 counted_t<datum_stream_t> s = tbl_slice->as_seq(env->env, backtrace());
-                map_wire_func_t mwf(body, std::move(distinct_args), backtrace());
                 s->add_transformation(std::move(mwf), backtrace());
                 return new_val(env->env, s);
             } else if (!tbl_slice->get_idx() || *tbl_slice->get_idx() == idx_str) {

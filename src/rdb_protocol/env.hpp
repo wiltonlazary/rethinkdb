@@ -29,12 +29,6 @@ namespace ql {
 class datum_t;
 class term_t;
 
-/* If and optarg with the given key is present and is of type DATUM it will be
- * returned. Otherwise an empty datum_t will be returned. */
-datum_t static_optarg(const std::string &key, const protob_t<const Query> q);
-
-bool is_noreply(const protob_t<const Query> &q);
-
 std::map<std::string, wire_func_t> parse_global_optargs(protob_t<Query> q);
 
 class global_optargs_t {
@@ -49,8 +43,6 @@ public:
 private:
     std::map<std::string, wire_func_t> optargs;
 };
-
-profile_bool_t profile_bool_optarg(const protob_t<Query> &query);
 
 scoped_ptr_t<profile::trace_t> maybe_make_profile_trace(profile_bool_t profile);
 

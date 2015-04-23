@@ -152,7 +152,7 @@ public:
     static bool parse_query(tcp_conn_t *conn,
                             signal_t *interruptor,
                             query_handler_t *handler,
-                            ql::protob_t<Query> *query_out) {
+                            query_t *query_out) {
         int64_t token;
         uint32_t size;
         conn->read(&token, sizeof(token), interruptor);

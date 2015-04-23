@@ -66,15 +66,16 @@ public:
 };
 
 void count_evals(test_rdb_env_t *test_env,
-                 ql::protob_t<const Term> term,
+                 const raw_term_t *term,
                  uint32_t *count_out,
-                 verify_callback_t *verify_callback) {
+                 verify_callback_t *verify_callback,
+                 term_storage_t *term_storage) {
     scoped_ptr_t<test_rdb_env_t::instance_t> env_instance = test_env->make_env();
 
     count_callback_t callback(count_out);
     env_instance->get_env()->set_eval_callback(&callback);
 
-    ql::compile_env_t compile_env((ql::var_visibility_t()));
+    ql::compile_env_t compile_env((ql::var_visibility_t()), term_storage);
     counted_t<const ql::term_t> compiled_term = ql::compile_term(&compile_env, term);
 
     ql::scope_env_t scope_env(env_instance->get_env(), ql::var_scope_t());
@@ -84,15 +85,16 @@ void count_evals(test_rdb_env_t *test_env,
 }
 
 void interrupt_test(test_rdb_env_t *test_env,
-                    ql::protob_t<const Term> term,
+                    const raw_term_t *term,
                     uint32_t interrupt_phase,
-                    verify_callback_t *verify_callback) {
+                    verify_callback_t *verify_callback,
+                    term_storage_t *term_storage) {
     scoped_ptr_t<test_rdb_env_t::instance_t> env_instance = test_env->make_env();
 
     interrupt_callback_t callback(interrupt_phase, env_instance.get());
     env_instance->get_env()->set_eval_callback(&callback);
 
-    ql::compile_env_t compile_env((ql::var_visibility_t()));
+    ql::compile_env_t compile_env((ql::var_visibility_t()), term_storage);
     counted_t<const ql::term_t> compiled_term = ql::compile_term(&compile_env, term);
 
     try {
@@ -133,25 +135,22 @@ private:
 };
 
 TEST(RDBInterrupt, InsertOp) {
+    ql::term_storage_t term_storage;
+    ql::minidriver_context_t r(&term_storage, backtrace_id_t::empty());
+    const ql::raw_term_t *insert_term = 
+        r.db("db").table("table").insert(r.object(r.optarg("id", "key"),
+                                                  r.optarg("value", "stuff"))).raw_term();
+
     uint32_t eval_count;
-
-    ql::datum_object_builder_t row;
-    row.overwrite("id", ql::datum_t(datum_string_t("key")));
-    row.overwrite("value", ql::datum_t(datum_string_t("stuff")));
-
-    ql::protob_t<const Term> insert_proto =
-        ql::r::db("db").table("table")
-                       .insert(std::move(row).to_datum()).release_counted();
-
     {
         test_rdb_env_t test_env;
         test_env.add_database("db");
         test_env.add_table("db", "table", "id");
         exists_verify_callback_t verify_callback(
-            "db", "table", ql::datum_t(datum_string_t("key")), true);
+            "db", "table", ql::datum_t("key"), true);
         unittest::run_in_thread_pool(std::bind(count_evals,
                                                &test_env,
-                                               insert_proto,
+                                               insert_term,
                                                &eval_count,
                                                &verify_callback));
     }
@@ -160,10 +159,10 @@ TEST(RDBInterrupt, InsertOp) {
         test_env.add_database("db");
         test_env.add_table("db", "table", "id");
         exists_verify_callback_t verify_callback(
-            "db", "table", ql::datum_t(datum_string_t("key")), false);
+            "db", "table", ql::datum_t("key"), false);
         unittest::run_in_thread_pool(std::bind(interrupt_test,
                                                &test_env,
-                                               insert_proto,
+                                               insert_term,
                                                i,
                                                &verify_callback));
     }
@@ -182,12 +181,14 @@ TEST(RDBInterrupt, GetOp) {
     std::set<ql::datum_t, latest_version_optional_datum_less_t> initial_data;
 
     ql::datum_object_builder_t row;
-    row.overwrite("id", ql::datum_t(datum_string_t("key")));
-    row.overwrite("value", ql::datum_t(datum_string_t("stuff")));
+    row.overwrite("id", ql::datum_t("key"));
+    row.overwrite("value", ql::datum_t("stuff"));
     initial_data.insert(std::move(row).to_datum());
 
-    ql::protob_t<const Term> get_proto =
-        ql::r::db("db").table("table").get_("key").release_counted();
+    ql::term_storage_t term_storage;
+    ql::minidriver_context_t r(&term_storage, backtrace_id_t::empty());
+    const ql::raw_term_t *get_term = 
+        r.db("db").table("table").get_("key").raw_term();
 
     {
         test_rdb_env_t test_env;
@@ -196,7 +197,7 @@ TEST(RDBInterrupt, GetOp) {
         test_env.add_table("db", "table", "id", initial_data);
         unittest::run_in_thread_pool(std::bind(count_evals,
                                                &test_env,
-                                               get_proto,
+                                               get_term,
                                                &eval_count,
                                                &dummy_callback));
     }
@@ -205,7 +206,7 @@ TEST(RDBInterrupt, GetOp) {
         dummy_callback_t dummy_callback;
         test_env.add_database("db");
         test_env.add_table("db", "table", "id", initial_data);
-        unittest::run_in_thread_pool(std::bind(interrupt_test, &test_env, get_proto, i,
+        unittest::run_in_thread_pool(std::bind(interrupt_test, &test_env, get_term, i,
                                                &dummy_callback));
     }
 }
@@ -215,12 +216,14 @@ TEST(RDBInterrupt, DeleteOp) {
     std::set<ql::datum_t, latest_version_optional_datum_less_t> initial_data;
 
     ql::datum_object_builder_t row;
-    row.overwrite("id", ql::datum_t(datum_string_t("key")));
-    row.overwrite("value", ql::datum_t(datum_string_t("stuff")));
+    row.overwrite("id", ql::datum_t("key"));
+    row.overwrite("value", ql::datum_t("stuff"));
     initial_data.insert(std::move(row).to_datum());
 
-    ql::protob_t<const Term> delete_proto =
-        ql::r::db("db").table("table").get_("key").delete_().release_counted();
+    ql::term_storage_t term_storage;
+    ql::minidriver_context_t r(&term_storage, backtrace_id_t::empty());
+    const ql::raw_term_t *delete_term =
+        r.db("db").table("table").get_("key").delete_().raw_term();
 
     {
         test_rdb_env_t test_env;

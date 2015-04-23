@@ -14,18 +14,9 @@ namespace ql {
 class term_walker_t {
 public:
     // This constructor checks that the term-tree is well-formed.
-    term_walker_t(Term *root, backtrace_registry_t *_bt_reg) :
+    term_walker_t(term_storage_t *term) :
             bt_reg(_bt_reg) {
         frame_t toplevel_frame(&frames, root->type(), true, backtrace_id_t::empty());
-        walk(root, &toplevel_frame);
-    }
-
-    // Propagates a backtrace down a tree until it hits a node that already has a
-    // backtrace (this is used for e.g. rewrite terms so that they return reasonable
-    // backtraces in the macroexpanded nodes).
-    term_walker_t(Term *root, backtrace_id_t bt) :
-            bt_reg(nullptr) {
-        frame_t toplevel_frame(&frames, root->type(), true, bt);
         walk(root, &toplevel_frame);
     }
 

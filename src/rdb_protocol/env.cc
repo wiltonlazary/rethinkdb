@@ -21,28 +21,8 @@ const size_t LRU_CACHE_SIZE = 1000;
 
 namespace ql {
 
-datum_t static_optarg(const std::string &key, const protob_t<const Query> q) {
-    // need to parse these to figure out what user wants; resulting
-    // bootstrap problem is a headache.  Just use default.
-    const configured_limits_t limits;
-    for (int i = 0; i < q->global_optargs_size(); ++i) {
-        const Query::AssocPair &ap = q->global_optargs(i);
-        if (ap.key() == key && ap.val().type() == Term_TermType_DATUM) {
-            return to_datum(&ap.val().datum(), limits, reql_version_t::LATEST);
-        }
-    }
-
-    return datum_t();
-}
-
-bool is_noreply(const protob_t<const Query> &q) {
-    ql::datum_t noreply = static_optarg("noreply", q);
-    return noreply.has() &&
-           noreply.get_type() == ql::datum_t::type_t::R_BOOL &&
-           noreply.as_bool();
-}
-
-wire_func_t construct_optarg_wire_func(const Term &val) {
+wire_func_t construct_optarg_wire_func(const raw_term_t *val,
+                                       term_storage_t *term_storage) {
     protob_t<Term> arg = r::fun(r::expr(val)).release_counted();
     propagate_backtrace(arg.get(), backtrace_id_t::empty());
 
@@ -175,17 +155,6 @@ env_t::env_t(signal_t *_interruptor,
       rdb_ctx_(NULL),
       eval_callback_(NULL) {
     rassert(interruptor != NULL);
-}
-
-profile_bool_t profile_bool_optarg(const protob_t<Query> &query) {
-    rassert(query.has());
-    datum_t profile_arg = static_optarg("profile", query);
-    if (profile_arg.has() && profile_arg.get_type() == datum_t::type_t::R_BOOL &&
-        profile_arg.as_bool()) {
-        return profile_bool_t::PROFILE;
-    } else {
-        return profile_bool_t::DONT_PROFILE;
-    }
 }
 
 env_t::~env_t() { }

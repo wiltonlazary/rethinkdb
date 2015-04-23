@@ -80,21 +80,28 @@ query_cache_t::const_iterator query_cache_t::end() const {
 }
 
 scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(
-        int64_t token,
-        protob_t<Query> original_query,
-        use_json_t use_json,
+        const query_params_t &query_params,
         signal_t *interruptor) {
-    if (queries.find(token) != queries.end()) {
+    if (queries.find(query_params.token) != queries.end()) {
         throw bt_exc_t(Response::CLIENT_ERROR,
-            strprintf("ERROR: duplicate token %" PRIi64, token),
+            strprintf("ERROR: duplicate token %" PRIi64, query_params.token),
+            backtrace_registry_t::EMPTY_BACKTRACE);
+    }
+    if (query_params.root_term_json == nullptr) {
+        throw bt_exc_t(Response::CLIENT_ERROR,
+            "ERROR: no root term found in START query.",
             backtrace_registry_t::EMPTY_BACKTRACE);
     }
 
     counted_t<const term_t> root_term;
-    backtrace_registry_t bt_reg;
     std::map<std::string, wire_func_t> global_optargs;
+    term_storage_t term_storage;
     try {
-        preprocess_term(original_query->mutable_query(), &bt_reg);
+        term_storage.add_term_tree(*query_params.root_term_json);
+        if (query_params.global_optargs_json != nullptr) {
+            term_storage.add_global_optargs(*query_params.global_optargs_json);
+        }
+        preprocess_term(
         global_optargs = parse_global_optargs(original_query);
 
         Term *t = original_query->mutable_query();
@@ -113,40 +120,39 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(
                                             std::move(global_optargs),
                                             std::move(root_term)));
     scoped_ptr_t<ref_t> ref(new ref_t(this,
-                                      token,
+                                      query_params.token,
                                       entry.get(),
                                       use_json,
                                       interruptor));
-    auto insert_res = queries.insert(std::make_pair(token, std::move(entry)));
+    auto insert_res = queries.insert(std::make_pair(query_params.token, std::move(entry)));
     guarantee(insert_res.second);
     return ref;
 }
 
 scoped_ptr_t<query_cache_t::ref_t> query_cache_t::get(
-        int64_t token,
-        use_json_t use_json,
+        query_params_t &query_params,
         signal_t *interruptor) {
-    auto it = queries.find(token);
+    auto it = queries.find(query_params.token);
     if (it == queries.end()) {
         throw bt_exc_t(Response::CLIENT_ERROR,
-            strprintf("Token %" PRIi64 " not in stream cache.", token),
+            strprintf("Token %" PRIi64 " not in stream cache.", query_params.token),
             backtrace_registry_t::EMPTY_BACKTRACE);
     }
 
     return scoped_ptr_t<ref_t>(new ref_t(this,
-                                         token,
+                                         query_params.token,
                                          it->second.get(),
                                          use_json,
                                          interruptor));
 }
 
 void query_cache_t::noreply_wait(const query_id_t &query_id,
-                                 int64_t token,
+                                 const query_params_t &query_params,
                                  signal_t *interruptor) {
-    auto it = queries.find(token);
+    auto it = queries.find(query_params.token);
     if (it != queries.end()) {
         throw bt_exc_t(Response::CLIENT_ERROR,
-            strprintf("ERROR: duplicate token %" PRIi64, token),
+            strprintf("ERROR: duplicate token %" PRIi64, query_params.token),
             backtrace_registry_t::EMPTY_BACKTRACE);
     }
 
@@ -156,9 +162,9 @@ void query_cache_t::noreply_wait(const query_id_t &query_id,
         }, interruptor);
 }
 
-void query_cache_t::terminate_query(int64_t token) {
+void query_cache_t::terminate_query(const query_params_t &query_params) {
     assert_thread();
-    auto entry_it = queries.find(token);
+    auto entry_it = queries.find(query_params.token);
     if (entry_it != queries.end()) {
         terminate_internal(entry_it->second.get());
     }
@@ -175,12 +181,10 @@ void query_cache_t::terminate_internal(query_cache_t::entry_t *entry) {
 query_cache_t::ref_t::ref_t(query_cache_t *_query_cache,
                             int64_t _token,
                             query_cache_t::entry_t *_entry,
-                            use_json_t _use_json,
                             signal_t *interruptor) :
         entry(_entry),
         token(_token),
         trace(maybe_make_profile_trace(entry->profile)),
-        use_json(_use_json),
         query_cache(_query_cache),
         drainer_lock(&entry->drainer),
         combined_interruptor(interruptor, &entry->persistent_interruptor),
@@ -353,16 +357,13 @@ void query_cache_t::ref_t::serve(env_t *env, Response *res) {
     entry->stream->set_notes(res);
 }
 
-query_cache_t::entry_t::entry_t(protob_t<Query> _original_query,
-                                backtrace_registry_t &&_bt_reg,
-                                std::map<std::string, wire_func_t> &&_global_optargs,
+query_cache_t::entry_t::entry_t(const query_params_t &query_params,
+                                term_storage_t &&_term_storage,
                                 counted_t<const term_t> _root_term) :
         state(state_t::START),
         job_id(generate_uuid()),
-        original_query(_original_query),
-        bt_reg(std::move(_bt_reg)),
-        global_optargs(std::move(_global_optargs)),
-        profile(profile_bool_optarg(original_query)),
+        term_storage(std::move(_term_storage)),
+        profile(query_params.profile),
         start_time(current_microtime()),
         root_term(_root_term),
         has_sent_batch(false) { }

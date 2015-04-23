@@ -101,7 +101,9 @@ sindex_name_t create_sindex(store_t *store) {
                                         &dummy_interruptor);
 
     ql::sym_t one(1);
-    ql::protob_t<const Term> mapping = ql::r::var(one)["sid"].release_counted();
+    ql::term_storage_t term_storage;
+    ql::minidriver_context_t r(&term_storage, ql::backtrace_id_t::empty());
+    const ql::raw_term_t *mapping = r.var(one)["sid"].raw_term();
     ql::map_wire_func_t m(mapping, make_vector(one), ql::backtrace_id_t::empty());
 
     sindex_multi_bool_t multi_bool = sindex_multi_bool_t::SINGLE;

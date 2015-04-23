@@ -331,62 +331,67 @@ bool func_t::filter_call(env_t *env, datum_t arg, counted_t<const func_t> defaul
     std::rethrow_exception(saved_exception);
 }
 
-counted_t<const func_t> new_constant_func(datum_t obj, backtrace_id_t bt) {
-    protob_t<Term> twrap = r::fun(r::expr(obj)).release_counted();
-    propagate_backtrace(twrap.get(), bt);
+counted_t<const func_t> new_constant_func(datum_t obj, backtrace_id_t bt,
+                                          term_storage_t *term_storage) {
+    minidriver_context_t r(term_storage, bt);
+    const raw_term_t *twrap = r.fun(r.expr(obj)).raw_term();
 
-    compile_env_t empty_compile_env((var_visibility_t()));
+    compile_env_t empty_compile_env((var_visibility_t()), term_storage);
     counted_t<func_term_t> func_term = make_counted<func_term_t>(&empty_compile_env,
                                                                  twrap);
     return func_term->eval_to_func(var_scope_t());
 }
 
-counted_t<const func_t> new_get_field_func(datum_t key, backtrace_id_t bt) {
+counted_t<const func_t> new_get_field_func(datum_t key, backtrace_id_t bt,
+                                           term_storage_t *term_storage) {
+    minidriver_context_t r(term_storage, bt);
     pb::dummy_var_t obj = pb::dummy_var_t::FUNC_GETFIELD;
-    protob_t<Term> twrap = r::fun(obj, r::var(obj)[key]).release_counted();
-    propagate_backtrace(twrap.get(), bt);
+    const raw_term_t *twrap = r::fun(obj, r.expr(obj)[key]).raw_term();
 
-    compile_env_t empty_compile_env((var_visibility_t()));
+    compile_env_t empty_compile_env((var_visibility_t()), term_storage);
     counted_t<func_term_t> func_term = make_counted<func_term_t>(&empty_compile_env,
                                                                  twrap);
     return func_term->eval_to_func(var_scope_t());
 }
 
-counted_t<const func_t> new_pluck_func(datum_t obj, backtrace_id_t bt) {
+counted_t<const func_t> new_pluck_func(datum_t obj, backtrace_id_t bt,
+                                       term_storage_t *term_storage) {
+    minidriver_context_t r(term_storage, bt);
     pb::dummy_var_t var = pb::dummy_var_t::FUNC_PLUCK;
-    protob_t<Term> twrap = r::fun(var, r::var(var).pluck(obj)).release_counted();
-    propagate_backtrace(twrap.get(), bt);
+    const raw_term_t *twrap = r.fun(var, r.expr(var).pluck(obj)).raw_term();
 
-    compile_env_t empty_compile_env((var_visibility_t()));
+    compile_env_t empty_compile_env((var_visibility_t()), term_storage);
     counted_t<func_term_t> func_term = make_counted<func_term_t>(&empty_compile_env,
                                                                  twrap);
     return func_term->eval_to_func(var_scope_t());
 }
 
-counted_t<const func_t> new_eq_comparison_func(datum_t obj, backtrace_id_t bt) {
+counted_t<const func_t> new_eq_comparison_func(datum_t obj, backtrace_id_t bt,
+                                               term_storage_t *term_storage) {
+    minidriver_context_t r(term_storage, bt);
     pb::dummy_var_t var = pb::dummy_var_t::FUNC_EQCOMPARISON;
-    protob_t<Term> twrap = r::fun(var, r::var(var) == obj).release_counted();
-    propagate_backtrace(twrap.get(), bt);
+    const raw_term_t *twrap = r.fun(var, r.expr(var) == obj).raw_term();
 
-    compile_env_t empty_compile_env((var_visibility_t()));
+    compile_env_t empty_compile_env((var_visibility_t()), term_storage);
     counted_t<func_term_t> func_term = make_counted<func_term_t>(&empty_compile_env,
                                                                  twrap);
     return func_term->eval_to_func(var_scope_t());
 }
 
-counted_t<const func_t> new_page_func(datum_t method, backtrace_id_t bt) {
+counted_t<const func_t> new_page_func(datum_t method, backtrace_id_t bt,
+                                      term_storage_t *term_storage) {
     if (method.get_type() != datum_t::R_NULL) {
         std::string name = method.as_str().to_std();
         if (name == "link-next") {
+            minidriver_context_t r(term_storage, bt);
             pb::dummy_var_t info = pb::dummy_var_t::FUNC_PAGE;
-            protob_t<Term> twrap =
-                r::fun(info,
-                       r::var(info)["header"]["link"]["rel=\"next\""]
-                           .default_(r::null()))
-                .release_counted();
-            propagate_backtrace(twrap.get(), bt);
+            const raw_term_t *twrap =
+                r.fun(info,
+                       r.expr(info)["header"]["link"]["rel=\"next\""]
+                        .default_(r.null()))
+                .raw_term();
 
-            compile_env_t empty_compile_env((var_visibility_t()));
+            compile_env_t empty_compile_env((var_visibility_t()), term_storage);
             counted_t<func_term_t> func_term =
                 make_counted<func_term_t>(&empty_compile_env, twrap);
             return func_term->eval_to_func(var_scope_t());

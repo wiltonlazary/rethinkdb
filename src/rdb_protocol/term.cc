@@ -218,52 +218,34 @@ void maybe_release_query_id(query_id_t &&id,
 }
 
 void run(query_id_t &&query_id,
-         protob_t<Query> q,
+         int64_t token,
+         const rapidjson::Value &query_json,
          Response *res,
          query_cache_t *query_cache,
          signal_t *interruptor) {
-    try {
-        validate_pb(*q);
-    } catch (const base_exc_t &e) {
-        fill_error(res, Response::CLIENT_ERROR, e.what(),
-                   backtrace_registry_t::EMPTY_BACKTRACE);
-        return;
-    }
-
-    try {
-        validate_optargs(*q);
-    } catch (const base_exc_t &e) {
-        fill_error(res, Response::COMPILE_ERROR, e.what(),
-                   backtrace_registry_t::EMPTY_BACKTRACE);
-        return;
-    }
-#ifdef INSTRUMENT
-    debugf("Query: %s\n", q->DebugString().c_str());
-#endif // INSTRUMENT
-
-    int64_t token = q->token();
-    use_json_t use_json = q->accepts_r_json() ? use_json_t::YES : use_json_t::NO;
+    // TODO: make sure validate_pb/validate_optargs are still performed
+    query_params_t q_params(token, query_json);
 
     try {
         switch (q->type()) {
         case Query_QueryType_START: {
             maybe_release_query_id(std::move(query_id), q);
             scoped_ptr_t<query_cache_t::ref_t> query_ref =
-                query_cache->create(token, q, use_json, interruptor);
+                query_cache->create(std::move(q), interruptor);
             query_ref->fill_response(res);
         } break;
         case Query_QueryType_CONTINUE: {
             maybe_release_query_id(std::move(query_id), q);
             scoped_ptr_t<query_cache_t::ref_t> query_ref =
-                query_cache->get(token, use_json, interruptor);
+                query_cache->get(q.token(), interruptor);
             query_ref->fill_response(res);
         } break;
         case Query_QueryType_STOP: {
-            query_cache->terminate_query(token);
+            query_cache->terminate_query(q.token());
             res->set_type(Response::SUCCESS_SEQUENCE);
         } break;
         case Query_QueryType_NOREPLY_WAIT: {
-            query_cache->noreply_wait(query_id, token, interruptor);
+            query_cache->noreply_wait(query_id, q.token(), interruptor);
             res->set_type(Response::WAIT_COMPLETE);
         } break;
         default: unreachable();

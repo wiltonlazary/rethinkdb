@@ -98,7 +98,7 @@ public:
 
     // Methods to obtain a unique reference to a given entry in the cache
     scoped_ptr_t<ref_t> create(int64_t token,
-                               protob_t<Query> original_query,
+                               query_t original_query,
                                use_json_t use_json,
                                signal_t *interruptor);
 
@@ -112,7 +112,7 @@ public:
 
 private:
     struct entry_t {
-        entry_t(protob_t<Query> _original_query,
+        entry_t(query_t _original_query,
                 backtrace_registry_t &&_bt_reg,
                 std::map<std::string, wire_func_t> &&_global_optargs,
                 counted_t<const term_t> _root_term);
@@ -121,7 +121,7 @@ private:
         enum class state_t { START, STREAM, DONE, DELETING } state;
 
         const uuid_u job_id;
-        const protob_t<Query> original_query;
+        const query_t original_query;
         const backtrace_registry_t bt_reg;
         const std::map<std::string, wire_func_t> global_optargs;
         const profile_bool_t profile;

@@ -15,19 +15,16 @@ namespace ql {
 
 class rewrite_term_t : public term_t {
 public:
-    rewrite_term_t(compile_env_t *env, const protob_t<const Term> term,
+    rewrite_term_t(compile_env_t *env, const raw_term_t *term,
                    argspec_t argspec,
-                   r::reql_t (*rewrite)(protob_t<const Term> in,
-                                        protob_t<const Term> optargs_in))
-            : term_t(term), in(term), out(make_counted_term()) {
-        int args_size = in->args_size();
-        rcheck(argspec.contains(args_size),
+                   r::reql_t (*rewrite)(compile_env_t *env,
+                                        const raw_term_t *in))
+            : term_t(term), in(term) {
+        rcheck(argspec.contains(term.num_args()),
                base_exc_t::GENERIC,
                strprintf("Expected %s but found %d.",
-                         argspec.print().c_str(), args_size));
-        out->Swap(&rewrite(in, in).get());
-        propagate_backtrace(out.get(), backtrace());
-
+                         argspec.print().c_str(), term.num_args()));
+        rewrite_src = rewrite(env, in)->raw_term();
         real = compile_term(env, out);
     }
 
@@ -43,9 +40,7 @@ private:
         return real->eval(env);
     }
 
-    protob_t<const Term> in;
-    protob_t<Term> out;
-
+    const raw_term_t *rewrite_src;
     counted_t<const term_t> real;
 };
 
@@ -54,26 +49,28 @@ public:
     inner_join_term_t(compile_env_t *env, const protob_t<const Term> &term)
         : rewrite_term_t(env, term, argspec_t(3), rewrite) { }
 
-    static r::reql_t rewrite(protob_t<const Term> in,
-                             protob_t<const Term> optargs_in) {
-        const Term &left = in->args(0);
-        const Term &right = in->args(1);
-        const Term &func = in->args(2);
+    static r::reql_t rewrite(compile_env_t *env,
+                             const raw_term_t *in) {
+        auto arg_it = in->args();
+        const raw_term_t *left = *(arg_it++);
+        const raw_term_t *right = *(arg_it++);
+        const raw_term_t *func = *(arg_it++);
         auto n = pb::dummy_var_t::INNERJOIN_N;
         auto m = pb::dummy_var_t::INNERJOIN_M;
 
-        r::reql_t term =
-            r::expr(left).concat_map(
-                r::fun(n,
-                    r::expr(right).concat_map(
-                        r::fun(m,
-                            r::branch(
-                                r::expr(func)(r::var(n), r::var(m)),
-                                r::array(r::object(
-                                        r::optarg("left", n), r::optarg("right", m))),
-                                r::array())))));
+        minidriver_context_t r(env->term_storage, in->backtrace());
+        reql_t term =
+            r.expr(in->arg(0)).concat_map(
+                r.fun(n,
+                    r.expr(right).concat_map(
+                        r.fun(m,
+                            r.branch(
+                                r.expr(func)(r.var(n), r.var(m)),
+                                r.array(r.object(r.optarg("left", n),
+                                                 r.obtarg("right", m))),
+                                r.array())))));
 
-        term.copy_optargs_from_term(*optargs_in);
+        term.copy_optargs_from_term(*in);
         return term;
     }
 
@@ -85,31 +82,33 @@ public:
     outer_join_term_t(compile_env_t *env, const protob_t<const Term> &term)
         : rewrite_term_t(env, term, argspec_t(3), rewrite) { }
 
-    static r::reql_t rewrite(protob_t<const Term> in,
-                             protob_t<const Term> optargs_in) {
-        const Term &left = in->args(0);
-        const Term &right = in->args(1);
-        const Term &func = in->args(2);
+    static r::reql_t rewrite(compile_env_t *env,
+                             const raw_term_t *in) {
+        auto arg_it = in->args();
+        const raw_term_t *left = *(arg_it++);
+        const raw_term_t *right = *(arg_it++);
+        const raw_term_t *func = *(arg_it++);
         auto n = pb::dummy_var_t::OUTERJOIN_N;
         auto m = pb::dummy_var_t::OUTERJOIN_M;
         auto lst = pb::dummy_var_t::OUTERJOIN_LST;
 
+        minidriver_context_t r(env->term_storage, in->backtrace());
         r::reql_t inner_concat_map =
-            r::expr(right).concat_map(
-                r::fun(m,
-                    r::branch(
-                        r::expr(func)(n, m),
-                        r::array(r::object(r::optarg("left", n), r::optarg("right", m))),
-                        r::array())));
+            r.expr(right).concat_map(
+                r.fun(m,
+                    r.branch(
+                        r.expr(func)(n, m),
+                        r.array(r.object(r.optarg("left", n),
+                                         r.optarg("right", m))),
+                        r.array())));
 
         r::reql_t term =
-            r::expr(left).concat_map(
-                r::fun(n,
-                    std::move(inner_concat_map).coerce_to("ARRAY").do_(lst,
-                        r::branch(
-                            r::expr(lst).count() > 0,
-                            lst,
-                            r::array(r::object(r::optarg("left", n)))))));
+            r.expr(left).concat_map(
+                r.fun(n,
+                    inner_concat_map.coerce_to("ARRAY").do_(lst,
+                        r.branch(r.expr(lst).count() > 0,
+                                 lst,
+                                 r.array(r.object(r.optarg("left", n)))))));
 
         term.copy_optargs_from_term(*optargs_in);
         return term;
@@ -124,27 +123,29 @@ public:
         : rewrite_term_t(env, term, argspec_t(3), rewrite) { }
 private:
 
-    static r::reql_t rewrite(protob_t<const Term> in,
-                             protob_t<const Term> optargs_in) {
-        const Term &left = in->args(0);
-        const Term &left_attr = in->args(1);
-        const Term &right = in->args(2);
+    static r::reql_t rewrite(compile_env_t *env,
+                             const raw_term_t *in) {
+        auto arg_it = in->args();
+        const raw_term_t *left = arg_it.next();
+        const raw_term_t *left_attr = arg_it.next();
+        const raw_term_t *right = arg_it.next();
 
         auto row = pb::dummy_var_t::EQJOIN_ROW;
         auto v = pb::dummy_var_t::EQJOIN_V;
 
+        minidriver_context_t r(env->term_storage, in->backtrace());
         r::reql_t get_all =
-            r::expr(right).get_all(
-                r::expr(left_attr)(row, r::optarg("_SHORTCUT_", GET_FIELD_SHORTCUT)));
-        get_all.copy_optargs_from_term(*optargs_in);
-        return r::expr(left).concat_map(
-            r::fun(row,
-                   r::branch(
-                       r::null() == row,
-                       r::array(),
-                       std::move(get_all).default_(r::array()).map(
-                           r::fun(v, r::object(r::optarg("left", row),
-                                               r::optarg("right", v)))))));
+            r.expr(right).get_all(
+                r.expr(left_attr)(row, r.optarg("_SHORTCUT_", GET_FIELD_SHORTCUT)));
+        get_all.copy_optargs_from_term(in);
+        return r.expr(left).concat_map(
+            r.fun(row,
+                  r.branch(
+                       r.null() == row,
+                       r.array(),
+                       get_all.default_(r.array()).map(
+                           r.fun(v, r.object(r.optarg("left", row),
+                                             r.optarg("right", v)))))));
 
     }
     virtual const char *name() const { return "eq_join"; }
@@ -156,13 +157,14 @@ public:
         : rewrite_term_t(env, term, argspec_t(1), rewrite) { }
 private:
 
-    static r::reql_t rewrite(protob_t<const Term> in,
-                             protob_t<const Term> optargs_in) {
+    static r::reql_t rewrite(compile_env_t *env, const raw_term_t *in) {
+        auto arg_it = in->args();
+        const raw_term_t *val = arg_it.next();
         auto x = pb::dummy_var_t::IGNORED;
 
-        r::reql_t term = r::expr(in->args(0)).replace(r::fun(x, r::null()));
-
-        term.copy_optargs_from_term(*optargs_in);
+        minidriver_context_t r(env->term_storage, in->backtrace());
+        r::reql_t term = r.expr(val).replace(r.fun(x, r.null()));
+        term.copy_optargs_from_term(in);
         return term;
      }
      virtual const char *name() const { return "delete"; }
@@ -173,27 +175,29 @@ public:
     update_term_t(compile_env_t *env, const protob_t<const Term> &term)
         : rewrite_term_t(env, term, argspec_t(2), rewrite) { }
 private:
-    static r::reql_t rewrite(protob_t<const Term> in,
-                             protob_t<const Term> optargs_in) {
+    static r::reql_t rewrite(compile_env_t *env, const raw_term_t *in) {
+        auto arg_it = in->args();
+        const raw_term_t *arg0 = arg_it.next();
+        const raw_term_t *arg1 = arg_it.next();
         auto old_row = pb::dummy_var_t::UPDATE_OLDROW;
         auto new_row = pb::dummy_var_t::UPDATE_NEWROW;
 
         r::reql_t term =
-            r::expr(in->args(0)).replace(
-                r::fun(old_row,
-                    r::branch(
-                        r::null() == old_row,
-                        r::null(),
-                        r::fun(new_row,
-                            r::branch(
-                                r::null() == new_row,
+            r.expr(arg0).replace(
+                r.fun(old_row,
+                    r.branch(
+                        r.null() == old_row,
+                        r.null(),
+                        r.fun(new_row,
+                            r.branch(
+                                r.null() == new_row,
                                 old_row,
-                                r::expr(old_row).merge(new_row)))(
-                                    r::expr(in->args(1))(old_row,
-                                        r::optarg("_EVAL_FLAGS_", LITERAL_OK)),
-                                    r::optarg("_EVAL_FLAGS_", LITERAL_OK)))));
+                                r.expr(old_row).merge(new_row)))(
+                                    r.expr(arg1)(old_row,
+                                        r.optarg("_EVAL_FLAGS_", LITERAL_OK)),
+                                    r.optarg("_EVAL_FLAGS_", LITERAL_OK)))));
 
-        term.copy_optargs_from_term(*optargs_in);
+        term.copy_optargs_from_term(in);
         return term;
     }
     virtual const char *name() const { return "update"; }
@@ -204,13 +208,15 @@ public:
     skip_term_t(compile_env_t *env, const protob_t<const Term> &term)
         : rewrite_term_t(env, term, argspec_t(2), rewrite) { }
 private:
-    static r::reql_t rewrite(protob_t<const Term> in,
-                             protob_t<const Term> optargs_in) {
-        r::reql_t term =
-            r::expr(in->args(0)).slice(in->args(1), -1,
-                r::optarg("right_bound", "closed"));
+    static r::reql_t rewrite(compile_env_t *env, const raw_term_t *in) {
+        auto arg_it = in->args();
+        const raw_term_t *arg0 = arg_it.next();
+        const raw_term_t *arg1 = arg_it.next();
 
-        term.copy_optargs_from_term(*optargs_in);
+        r::reql_t term =
+            r.expr(arg0).slice(arg1, -1, r.optarg("right_bound", "closed"));
+
+        term.copy_optargs_from_term(in);
         return term;
      }
      virtual const char *name() const { return "skip"; }
@@ -221,16 +227,16 @@ public:
     difference_term_t(compile_env_t *env, const protob_t<const Term> &term)
         : rewrite_term_t(env, term, argspec_t(2), rewrite) { }
 private:
-    static r::reql_t rewrite(protob_t<const Term> in,
-                             protob_t<const Term> optargs_in) {
+    static r::reql_t rewrite(compile_env_t *env, const raw_term_t *in) {
+        auto arg_it = in->args();
+        const raw_term_t *arg0 = arg_it.next();
+        const raw_term_t *arg1 = arg_it.next();
         auto row = pb::dummy_var_t::DIFFERENCE_ROW;
 
         r::reql_t term =
-            r::expr(in->args(0)).filter(
-                r::fun(row,
-                    !r::expr(in->args(1)).contains(row)));
+            r.expr(arg0).filter(r.fun(row, !(r.expr(arg1).contains(row))));
 
-        term.copy_optargs_from_term(*optargs_in);
+        term.copy_optargs_from_term(in);
         return term;
     }
 
@@ -242,14 +248,15 @@ public:
     with_fields_term_t(compile_env_t *env, const protob_t<const Term> &term)
         : rewrite_term_t(env, term, argspec_t(1, -1), rewrite) { }
 private:
-    static r::reql_t rewrite(protob_t<const Term> in,
-                             protob_t<const Term> optargs_in) {
-        r::reql_t has_fields = r::expr(in->args(0)).has_fields();
-        has_fields.copy_args_from_term(*in, 1);
-        has_fields.copy_optargs_from_term(*optargs_in);
-        r::reql_t pluck = std::move(has_fields).pluck();
-        pluck.copy_args_from_term(*in, 1);
+    static r::reql_t rewrite(compile_env_t *env, const raw_term_t *in) {
+        auto arg_it = in->args();
+        const raw_term_t *arg0 = arg_it.next();
 
+        r::reql_t has_fields = r.expr(arg0).has_fields();
+        has_fields.copy_args_from_term(in, 1);
+        has_fields.copy_optargs_from_term(in);
+        r::reql_t pluck = has_fields.pluck();
+        pluck.copy_args_from_term(in, 1);
         return pluck;
     }
      virtual const char *name() const { return "with_fields"; }
