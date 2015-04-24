@@ -74,113 +74,67 @@ private:
     }
 }
 
+class raw_term_t;
 
+class raw_term_iterator_t {
+public:
+    const raw_term_t *next() {
+        const raw_term_t *res = item;
+        r_sanity_check(res != nullptr, "Tried to read too many args or optargs from a term.");
+        item = list.next(item);    
+        return res;
+    }
+private:
+    friend class raw_term_t;
+    raw_term_iterator_t(intrusive_list_t<raw_term_t> *_list) :
+        list(_list), item(list->head()) { }
+
+    intrusive_list_t<raw_term_t> *list;
+    const raw_term_t *item;
+};
+
+class raw_term_t : public intrusive_list_node_t<raw_term_t> {
+    raw_term_t(Term::TermType _type, backtrace_id_t _bt) : type(_type), bt(_bt) { }
+
+    size_t num_args() const { return args_.size(); }
+    size_t num_optargs() const { return optargs_.size(); }
+
+    raw_term_iterator_t args() const { return raw_term_iterator_t(&args_); }
+    raw_term_iterator_t optargs() const { return raw_term_iterator_t(&optargs_); }
+
+    intrusive_list_t<raw_term_t> args_; // Not used for datum type
+    intrusive_list_t<raw_term_t> optargs_; // Not used for datum type
+
+    Term::TermType type;
+    datum_string_t name; // Only used when an optarg
+    datum_t value; // Only used for datum type
+    backtrace_id_t bt;
+};
 
 class term_storage_t {
 public:
     // Parse a query from a rapidjson value and attach backtraces
-    iterator_t add_term_tree(const rapidjson::Value &v);
-    iterator_t add_global_optargs(const rapidjson::Value &v);
+    const raw_term_t *add_term_tree(const rapidjson::Value &v);
+    void add_global_optargs(const rapidjson::Value &v);
+    void add_global_optarg(const std::string &key, const rapidjson::Value &v);
 
-    iterator_t root_term() {
-        return iterator_t(&root_term);
+    const raw_term_t *root_term() const {
+        r_sanity_check(terms.size() > 0, "No root term has been created.");
+        return &terms[0];
     }
 
-    static iterator_t end() {
-        return iterator_t(nullptr);
+    const std::map<std::string, wire_func_t> &global_optargs() const {
+        return global_optargs_;
     }
-
-    class iterator_t {
-    public:
-        Term::TermType term_type() const {
-            guarantee(item != nullptr);
-            return item->type;
-        }
-
-        backtrace_id_t backtrace() const {
-            guarantee(item != nullptr);
-            return item->bt;
-        }
-
-        datum_t datum() const {
-            guarantee(item != nullptr);
-            guarantee(item->type == Term::DATUM);
-            return item->datum;
-        }
-
-        iterator_t args() {
-            guarantee(item != nullptr)
-            return iterator_t(&item->args);
-        }
-
-        optarg_iterator_t optargs() {
-            guarantee(item != nullptr)
-            return optarg_iterator_t(&item->optargs);
-        }
-
-        // postfix increment
-        iterator_t operator ++ (int) {
-            iterator_t res(*this);
-            item = list->next(item);
-            return res;
-        }
-
-        // prefix increment
-        iterator_t& operator ++ () {
-            guarantee(item != nullptr);
-            item = list->next(item);
-            return *this;
-        }
-
-    protected:
-        iterator_t(intrusive_list_t<raw_term_t *> *_list) :
-            item(list->head()), 
-
-        }
-        iterator_t(const iterator_t &other) :
-            item(other.item), list(other.list) { }
-
-        raw_term_t *item;
-        
-    private:
-        intrusive_list_t<raw_term_t *> *list;
-    };
-
-    class optarg_iterator_t : public iterator_t {
-    public:
-        datum_string_t optarg_name() const {
-            guarantee(item != nullptr);
-            return item->name;
-        }
-    private:
-        optarg_iterator_t(intrusive_list_t<raw_term_t *> *_list) :
-            iterator_t(_list) { }
-    };
 
 private:
-    query_t();
-
-    struct raw_term_t : public intrusive_list_node_t<raw_term_t> {
-        raw_term_t(Term::TermType _type, backtrace_id_t _bt) : type(_type), bt(_bt) { }
-        intrusive_list_t<raw_term_t> args; // Not used for datum type
-        intrusive_list_t<raw_term_t> optargs; // Not used for datum type
-
-        Term::TermType type;
-        datum_string_t name; // Only used when an optarg
-        datum_t value; // Only used for datum type
-        backtrace_id_t bt;
-    };
-
     // We use a segmented vector so items won't be reallocated and moved, which allows us
     // to use pointers to other items in the vector.
     segmented_vector_t<raw_term_t, 100> terms;
-    intrusive_list_t<raw_term_t> root_term; // Dummy list only to provide an iterator for the root term
-    intrusive_list_t<raw_term_t> global_optargs;
-    backtrace_registry_t bt_reg;
+    std::map<std::string, wire_func_t> global_optargs_;
+    backtrace_registry_t backtrace_registry;
 
     raw_term_t *new_term(int type, backtrace_id_t bt);
-
-    void add_global_optargs(const rapidjson::Value &args);
 
     void add_args(const rapidjson::Value &args,
                   intrusive_list_t<raw_term_t> *args_out,

@@ -32,71 +32,44 @@ void check_term_size(const rapidjson::Value &v, backtrace_id_t bt) {
     }
 }
 
-query_t::raw_term_t *query_t::new_term(int type, backtrace_id_t bt) {
+datum_t term_storage_t::get_time() {
+    if (!start_time.has()) {
+        start_time = pseudo::time_now();
+    }
+    return start_time;
+}
+
+raw_term_t *term_storage_t::new_term(int type, backtrace_id_t bt) {
     terms.push_back(raw_term_t(type, bt));
     return &terms.back();
 }
 
+
 void query_t::add_global_optargs(const rapidjson::Value &optargs) {
     check_type(optargs, rapidjson::kObjectType, bt);
     for (auto it = optargs.MemberBegin(); it != optargs.MemberEnd(); ++it) {
-        raw_term_t *t = parse_internal(it->value, bt_reg, child_bt);
-        res.global_optargs.push_back(t);
-        t->name = it->name;
+        add_global_optarg(it->name, it->value);
     }
 }
 
-void query_t::add_args(const rapidjson::Value &args,
-                       intrusive_list_t<query_t::raw_term_t> *args_out,
-                       backtrace_registry_t *bt_reg,
-                       backtrace_id_t bt) {
-    check_type(args, rapidjson::kArrayType, bt);
-    for (size_t i = 0; i < args.Size(); ++i) {
-        backtrace_id_t child_bt = (bt_reg == NULL) ?
-            backtrace_id_t::empty() : bt_reg->new_frame(i);
-        raw_term_t *t = parse_internal(args[i], bt_reg, child_bt);
-        args_out->push_back(t);
-    }
+void term_storage_t::add_global_optarg(const std::string &key, const rapidjson::Value &v) {
+    rcheck_toplevel(global_optargs.count(key) == 0, base_exc_t::GENERIC,
+                    "Duplicate global optarg: %s.", key.c_str());
+
+    const raw_term_t *term = parse_internal(v, nullptr, backtrace_id_t::empty());
+
+    minidriver_context_t r(this, backtrace_id_t::empty());
+    term = r.fun(term).raw_term();
+
+    compile_env_t env((var_visibility_t()), this);
+    counted_t<const func_t> func =
+        make_counted<func_term_t>(&env, term)->eval_to_func(var_scoped_t());
+    global_optargs[key] = wire_func_t(func);
 }
 
-void query_t::add_optargs(const rapidjson::Value &optargs,
-                          intrusive_list_t<query_t::raw_term_t> *optargs_out,
-                          backtrace_registry_t *bt_reg,
-                          backtrace_id_t bt) {
-    check_type(optargs, rapidjson::kObjectType, bt);
-    for (auto it = optargs.MemberBegin(); it != optargs.MemberEnd(); ++it) {
-        backtrace_id_t child_bt = (bt_reg == NULL) ?
-            backtrace_id_t::empty() : bt_reg->new_frame(it->name);
-        raw_term_t *t = parse_internal(it->value, bt_reg, child_bt);
-        optargs_out->push_back(t);
-        t->name = it->name;
-    }
-}
-
-query_t query_t::parse(const rapidjson::Value &v,
-                       backtrace_registry_t *bt_reg) {
-    guarantee(terms.size() == 0);
-    backtrace_id_t bt(backtrace_id_t::empty());
-    query_t q;
-
-    check_type(v, rapidjson::kArrayType, bt);
-    check_term_size(v, bt); // Terms and Queries have the same size restrictions
-    check_type(v[0], rapidjson::kNumberType, bt);
-
-    q.type = v[0].GetInteger();
-    if (v.Size() >= 2) {
-        parse_internal(v[1], &q, bt_reg, backtrace_id_t::empty());
-    }
-    if (v.Size() >= 3) {
-        add_global_optargs(v[2], q.global_optargs);
-    }
-    return q;
-}
-
-
-query_t::raw_term_t *query_t::parse_internal(const rapidjson::Value &v,
-                                             backtrace_registry_t *bt_reg,
-                                             backtrace_id_t bt) {
+const raw_term_t *term_storage_t::parse_internal(const rapidjson::Value &v,
+                                          backtrace_registry_t *bt_reg,
+                                          backtrace_id_t bt) {
     bool got_optargs = false;
     if (!v.IsArray()) {
         // This is a literal datum term
@@ -130,5 +103,38 @@ query_t::raw_term_t *query_t::parse_internal(const rapidjson::Value &v,
         }
         check_type(v, rapidjson::kObjectType, bt);
         add_optargs(v[2], &t->optargs, bt_reg, bt);
+    }
+
+    // Convert NOW terms into a literal datum - so they all have the same value
+    if (t->type == Term::NOW && t->num_args() == 0 && t->num_optargs() == 0) {
+        t->type = Term::DATUM;
+        t->datum = get_time();
+    }
+}
+
+void term_storage_t::add_args(const rapidjson::Value &args,
+                       intrusive_list_t<query_t::raw_term_t> *args_out,
+                       backtrace_registry_t *bt_reg,
+                       backtrace_id_t bt) {
+    check_type(args, rapidjson::kArrayType, bt);
+    for (size_t i = 0; i < args.Size(); ++i) {
+        backtrace_id_t child_bt = (bt_reg == NULL) ?
+            backtrace_id_t::empty() : bt_reg->new_frame(i);
+        raw_term_t *t = parse_internal(args[i], bt_reg, child_bt);
+        args_out->push_back(t);
+    }
+}
+
+void term_storage_t::add_optargs(const rapidjson::Value &optargs,
+                          intrusive_list_t<query_t::raw_term_t> *optargs_out,
+                          backtrace_registry_t *bt_reg,
+                          backtrace_id_t bt) {
+    check_type(optargs, rapidjson::kObjectType, bt);
+    for (auto it = optargs.MemberBegin(); it != optargs.MemberEnd(); ++it) {
+        backtrace_id_t child_bt = (bt_reg == NULL) ?
+            backtrace_id_t::empty() : bt_reg->new_frame(it->name);
+        raw_term_t *t = parse_internal(it->value, bt_reg, child_bt);
+        optargs_out->push_back(t);
+        t->name = it->name;
     }
 }
