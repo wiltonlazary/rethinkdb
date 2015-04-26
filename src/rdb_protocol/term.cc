@@ -206,15 +206,6 @@ counted_t<const term_t> compile_term(compile_env_t *env, const protob_t<const Te
     unreachable();
 }
 
-// If the query wants a reply, we can release the query id, which is
-// only used for tracking the ordering of noreply queries for the
-// purpose of noreply_wait.
-void maybe_release_query_id(query_params_t *query_params) {
-    if (q.noreply) {
-        q.destory_query_id();
-    }
-}
-
 void run(query_params_t *query_params,
          Response *res,
          signal_t *interruptor) {
@@ -222,13 +213,11 @@ void run(query_params_t *query_params,
     try {
         switch (query_params->type) {
         case Query_QueryType_START: {
-            maybe_release_query_id(query_params);
             scoped_ptr_t<query_cache_t::ref_t> query_ref =
                 query_params->query_cache->create(query_params, interruptor);
             query_ref->fill_response(res);
         } break;
         case Query_QueryType_CONTINUE: {
-            maybe_release_query_id(query_params);
             scoped_ptr_t<query_cache_t::ref_t> query_ref =
                 query_params->query_cache->get(query_params, interruptor);
             query_ref->fill_response(res);

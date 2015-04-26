@@ -55,24 +55,6 @@ public:
         const raw_term_t *raw_term() const { return raw_term_; }
         void copy_optargs_from_term(const raw_term_t *from);
         void copy_args_from_term(const raw_term_t *from, size_t start_index);
-    private:
-        friend class minidriver_t;
-        reql_t(minidriver_t *_r, scoped_ptr_t<Term> &&term_);
-        reql_t(minidriver_t *_r, const double val);
-        reql_t(minidriver_t *_r, const std::string &val);
-        reql_t(minidriver_t *_r, const datum_t &d);
-        reql_t(minidriver_t *_r, std::vector<reql_t> &&val);
-        reql_t(minidriver_t *_r, pb::dummy_var_t var);
-
-        reql_t(reql_t &&other);
-        reql_t &operator= (reql_t &&other);
-
-        template <class... T>
-        reql_t(minidriver_t *_r, Term_TermType type, T &&... args) :
-                raw_term_(r->new_term(type)) {
-            // TODO: set datum value if datum - or disallow datum terms in this constructor
-            add_args(std::forward<T>(args)...);
-        }
 
 #define REQL_METHOD(name, termtype)                                     \
     template<class... T>                                                \
@@ -112,6 +94,26 @@ public:
         reql_t operator !();
         reql_t do_(pb::dummy_var_t arg, const reql_t &body);
 
+    private:
+        friend class minidriver_t;
+        reql_t(minidriver_t *_r, const raw_term_t *term_);
+        reql_t(minidriver_t *_r, raw_term_t *&&term_);
+        reql_t(minidriver_t *_r, const double val);
+        reql_t(minidriver_t *_r, const std::string &val);
+        reql_t(minidriver_t *_r, const datum_t &d);
+        reql_t(minidriver_t *_r, std::vector<reql_t> &&val);
+        reql_t(minidriver_t *_r, pb::dummy_var_t var);
+
+        reql_t(reql_t &&other);
+        reql_t &operator= (reql_t &&other);
+
+        template <class... T>
+        reql_t(minidriver_t *_r, Term_TermType type, T &&... args) :
+                raw_term_(r->new_term(type)) {
+            // TODO: set datum value if datum - or disallow datum terms in this constructor
+            add_args(std::forward<T>(args)...);
+        }
+
         template <class... T>
         void add_args(T &&... args) {
             UNUSED int _[] = { (add_arg(std::forward<T>(args)), 1)... };
@@ -119,11 +121,10 @@ public:
 
         template<class T>
         void add_arg(T &&a) {
-            reql_t new_term(std::forward<T>(a));
-            term->args->push_back(new_term.term);
+            reql_t new_term(r, std::forward<T>(a));
+            raw_term_->args_.push_back(new_term.raw_term_);
         }
 
-    private:
         raw_term_t *raw_term_;
         minidriver_t *r;
     };
@@ -134,7 +135,7 @@ public:
 
     template <class T>
     reql_t expr(T &&d) {
-        return reql_t(std::forward<T>(d));
+        return reql_t(this, std::forward<T>(d));
     }
 
     reql_t boolean(bool b);
@@ -181,7 +182,11 @@ public:
 private:
     friend class reql_t;
     raw_term_t *new_term(Term::TermType type);
-    raw_term_t *new_ref(const raw_term_t *source);
+
+    // We may need to make a reference to this object if it is already in use
+    // by a different term - we wouldn't want to overwrite its optarg name or
+    // intrusive list pointers.
+    raw_term_t *maybe_ref(const raw_term_t *source);
 
     term_storage_t *term_storage;
     backtrace_id_t default_backtrace;
@@ -192,14 +197,9 @@ private:
 template <>
 inline void minidriver_t::reql_t::add_arg(
         std::pair<std::string, minidriver_t::reql_t> &&optarg) {
-    raw_term_t *optarg_term = optarg.second.term;
-    if (optarg_term->in_a_list()) {
-        // We need to make a reference to this object - it is already in use
-        // by a different term and we wouldn't want to overwrite its optarg name.
-        optarg_term = r->new_ref(optarg_term);
-    }
-    optarg_term->name = optarg.first;
-    term->optargs->push_back(optarg_term);
+    raw_term_t *optarg_term = r->maybe_ref(optarg.second.raw_term_);
+    optarg_term->name = datum_string_t(optarg.first);
+    raw_term_->optargs_.push_back(optarg_term);
 }
 
 }  // namespace ql

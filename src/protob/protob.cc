@@ -151,7 +151,7 @@ class json_protocol_t {
 public:
     static scoped_ptr_t<ql::query_params_t> parse_query(tcp_conn_t *conn,
                                                         signal_t *interruptor,
-                                                        query_cache_t *query_cache,
+                                                        ql::query_cache_t *query_cache,
                                                         query_handler_t *handler) {
         int64_t token;
         uint32_t size;
@@ -459,7 +459,7 @@ void query_server_t::connection_loop(tcp_conn_t *conn,
     //
     // A ql::query_id_t is used to provide an absolute ordering of queries, and is
     // necessary for proper NOREPLY_WAIT semantics.
-    typedef std::list<ql::query_params_t> nascent_query_list_t;
+    typedef std::list<scoped_ptr_t<ql::query_params_t> > nascent_query_list_t;
     nascent_query_list_t query_list;
 
 
@@ -467,7 +467,7 @@ void query_server_t::connection_loop(tcp_conn_t *conn,
         [&](nascent_query_list_t::iterator query_it,
             signal_t *pool_interruptor) {
 
-            scoped_ptr_t<query_params_t> q(std::move(*query_it));
+            scoped_ptr_t<ql::query_params_t> q(std::move(*query_it));
             query_list.erase(query_it);
             wait_any_t cb_interruptor(pool_interruptor, &interruptor);
             Response response;
@@ -476,7 +476,7 @@ void query_server_t::connection_loop(tcp_conn_t *conn,
             save_exception(&err, &err_str, &abort, [&]() {
                     handler->run_query(q.get(), &response, &cb_interruptor);
                     if (!q->noreply) {
-                        response.set_token(query_pb->token());
+                        response.set_token(q->token);
                         new_mutex_acq_t send_lock(&send_mutex, &cb_interruptor);
                         protocol_t::send_response(response, handler,
                                                   conn, &cb_interruptor);
@@ -488,7 +488,7 @@ void query_server_t::connection_loop(tcp_conn_t *conn,
                 save_exception(&err, &err_str, &abort, [&]() {
                         make_error_response(drain_signal->is_pulsed(), *conn,
                                             err_str, &response);
-                        response.set_token(query_pb->token());
+                        response.set_token(q->token);
                         new_mutex_acq_t send_lock(&send_mutex, drain_signal);
                         protocol_t::send_response(response, handler, conn, drain_signal);
                     });
@@ -504,7 +504,7 @@ void query_server_t::connection_loop(tcp_conn_t *conn,
 
         while (!err) {
             save_exception(&err, &err_str, &abort, [&]() {
-                    scoped_ptr_t<query_params_t> q =
+                    scoped_ptr_t<ql::query_params_t> q =
                         protocol_t::parse_query(conn, &interruptor, query_cache, handler);
                     if (q.has()) {
                         query_list.push_front(std::move(q));
@@ -524,7 +524,7 @@ void query_server_t::connection_loop(tcp_conn_t *conn,
             save_exception(&err, &err_str, &abort, [&]() {
                     make_error_response(drain_signal->is_pulsed(), *conn,
                                         err_str, &response);
-                    response.set_token(pair.second->token());
+                    response.set_token(q->token);
                     new_mutex_acq_t send_lock(&send_mutex, drain_signal);
                     protocol_t::send_response(response, handler, conn, drain_signal);
                 });
@@ -568,7 +568,6 @@ void query_server_t::handle(const http_req_t &req,
         return;
     }
 
-    ql::protob_t<Query> query(ql::make_counted_query());
     Response response;
     int64_t token;
 
@@ -579,12 +578,12 @@ void query_server_t::handle(const http_req_t &req,
     }
 
     // Parse the token out from the start of the request
-    char *data = req.body.c_str();
-    token = *reinterpret_cast<const int64_t *>(data);
-    data += sizeof(token);
+    scoped_array_t<char> data(req.body.size() + 1); // RSI (grey): avoid this copy?
+    memcpy(data.data(), req.body.c_str(), req.body.size() + 1);
+    token = *reinterpret_cast<const int64_t *>(data.data());
 
     rapidjson::Document query_json;
-    query_json.ParseInsitu(data);
+    query_json.ParseInsitu(data.data() + sizeof(token));
 
     if (query_json.HasParseError()) {
         ql::fill_error(&response, Response::CLIENT_ERROR,
@@ -597,10 +596,10 @@ void query_server_t::handle(const http_req_t &req,
                            "This HTTP connection is not open.",
                            ql::backtrace_registry_t::EMPTY_BACKTRACE);
         } else {
-            query_params_t q(token, conn->get_query_cache(), std::move(query_json));
+            ql::query_params_t q(token, conn->get_query_cache(), std::move(query_json));
             // Check for noreply, which we don't support here, as it causes
             // problems with interruption
-            if (q->noreply) {
+            if (q.noreply) {
                 *result = http_res_t(http_status_code_t::BAD_REQUEST,
                                      "application/text",
                                      "noreply queries are not supported over HTTP\n");

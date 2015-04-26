@@ -115,14 +115,12 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(
                        backtrace_registry_t::EMPTY_BACKTRACE);
     }
 
-    scoped_ptr_t<entry_t> entry(new entry_t(original_query,
-                                            std::move(bt_reg),
-                                            std::move(global_optargs),
+    scoped_ptr_t<entry_t> entry(new entry_t(query_params,
+                                            std::move(term_storage),
                                             std::move(root_term)));
     scoped_ptr_t<ref_t> ref(new ref_t(this,
                                       query_params.token,
                                       entry.get(),
-                                      use_json,
                                       interruptor));
     auto insert_res = queries.insert(std::make_pair(query_params.token, std::move(entry)));
     guarantee(insert_res.second);
@@ -142,7 +140,6 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::get(
     return scoped_ptr_t<ref_t>(new ref_t(this,
                                          query_params.token,
                                          it->second.get(),
-                                         use_json,
                                          interruptor));
 }
 
@@ -245,7 +242,7 @@ void query_cache_t::ref_t::fill_response(Response *res) {
         }
 
         if (trace.has()) {
-            trace->as_datum().write_to_protobuf(res->mutable_profile(), use_json);
+            trace->as_datum().write_to_protobuf(res->mutable_profile());
         }
     } catch (const interrupted_exc_t &ex) {
         if (entry->persistent_interruptor.is_pulsed()) {
@@ -281,20 +278,20 @@ void query_cache_t::ref_t::run(env_t *env, Response *res) {
     scoped_ptr_t<val_t> val = entry->root_term->eval(&scope_env);
     if (val->get_type().is_convertible(val_t::type_t::DATUM)) {
         res->set_type(Response::SUCCESS_ATOM);
-        val->as_datum().write_to_protobuf(res->add_response(), use_json);
+        val->as_datum().write_to_protobuf(res->add_response());
     } else if (counted_t<grouped_data_t> gd =
             val->maybe_as_promiscuous_grouped_data(scope_env.env)) {
         datum_t d = to_datum_for_client_serialization(std::move(*gd),
                                                       env->reql_version(),
                                                       env->limits());
         res->set_type(Response::SUCCESS_ATOM);
-        d.write_to_protobuf(res->add_response(), use_json);
+        d.write_to_protobuf(res->add_response());
     } else if (val->get_type().is_convertible(val_t::type_t::SEQUENCE)) {
         counted_t<datum_stream_t> seq = val->as_seq(env);
         const datum_t arr = seq->as_array(env);
         if (arr.has()) {
             res->set_type(Response::SUCCESS_ATOM);
-            arr.write_to_protobuf(res->add_response(), use_json);
+            arr.write_to_protobuf(res->add_response());
         } else {
             entry->stream = seq;
             entry->has_sent_batch = false;
@@ -318,7 +315,7 @@ void query_cache_t::ref_t::serve(env_t *env, Response *res) {
             env, batchspec_t::user(batch_type, env));
     entry->has_sent_batch = true;
     for (auto d = ds.begin(); d != ds.end(); ++d) {
-        d->write_to_protobuf(res->add_response(), use_json);
+        d->write_to_protobuf(res->add_response());
     }
 
     // Note that `SUCCESS_SEQUENCE` is possible for feeds if you call `.limit`

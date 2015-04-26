@@ -17,7 +17,7 @@ class walker_frame_t : public intrusive_list_node_t<walker_frame_t> {
 public:
     walker_frame_t(intrusive_list_t<walker_frame_t> *_parent_list,
                    bool is_zeroth_argument,
-                   const raw_term_t *term,
+                   const raw_term_t *_term,
                    const walker_frame_t *_prev_frame) :
         writes_legal(true),
         term(_term),
@@ -73,7 +73,7 @@ public:
     // * Writes are legal in all other cases.
     bool writes_legal;
     const raw_term_t *term;
-    const intrusive_list_t<walker_frame_t> *parent_list;
+    intrusive_list_t<walker_frame_t> * const parent_list;
     const walker_frame_t *prev_frame;
 };
 

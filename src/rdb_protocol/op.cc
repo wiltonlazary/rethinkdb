@@ -66,7 +66,7 @@ private:
 
 class arg_terms_t : public bt_rcheckable_t {
 public:
-    arg_terms_t(const protob_t<const Term> _src, argspec_t _argspec,
+    arg_terms_t(const raw_term_t *_src, argspec_t _argspec,
                 std::vector<counted_t<const term_t> > _original_args);
     // Evals the r.args arguments, and returns the expanded argument list.
     argvec_t start_eval(scope_env_t *env, eval_flags_t flags) const;
@@ -75,16 +75,16 @@ public:
         return original_args;
     }
 private:
-    const protob_t<const Term> src;
+    const raw_term_t *src;
     const argspec_t argspec;
     const std::vector<counted_t<const term_t> > original_args;
 
     DISABLE_COPYING(arg_terms_t);
 };
 
-arg_terms_t::arg_terms_t(const protob_t<const Term> _src, argspec_t _argspec,
+arg_terms_t::arg_terms_t(const raw_term_t *_src, argspec_t _argspec,
                          std::vector<counted_t<const term_t> > _original_args)
-    : bt_rcheckable_t(backtrace_id_t(_src.get())),
+    : bt_rcheckable_t(_src->bt),
       src(std::move(_src)),
       argspec(std::move(_argspec)),
       original_args(std::move(_original_args)) {
@@ -162,7 +162,7 @@ args_t::args_t(const op_term_t *_op_term,
     : op_term(_op_term), argv(std::move(_argv)), arg0(std::move(_arg0)) { }
 
 
-op_term_t::op_term_t(compile_env_t *env, const protob_t<const Term> term,
+op_term_t::op_term_t(compile_env_t *env, const raw_term_t *term,
                      argspec_t argspec, optargspec_t optargspec)
         : term_t(term) {
     std::vector<counted_t<const term_t> > original_args;
@@ -174,17 +174,16 @@ op_term_t::op_term_t(compile_env_t *env, const protob_t<const Term> term,
     }
     arg_terms.init(new arg_terms_t(term, std::move(argspec), std::move(original_args)));
 
-    for (int i = 0; i < term->optargs_size(); ++i) {
-        const Term_AssocPair *ap = &term->optargs(i);
-        rcheck_src(backtrace_id_t(&ap->val()), optargspec.contains(ap->key()),
+    auto it = term->optargs();
+    for (raw_term_t *optarg = it.next(); optarg != nullptr; optarg = it.next()) {
+        rcheck_src(optarg->bt, optargspec.contains(optarg->name),
                    base_exc_t::GENERIC, strprintf("Unrecognized optional argument `%s`.",
-                                                  ap->key().c_str()));
-        counted_t<const term_t> t =
-            compile_term(env, term.make_child(&ap->val()));
-        auto res = optargs.insert(std::make_pair(ap->key(), std::move(t)));
-        rcheck_src(backtrace_id_t(&ap->val()), res.second,
+                                                  optarg->name));
+        counted_t<const term_t> t = compile_term(env, optarg);
+        auto res = optargs.insert(std::make_pair(optarg->name, std::move(t)));
+        rcheck_src(optarg->bt, res.second,
                    base_exc_t::GENERIC, strprintf("Duplicate optional argument: %s",
-                                                  ap->key().c_str()));
+                                                  optarg->name));
     }
 }
 op_term_t::~op_term_t() { }
@@ -236,8 +235,8 @@ scoped_ptr_t<val_t> op_term_t::optarg(scope_env_t *env, const std::string &key) 
 counted_t<func_term_t> op_term_t::lazy_literal_optarg(compile_env_t *env, const std::string &key) const {
     std::map<std::string, counted_t<const term_t> >::const_iterator it = optargs.find(key);
     if (it != optargs.end()) {
-        protob_t<Term> func(make_counted_term());
-        r::fun(r::expr(*it->second->get_src().get())).swap(*func.get());
+        minidriver_t r(env->term_storage, it->second->backtrace());
+        raw_term_t * func = r.fun(r.expr(it->second->get_src())).raw_term();
         return make_counted<func_term_t>(env, func);
     }
     return counted_t<func_term_t>();
@@ -306,7 +305,7 @@ void op_term_t::maybe_grouped_data(scope_env_t *env,
     }
 }
 
-bounded_op_term_t::bounded_op_term_t(compile_env_t *env, protob_t<const Term> term,
+bounded_op_term_t::bounded_op_term_t(compile_env_t *env, const raw_term_t *term,
                                      argspec_t argspec, optargspec_t optargspec)
     : op_term_t(env, term, argspec,
                 optargspec.with({"left_bound", "right_bound"})) { }

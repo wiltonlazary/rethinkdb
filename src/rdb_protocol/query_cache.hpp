@@ -23,8 +23,8 @@
 #include "rdb_protocol/backtrace.hpp"
 #include "rdb_protocol/error.hpp"
 #include "rdb_protocol/ql2.pb.h"
-#include "rdb_protocol/term.hpp"
 #include "rdb_protocol/query.hpp"
+#include "rdb_protocol/term.hpp"
 
 namespace ql {
 class env_t;
@@ -92,20 +92,17 @@ public:
                       signal_t *interruptor);
 
 private:
-    struct entry_t {
-        entry_t(query_t _original_query,
-                backtrace_registry_t &&_bt_reg,
-                std::map<std::string, wire_func_t> &&_global_optargs,
+    class entry_t {
+    public:
+        entry_t(const query_params_t &params,
+                term_storage_t &&_original_query,
                 counted_t<const term_t> _root_term);
         ~entry_t();
 
         enum class state_t { START, STREAM, DONE, DELETING } state;
 
         const uuid_u job_id;
-        const query_t original_query;
-        const backtrace_registry_t bt_reg;
-        const std::map<std::string, wire_func_t> global_optargs;
-        const profile_bool_t profile;
+        const term_storage_t original_query;
         const microtime_t start_time;
 
         cond_t persistent_interruptor;
@@ -138,7 +135,7 @@ private:
     // Used for noreply waiting, this contains all allocated-but-incomplete query ids
     friend class query_id_t;
     uint64_t next_query_id;
-    intrusive_list_t<query_id_t> outstanding_query_ids;
+    intrusive_list_t<query_params_t::query_id_t> outstanding_query_ids;
     watchable_variable_t<uint64_t> oldest_outstanding_query_id;
 
     DISABLE_COPYING(query_cache_t);

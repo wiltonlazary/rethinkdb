@@ -38,26 +38,6 @@ void check_term_size(const rapidjson::Value &v, backtrace_id_t bt) {
     }
 }
 
-
-bool query_params_t::static_optarg_as_bool(const std::string &key, bool default_value) {
-    guarantee(global_optargs_json != nullptr);
-    auto it = global_optargs_json->FindMember(key.c_str());
-    if (it == global_optargs_json->MemberEnd() ||
-        !it->IsArray() || it->Size() != 2 ||
-        !(*it)[0].IsNumber() || (*it)[0].AsInt() != Term::DATUM) {
-        return default_value;
-    }
-
-    datum_t res = to_datum((*it)[1],
-                           configured_limits_t::unlimited(),
-                           reql_version_t::LATEST);
-
-    if (res.has() && res.get_type() == datum_t::type_t::R_BOOL) {
-        return res.as_bool();
-    }
-    return default_value;
-}
-
 query_params_t::query_params_t(int64_t _token,
                                ql::query_cache_t *_query_cache,
                                rapidjson::Document &&query_json) :
@@ -112,6 +92,32 @@ query_params_t::query_params_t(int64_t _token,
         noreply = static_optarg_as_bool("noreply", noreply);
         profile = static_optarg_as_bool("profile", profile);
     }
+
+    // If the query wants a reply, we can release the query id, which is
+    // only used for tracking the ordering of noreply queries for the
+    // purpose of noreply_wait.
+    if (!noreply) {
+        query_id_t destroyer(std::move(id));
+    }
+}
+
+bool query_params_t::static_optarg_as_bool(const std::string &key, bool default_value) {
+    guarantee(global_optargs_json != nullptr);
+    auto it = global_optargs_json->FindMember(key.c_str());
+    if (it == global_optargs_json->MemberEnd() ||
+        !it->IsArray() || it->Size() != 2 ||
+        !(*it)[0].IsNumber() || (*it)[0].AsInt() != Term::DATUM) {
+        return default_value;
+    }
+
+    datum_t res = to_datum((*it)[1],
+                           configured_limits_t::unlimited(),
+                           reql_version_t::LATEST);
+
+    if (res.has() && res.get_type() == datum_t::type_t::R_BOOL) {
+        return res.as_bool();
+    }
+    return default_value;
 }
 
 raw_term_iterator_t::raw_term_iterator_t(const intrusive_list_t<raw_term_t> *_list) :
