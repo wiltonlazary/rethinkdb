@@ -139,44 +139,43 @@ void js_func_t::visit(func_visitor_t *visitor) const {
     visitor->on_js_func(this);
 }
 
-func_term_t::func_term_t(compile_env_t *env, const protob_t<const Term> &t)
+func_term_t::func_term_t(compile_env_t *env, const raw_term_t *t)
         : term_t(t) {
-    r_sanity_check(t.has());
-    r_sanity_check(t->type() == Term_TermType_FUNC);
-    rcheck(t->optargs_size() == 0,
+    r_sanity_check(t != nullptr);
+    r_sanity_check(t->type() == Term::FUNC);
+    rcheck(t->num_optargs() == 0,
            base_exc_t::GENERIC,
            "FUNC takes no optional arguments.");
-    rcheck(t->args_size() == 2,
+    rcheck(t->num_args() == 2,
            base_exc_t::GENERIC,
-           strprintf("Func takes exactly two arguments (got %d)", t->args_size()));
+           strprintf("FUNC takes exactly two arguments (got %d)", t->num_args()));
+
+    auto it = t->args();
+    const raw_term_t *vars = it.next();
+    const raw_term_t *raw_body = it.next();
 
     std::vector<sym_t> args;
-    const Term *vars = &t->args(0);
-    if (vars->type() == Term_TermType_DATUM) {
-        const Datum *d = &vars->datum();
-        rcheck(d->type() == Datum_DatumType_R_ARRAY,
+    if (vars->type == Term::DATUM) {
+        rcheck(vars->value.get_type() == datum_t::type_t::R_ARRAY,
                base_exc_t::GENERIC,
                "CLIENT ERROR: FUNC variables must be a literal *array* of numbers.");
-        for (int i = 0; i < d->r_array_size(); ++i) {
-            const Datum *dnum = &d->r_array(i);
-            rcheck(dnum->type() == Datum_DatumType_R_NUM,
+        for (size_t i = 0; i < vars->value.arr_size(); ++i) {
+            datum_t dnum = vars->value.get(i);
+            rcheck(dnum.get_type() == datum_t::type_t::R_NUM,
                    base_exc_t::GENERIC,
                    "CLIENT ERROR: FUNC variables must be a literal array of *numbers*.");
-            // this is fucking retarded
-            args.push_back(sym_t(dnum->r_num()));
+            args.push_back(sym_t(dnum->as_num()));
         }
-    } else if (vars->type() == Term_TermType_MAKE_ARRAY) {
-        for (int i = 0; i < vars->args_size(); ++i) {
-            const Term *arg = &vars->args(i);
-            rcheck(arg->type() == Term_TermType_DATUM,
+    } else if (vars->type() == Term::MAKE_ARRAY) {
+        auto vars_it = vars->args();
+        for (const raw_term_t *arg = it.next(); arg != nullptr, arg = it.next()) {
+            rcheck(arg->type == Term::DATUM,
                    base_exc_t::GENERIC,
                    "CLIENT ERROR: FUNC variables must be a *literal* array of numbers.");
-            const Datum *dnum = &arg->datum();
-            rcheck(dnum->type() == Datum_DatumType_R_NUM,
+            rcheck(arg->value.get_type() == datum_t::type_t::R_NUM,
                    base_exc_t::GENERIC,
                    "CLIENT ERROR: FUNC variables must be a literal array of *numbers*.");
-            // this is fucking retarded
-            args.push_back(sym_t(dnum->r_num()));
+            args.push_back(sym_t(arg->value.as_num()));
         }
     } else {
         rfail(base_exc_t::GENERIC,
@@ -184,11 +183,9 @@ func_term_t::func_term_t(compile_env_t *env, const protob_t<const Term> &t)
     }
 
     var_visibility_t varname_visibility = env->visibility.with_func_arg_name_list(args);
+    compile_env_t body_env(std::move(varname_visibility), env->term_storage);
 
-    compile_env_t body_env(std::move(varname_visibility));
-
-    protob_t<const Term> body_source = t.make_child(&t->args(1));
-    counted_t<const term_t> compiled_body = compile_term(&body_env, body_source);
+    counted_t<const term_t> compiled_body = compile_term(&body_env, raw_body);
     r_sanity_check(compiled_body.has());
 
     var_captures_t captures;

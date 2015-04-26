@@ -89,7 +89,7 @@ arg_terms_t::arg_terms_t(const raw_term_t *_src, argspec_t _argspec,
       argspec(std::move(_argspec)),
       original_args(std::move(_original_args)) {
     for (auto it = original_args.begin(); it != original_args.end(); ++it) {
-        if ((*it)->get_src()->type() == Term::ARGS) {
+        if ((*it)->get_src()->type == Term::ARGS) {
             return;
         }
     }
@@ -106,7 +106,7 @@ argvec_t arg_terms_t::start_eval(scope_env_t *env, eval_flags_t flags) const {
         flags | argspec.get_eval_flags());
     std::vector<counted_t<const runtime_term_t> > args;
     for (auto it = original_args.begin(); it != original_args.end(); ++it) {
-        if ((*it)->get_src()->type() == Term::ARGS) {
+        if ((*it)->get_src()->type == Term::ARGS) {
             scoped_ptr_t<val_t> v = (*it)->eval(env, new_flags);
             datum_t d = v->as_datum();
             for (size_t i = 0; i < d.arr_size(); ++i) {
@@ -236,7 +236,7 @@ counted_t<func_term_t> op_term_t::lazy_literal_optarg(compile_env_t *env, const 
     std::map<std::string, counted_t<const term_t> >::const_iterator it = optargs.find(key);
     if (it != optargs.end()) {
         minidriver_t r(env->term_storage, it->second->backtrace());
-        raw_term_t * func = r.fun(r.expr(it->second->get_src())).raw_term();
+        const raw_term_t * func = r.fun(r.expr(it->second->get_src())).raw_term();
         return make_counted<func_term_t>(env, func);
     }
     return counted_t<func_term_t>();

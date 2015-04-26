@@ -12,6 +12,7 @@
 #include "rdb_protocol/datum.hpp"
 #include "rdb_protocol/error.hpp"
 #include "rdb_protocol/ql2.pb.h"
+#include "rdb_protocol/wire_func.hpp"
 
 namespace ql {
 
@@ -90,7 +91,7 @@ public:
     // Parse a query from a rapidjson value and attach backtraces
     const raw_term_t *add_term_tree(const rapidjson::Value &v);
     void add_global_optargs(const rapidjson::Value &v);
-    void add_global_optarg(const std::string &key, const rapidjson::Value &v);
+    void add_global_optarg(const char *key, const rapidjson::Value &v);
 
     const raw_term_t *root_term() const {
         r_sanity_check(terms.size() > 0, "No root term has been created.");
@@ -99,6 +100,10 @@ public:
 
     const std::map<std::string, wire_func_t> &global_optargs() const {
         return global_optargs_;
+    }
+
+    const backtrace_registry_t &bt_reg() const {
+        return backtrace_registry;
     }
 
 private:
@@ -111,7 +116,7 @@ private:
 
     datum_t get_time();
 
-    raw_term_t *new_term(int type, backtrace_id_t bt);
+    raw_term_t *new_term(Term::TermType type, backtrace_id_t bt);
 
     void add_args(const rapidjson::Value &args,
                   intrusive_list_t<raw_term_t> *args_out,
@@ -126,6 +131,9 @@ private:
     raw_term_t *parse_internal(const rapidjson::Value &v,
                                backtrace_registry_t *bt_reg,
                                backtrace_id_t bt);
+
+    void add_global_optarg_internal(const char *key,
+                                    const raw_term_t *term);
 };
 
 } // namespace ql

@@ -7,6 +7,7 @@
 #include "rdb_protocol/pseudo_time.hpp"
 #include "rdb_protocol/ql2.pb.h"
 #include "rdb_protocol/ql2_extensions.pb.h"
+#include "rdb_protocol/query.hpp"
 
 namespace ql {
 
@@ -39,14 +40,14 @@ public:
     // TODO: we should make these checks for minidriver term trees
     void walk() {
         if (term->type == Term::ASC || term->type == Term::DESC) {
-            rcheck_src(term->backtrace,
+            rcheck_src(term->bt,
                 prev_frame == nullptr || prev_frame->term->type != Term::ORDER_BY,
                 base_exc_t::GENERIC,
                 strprintf("%s may only be used as an argument to ORDER_BY.",
                           (term->type == Term::ASC ? "ASC" : "DESC")));
         }
 
-        rcheck_src(term->backtrace,
+        rcheck_src(term->bt,
             !term_is_write_or_meta(term->type) || writes_legal,
             base_exc_t::GENERIC,
             strprintf("Cannot nest writes or meta ops in stream operations.  Use "
@@ -59,8 +60,9 @@ public:
         }
 
         auto optarg_it = term->optargs();
-        for (int i = 0; i < term->num_optargs(); ++i) {
-            walker_frame_t child_frame(parent_list, false, optarg_it.next(), this);
+        for (const raw_term_t *optarg = optarg_it.next();
+             optarg != nullptr; optarg = optarg_it.next()) {
+            walker_frame_t child_frame(parent_list, false, optarg, this);
             child_frame.walk();
         }
     }

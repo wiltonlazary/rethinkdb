@@ -28,6 +28,10 @@
 // Unlike the late DBLPRI, this lacks a percent sign.
 #define PR_RECONSTRUCTABLE_DOUBLE ".20g"
 
+namespace rapidjson {
+class Value;
+} // namespace rapidjson
+
 class Datum;
 
 RDB_DECLARE_SERIALIZABLE(Datum);
@@ -203,7 +207,7 @@ public:
     bool has() const;
     void reset();
 
-    void write_to_protobuf(Datum *out, use_json_t use_json) const;
+    void write_to_protobuf(Datum *out) const;
 
     type_t get_type() const;
     bool is_ptype() const;
@@ -467,6 +471,8 @@ private:
 
 datum_t to_datum(const Datum *d, const configured_limits_t &, reql_version_t);
 datum_t to_datum(cJSON *json, const configured_limits_t &, reql_version_t);
+
+datum_t to_datum(const rapidjson::Value &v, const configured_limits_t &, reql_version_t);
 
 // This should only be used to send responses to the client.
 datum_t to_datum_for_client_serialization(grouped_data_t &&gd,

@@ -3,9 +3,9 @@
 
 namespace ql {
 
-class term_storage_t;
+class raw_term_t;
 
-void preprocess_term(term_storage_t *root);
+void validate_term_tree(const raw_term_t *root);
 
 } // namespace ql
 

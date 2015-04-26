@@ -8,51 +8,6 @@
 
 namespace ql {
 
-query_id_t::query_id_t(query_id_t &&other) :
-        intrusive_list_node_t(std::move(other)),
-        parent(other.parent),
-        value_(other.value_) {
-    parent->assert_thread();
-    other.parent = NULL;
-}
-
-query_id_t::query_id_t(query_cache_t *_parent) :
-        parent(_parent),
-        value_(parent->next_query_id++) {
-    // Guarantee correct ordering.
-    query_id_t *last_newest = parent->outstanding_query_ids.tail();
-    guarantee(last_newest == nullptr || last_newest->value() < value_);
-    guarantee(value_ >= parent->oldest_outstanding_query_id.get());
-
-    parent->outstanding_query_ids.push_back(this);
-}
-
-query_id_t::~query_id_t() {
-    if (parent != nullptr) {
-        parent->assert_thread();
-    } else {
-        rassert(!in_a_list());
-    }
-
-    if (in_a_list()) {
-        parent->outstanding_query_ids.remove(this);
-        if (value_ == parent->oldest_outstanding_query_id.get()) {
-            query_id_t *next_outstanding_id = parent->outstanding_query_ids.head();
-            if (next_outstanding_id == nullptr) {
-                parent->oldest_outstanding_query_id.set_value(parent->next_query_id);
-            } else {
-                guarantee(next_outstanding_id->value() > value_);
-                parent->oldest_outstanding_query_id.set_value(next_outstanding_id->value());
-            }
-        }
-    }
-}
-
-uint64_t query_id_t::value() const {
-    guarantee(in_a_list());
-    return value_;
-}
-
 query_cache_t::query_cache_t(
             rdb_context_t *_rdb_ctx,
             ip_and_port_t _client_addr_port,
@@ -82,6 +37,7 @@ query_cache_t::const_iterator query_cache_t::end() const {
 scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(
         const query_params_t &query_params,
         signal_t *interruptor) {
+    guarantee(this == query_params.query_cache);
     if (queries.find(query_params.token) != queries.end()) {
         throw bt_exc_t(Response::CLIENT_ERROR,
             strprintf("ERROR: duplicate token %" PRIi64, query_params.token),
@@ -94,22 +50,19 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(
     }
 
     counted_t<const term_t> root_term;
-    std::map<std::string, wire_func_t> global_optargs;
     term_storage_t term_storage;
     try {
         term_storage.add_term_tree(*query_params.root_term_json);
         if (query_params.global_optargs_json != nullptr) {
             term_storage.add_global_optargs(*query_params.global_optargs_json);
         }
-        preprocess_term(
-        global_optargs = parse_global_optargs(original_query);
+        validate_term_tree(term_storage.root_term());
 
-        Term *t = original_query->mutable_query();
-        compile_env_t compile_env((var_visibility_t()));
-        root_term = compile_term(&compile_env, original_query.make_child(t));
+        compile_env_t compile_env((var_visibility_t()), &term_storage);
+        root_term = compile_term(&compile_env, term_storage.root_term());
     } catch (const exc_t &e) {
         throw bt_exc_t(Response::COMPILE_ERROR, e.what(),
-                       bt_reg.datum_backtrace(e));
+                       term_storage.bt_reg().datum_backtrace(e));
     } catch (const datum_exc_t &e) {
         throw bt_exc_t(Response::COMPILE_ERROR, e.what(),
                        backtrace_registry_t::EMPTY_BACKTRACE);
@@ -128,8 +81,9 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(
 }
 
 scoped_ptr_t<query_cache_t::ref_t> query_cache_t::get(
-        query_params_t &query_params,
+        const query_params_t &query_params,
         signal_t *interruptor) {
+    guarantee(this == query_params.query_cache);
     auto it = queries.find(query_params.token);
     if (it == queries.end()) {
         throw bt_exc_t(Response::CLIENT_ERROR,
@@ -143,9 +97,9 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::get(
                                          interruptor));
 }
 
-void query_cache_t::noreply_wait(const query_id_t &query_id,
-                                 const query_params_t &query_params,
+void query_cache_t::noreply_wait(const query_params_t &query_params,
                                  signal_t *interruptor) {
+    guarantee(this == query_params.query_cache);
     auto it = queries.find(query_params.token);
     if (it != queries.end()) {
         throw bt_exc_t(Response::CLIENT_ERROR,
@@ -154,12 +108,13 @@ void query_cache_t::noreply_wait(const query_id_t &query_id,
     }
 
     oldest_outstanding_query_id.get_watchable()->run_until_satisfied(
-        [&query_id](uint64_t oldest_id_value) -> bool {
-            return oldest_id_value == query_id.value();
+        [&query_params](uint64_t oldest_id_value) -> bool {
+            return oldest_id_value == query_params.id.value();
         }, interruptor);
 }
 
 void query_cache_t::terminate_query(const query_params_t &query_params) {
+    guarantee(this == query_params.query_cache);
     assert_thread();
     auto entry_it = queries.find(query_params.token);
     if (entry_it != queries.end()) {
@@ -229,7 +184,7 @@ void query_cache_t::ref_t::fill_response(Response *res) {
         env_t env(query_cache->rdb_ctx,
                   query_cache->return_empty_normal_batches,
                   &combined_interruptor,
-                  entry->global_optargs,
+                  entry->term_storage.global_optargs(),
                   trace.get_or_null());
 
         if (entry->state == entry_t::state_t::START) {
@@ -261,7 +216,7 @@ void query_cache_t::ref_t::fill_response(Response *res) {
     } catch (const exc_t &ex) {
         query_cache->terminate_internal(entry);
         throw bt_exc_t(Response::RUNTIME_ERROR, ex.what(),
-                       entry->bt_reg.datum_backtrace(ex));
+                       entry->term_storage.bt_reg().datum_backtrace(ex));
     } catch (const std::exception &ex) {
         query_cache->terminate_internal(entry);
         throw bt_exc_t(Response::RUNTIME_ERROR, ex.what(),
@@ -320,7 +275,7 @@ void query_cache_t::ref_t::serve(env_t *env, Response *res) {
 
     // Note that `SUCCESS_SEQUENCE` is possible for feeds if you call `.limit`
     // after the feed.
-    if (entry->stream->is_exhausted() || is_noreply(entry->original_query)) {
+    if (entry->stream->is_exhausted() || entry->noreply) {
         guarantee(entry->state == entry_t::state_t::STREAM);
         entry->state = entry_t::state_t::DONE;
         res->set_type(Response::SUCCESS_SEQUENCE);
@@ -359,8 +314,10 @@ query_cache_t::entry_t::entry_t(const query_params_t &query_params,
                                 counted_t<const term_t> _root_term) :
         state(state_t::START),
         job_id(generate_uuid()),
+        noreply(query_params.noreply),
+        profile(query_params.profile ? profile_bool_t::PROFILE :
+                                       profile_bool_t::DONT_PROFILE),
         term_storage(std::move(_term_storage)),
-        profile(query_params.profile),
         start_time(current_microtime()),
         root_term(_root_term),
         has_sent_batch(false) { }

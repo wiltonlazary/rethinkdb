@@ -99,12 +99,7 @@ private:
     // The argument names, for the corresponding positional argument number.
     std::vector<sym_t> arg_names;
 
-    struct term_storage_storage_t {
-        term_storage_t *get();
-
-        term_storage_t *ptr;
-        boost::optional<term_storage_t> storage;
-    };
+    // RSI (grey): term storage
 
     // The body of the function, which gets ->eval(...) called when call(...) is called.
     counted_t<const term_t> body;
@@ -157,24 +152,19 @@ protected:
 // function as their argument.
 
 counted_t<const func_t> new_constant_func(datum_t obj,
-                                          backtrace_id_t bt,
-                                          term_storage_t *term_storage);
+                                          backtrace_id_t bt);
 
 counted_t<const func_t> new_pluck_func(datum_t obj,
-                                       backtrace_id_t bt,
-                                       term_storage_t *term_storage);
+                                       backtrace_id_t bt);
 
 counted_t<const func_t> new_get_field_func(datum_t obj,
-                                           backtrace_id_t bt,
-                                           term_storage_t *term_storage);
+                                           backtrace_id_t bt);
 
 counted_t<const func_t> new_eq_comparison_func(datum_t obj,
-                                               backtrace_id_t bt,
-                                               term_storage_t *term_storage);
+                                               backtrace_id_t bt);
 
 counted_t<const func_t> new_page_func(datum_t method,
-                                      backtrace_id_t bt,
-                                      term_storage_t *term_storage);
+                                      backtrace_id_t bt);
 
 class js_result_visitor_t : public boost::static_visitor<val_t *> {
 public:
@@ -204,7 +194,7 @@ private:
 // Evaluating this returns a `func_t` wrapped in a `val_t`.
 class func_term_t : public term_t {
 public:
-    func_term_t(compile_env_t *env, const protob_t<const Term> &term);
+    func_term_t(compile_env_t *env, const raw_term_t *term);
 
     // eval(scope_env_t *env) is a dumb wrapper for this.  Evaluates the func_t without
     // going by way of val_t, and without requiring a full-blown env.

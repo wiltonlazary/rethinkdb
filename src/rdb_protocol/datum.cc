@@ -1755,60 +1755,9 @@ bool datum_t::key_is_truncated(const store_key_t &key) {
     }
 }
 
-void datum_t::write_to_protobuf(Datum *d, use_json_t use_json) const {
-    switch (use_json) {
-    case use_json_t::NO: {
-        switch (get_type()) {
-        case MINVAL: rfail_datum(base_exc_t::GENERIC, "Cannot convert `r.minval` to a protobuf.");
-        case MAXVAL: rfail_datum(base_exc_t::GENERIC, "Cannot convert `r.maxval` to a protobuf.");
-        case R_NULL: {
-            d->set_type(Datum::R_NULL);
-        } break;
-        case R_BINARY: {
-            pseudo::write_binary_to_protobuf(d, data.r_str);
-        } break;
-        case R_BOOL: {
-            d->set_type(Datum::R_BOOL);
-            d->set_r_bool(data.r_bool);
-        } break;
-        case R_NUM: {
-            d->set_type(Datum::R_NUM);
-            // so we can use `isfinite` in a GCC 4.4.3-compatible way
-            using namespace std;  // NOLINT(build/namespaces)
-            r_sanity_check(isfinite(data.r_num));
-            d->set_r_num(data.r_num);
-        } break;
-        case R_STR: {
-            d->set_type(Datum::R_STR);
-            d->set_r_str(data.r_str.data(), data.r_str.size());
-        } break;
-        case R_ARRAY: {
-            d->set_type(Datum::R_ARRAY);
-            const size_t sz = arr_size();
-            for (size_t i = 0; i < sz; ++i) {
-                get(i).write_to_protobuf(d->add_r_array(), use_json);
-            }
-        } break;
-        case R_OBJECT: {
-            d->set_type(Datum::R_OBJECT);
-            // We use the opposite order so that things print the way we expect.
-            for (size_t i = obj_size(); i > 0; --i) {
-                Datum_AssocPair *ap = d->add_r_object();
-                auto pair = get_pair(i-1);
-                ap->set_key(pair.first.data(), pair.first.size());
-                pair.second.write_to_protobuf(ap->mutable_val(), use_json);
-            }
-        } break;
-        case UNINITIALIZED: // fallthru
-        default: unreachable();
-        }
-    } break;
-    case use_json_t::YES: {
-        d->set_type(Datum::R_JSON);
-        d->set_r_str(as_json().PrintUnformatted());
-    } break;
-    default: unreachable();
-    }
+void datum_t::write_to_protobuf(Datum *d) const {
+    d->set_type(Datum::R_JSON);
+    d->set_r_str(as_json().PrintUnformatted());
 }
 
 // `key` is unused because this is passed to `datum_t::merge`, which takes a

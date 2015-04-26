@@ -75,34 +75,36 @@ public:
     const_iterator begin() const;
     const_iterator end() const;
 
-    // Interrupt a query by token
-    void terminate_query(query_params_t *query_params);
-
     // Helper function used by the jobs table
     ip_and_port_t get_client_addr_port() const { return client_addr_port; }
 
     // Methods to obtain a unique reference to a given entry in the cache
-    scoped_ptr_t<ref_t> create(query_params_t *query_params,
+    scoped_ptr_t<ref_t> create(const query_params_t &query_params,
                                signal_t *interruptor);
 
-    scoped_ptr_t<ref_t> get(query_params_t *query_params,
+    scoped_ptr_t<ref_t> get(const query_params_t &query_params,
                             signal_t *interruptor);
 
-    void noreply_wait(query_params_t *query_params,
+    void noreply_wait(const query_params_t &query_params,
                       signal_t *interruptor);
+
+    // Interrupt a query by token
+    void terminate_query(const query_params_t &query_params);
 
 private:
     class entry_t {
     public:
         entry_t(const query_params_t &params,
-                term_storage_t &&_original_query,
+                term_storage_t &&_term_storage,
                 counted_t<const term_t> _root_term);
         ~entry_t();
 
         enum class state_t { START, STREAM, DONE, DELETING } state;
 
         const uuid_u job_id;
-        const term_storage_t original_query;
+        const bool noreply;
+        const profile_bool_t profile;
+        const term_storage_t term_storage;
         const microtime_t start_time;
 
         cond_t persistent_interruptor;

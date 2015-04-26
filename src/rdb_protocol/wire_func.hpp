@@ -9,7 +9,6 @@
 
 #include "containers/uuid.hpp"
 #include "rdb_protocol/pb_utils.hpp"
-#include "rdb_protocol/query.hpp"
 #include "rdb_protocol/sym.hpp"
 #include "rdb_protocol/var_types.hpp"
 #include "rpc/serialize_macros.hpp"
@@ -17,6 +16,7 @@
 template <class> class counted_t;
 
 namespace ql {
+class raw_term_t;
 class func_t;
 class env_t;
 
