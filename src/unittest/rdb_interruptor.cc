@@ -7,7 +7,6 @@
 
 #include "protob/protob.hpp"
 #include "rdb_protocol/backtrace.hpp"
-#include "rdb_protocol/counted_term.hpp"
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/minidriver.hpp"
@@ -136,7 +135,7 @@ private:
 
 TEST(RDBInterrupt, InsertOp) {
     ql::term_storage_t term_storage;
-    ql::minidriver_context_t r(&term_storage, backtrace_id_t::empty());
+    ql::minidriver_t r(&term_storage, backtrace_id_t::empty());
     const ql::raw_term_t *insert_term = 
         r.db("db").table("table").insert(r.object(r.optarg("id", "key"),
                                                   r.optarg("value", "stuff"))).raw_term();
@@ -186,7 +185,7 @@ TEST(RDBInterrupt, GetOp) {
     initial_data.insert(std::move(row).to_datum());
 
     ql::term_storage_t term_storage;
-    ql::minidriver_context_t r(&term_storage, backtrace_id_t::empty());
+    ql::minidriver_t r(&term_storage, backtrace_id_t::empty());
     const ql::raw_term_t *get_term = 
         r.db("db").table("table").get_("key").raw_term();
 
@@ -221,7 +220,7 @@ TEST(RDBInterrupt, DeleteOp) {
     initial_data.insert(std::move(row).to_datum());
 
     ql::term_storage_t term_storage;
-    ql::minidriver_context_t r(&term_storage, backtrace_id_t::empty());
+    ql::minidriver_t r(&term_storage, backtrace_id_t::empty());
     const ql::raw_term_t *delete_term =
         r.db("db").table("table").get_("key").delete_().raw_term();
 

@@ -24,6 +24,7 @@
 #include "rdb_protocol/error.hpp"
 #include "rdb_protocol/ql2.pb.h"
 #include "rdb_protocol/term.hpp"
+#include "rdb_protocol/query.hpp"
 
 namespace ql {
 class env_t;
@@ -31,21 +32,7 @@ class env_t;
 
 namespace ql {
 
-// A query id, should be allocated when each query is received from the client
-// in order, so order can be checked for in queries that require it
-class query_id_t : public intrusive_list_node_t<query_id_t> {
-public:
-    explicit query_id_t(query_cache_t *parent);
-    query_id_t(query_id_t &&other);
-    ~query_id_t();
-
-    uint64_t value() const;
-
-private:
-    query_cache_t *parent;
-    uint64_t value_;
-    DISABLE_COPYING(query_id_t);
-};
+class query_cache_t;
 
 class query_cache_t : public home_thread_mixin_t {
     struct entry_t;
@@ -66,7 +53,6 @@ public:
         ref_t(query_cache_t *_query_cache,
               int64_t _token,
               query_cache_t::entry_t *_entry,
-              use_json_t _use_json,
               signal_t *interruptor);
 
         void run(env_t *env, Response *res); // Run a new query
@@ -75,7 +61,6 @@ public:
         query_cache_t::entry_t *const entry;
         const int64_t token;
         const scoped_ptr_t<profile::trace_t> trace;
-        const use_json_t use_json;
 
         query_cache_t *query_cache;
         auto_drainer_t::lock_t drainer_lock;
@@ -91,23 +76,19 @@ public:
     const_iterator end() const;
 
     // Interrupt a query by token
-    void terminate_query(int64_t token);
+    void terminate_query(query_params_t *query_params);
 
     // Helper function used by the jobs table
     ip_and_port_t get_client_addr_port() const { return client_addr_port; }
 
     // Methods to obtain a unique reference to a given entry in the cache
-    scoped_ptr_t<ref_t> create(int64_t token,
-                               query_t original_query,
-                               use_json_t use_json,
+    scoped_ptr_t<ref_t> create(query_params_t *query_params,
                                signal_t *interruptor);
 
-    scoped_ptr_t<ref_t> get(int64_t token,
-                            use_json_t use_json,
+    scoped_ptr_t<ref_t> get(query_params_t *query_params,
                             signal_t *interruptor);
 
-    void noreply_wait(const query_id_t &query_id,
-                      int64_t token,
+    void noreply_wait(query_params_t *query_params,
                       signal_t *interruptor);
 
 private:

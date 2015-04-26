@@ -19,7 +19,6 @@
 #include "containers/counted.hpp"
 #include "containers/scoped.hpp"
 #include "protocol_api.hpp"
-#include "rdb_protocol/counted_term.hpp"
 #include "rdb_protocol/datum.hpp"
 #include "rdb_protocol/shards.hpp"
 #include "region/region.hpp"

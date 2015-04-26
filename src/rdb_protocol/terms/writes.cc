@@ -254,7 +254,7 @@ private:
 
             if (f->is_deterministic()) {
                 // Attach a transformation to `ds` to pull out the primary key.
-                minidriver_context_t r(env->env->term_storage, backtrace());
+                minidriver_t r(env->env->term_storage, backtrace());
                 auto x = pb::dummy_var_t::REPLACE_HELPER_ROW;
                 const raw_term_t *map = r.fun(x, r::expr(x)[tbl->get_pkey()]).raw_term();
                 compile_env_t compile_env((var_visibility_t()), env->env->term_storage);

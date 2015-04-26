@@ -102,7 +102,7 @@ sindex_name_t create_sindex(store_t *store) {
 
     ql::sym_t one(1);
     ql::term_storage_t term_storage;
-    ql::minidriver_context_t r(&term_storage, ql::backtrace_id_t::empty());
+    ql::minidriver_t r(&term_storage, ql::backtrace_id_t::empty());
     const ql::raw_term_t *mapping = r.var(one)["sid"].raw_term();
     ql::map_wire_func_t m(mapping, make_vector(one), ql::backtrace_id_t::empty());
 

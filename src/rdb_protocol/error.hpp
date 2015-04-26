@@ -8,7 +8,7 @@
 #include "errors.hpp"
 
 #include "containers/archive/archive.hpp"
-#include "rdb_protocol/counted_term.hpp"
+#include "containers/scoped.hpp"
 #include "rdb_protocol/ql2.pb.h"
 #include "rdb_protocol/ql2_extensions.pb.h"
 #include "rpc/serialize_macros.hpp"

@@ -1,6 +1,5 @@
 #include "rdb_protocol/func.hpp"
 
-#include "rdb_protocol/counted_term.hpp"
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/minidriver.hpp"
 #include "rdb_protocol/pseudo_literal.hpp"
@@ -333,7 +332,7 @@ bool func_t::filter_call(env_t *env, datum_t arg, counted_t<const func_t> defaul
 
 counted_t<const func_t> new_constant_func(datum_t obj, backtrace_id_t bt,
                                           term_storage_t *term_storage) {
-    minidriver_context_t r(term_storage, bt);
+    minidriver_t r(term_storage, bt);
     const raw_term_t *twrap = r.fun(r.expr(obj)).raw_term();
 
     compile_env_t empty_compile_env((var_visibility_t()), term_storage);
@@ -344,7 +343,7 @@ counted_t<const func_t> new_constant_func(datum_t obj, backtrace_id_t bt,
 
 counted_t<const func_t> new_get_field_func(datum_t key, backtrace_id_t bt,
                                            term_storage_t *term_storage) {
-    minidriver_context_t r(term_storage, bt);
+    minidriver_t r(term_storage, bt);
     pb::dummy_var_t obj = pb::dummy_var_t::FUNC_GETFIELD;
     const raw_term_t *twrap = r::fun(obj, r.expr(obj)[key]).raw_term();
 
@@ -356,7 +355,7 @@ counted_t<const func_t> new_get_field_func(datum_t key, backtrace_id_t bt,
 
 counted_t<const func_t> new_pluck_func(datum_t obj, backtrace_id_t bt,
                                        term_storage_t *term_storage) {
-    minidriver_context_t r(term_storage, bt);
+    minidriver_t r(term_storage, bt);
     pb::dummy_var_t var = pb::dummy_var_t::FUNC_PLUCK;
     const raw_term_t *twrap = r.fun(var, r.expr(var).pluck(obj)).raw_term();
 
@@ -368,7 +367,7 @@ counted_t<const func_t> new_pluck_func(datum_t obj, backtrace_id_t bt,
 
 counted_t<const func_t> new_eq_comparison_func(datum_t obj, backtrace_id_t bt,
                                                term_storage_t *term_storage) {
-    minidriver_context_t r(term_storage, bt);
+    minidriver_t r(term_storage, bt);
     pb::dummy_var_t var = pb::dummy_var_t::FUNC_EQCOMPARISON;
     const raw_term_t *twrap = r.fun(var, r.expr(var) == obj).raw_term();
 
@@ -383,7 +382,7 @@ counted_t<const func_t> new_page_func(datum_t method, backtrace_id_t bt,
     if (method.get_type() != datum_t::R_NULL) {
         std::string name = method.as_str().to_std();
         if (name == "link-next") {
-            minidriver_context_t r(term_storage, bt);
+            minidriver_t r(term_storage, bt);
             pb::dummy_var_t info = pb::dummy_var_t::FUNC_PAGE;
             const raw_term_t *twrap =
                 r.fun(info,

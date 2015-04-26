@@ -8,15 +8,13 @@
 #include <vector>
 
 #include "containers/uuid.hpp"
-#include "rdb_protocol/counted_term.hpp"
 #include "rdb_protocol/pb_utils.hpp"
+#include "rdb_protocol/query.hpp"
 #include "rdb_protocol/sym.hpp"
 #include "rdb_protocol/var_types.hpp"
 #include "rpc/serialize_macros.hpp"
 
 template <class> class counted_t;
-class Datum;
-class Term;
 
 namespace ql {
 class func_t;
@@ -30,9 +28,9 @@ public:
     wire_func_t(const wire_func_t &copyee);
     wire_func_t &operator=(const wire_func_t &assignee);
 
-    // Constructs a wire_func_t with a body and arglist and backtrace, but no scope.  I
-    // hope you remembered to propagate the backtrace to body!
-    wire_func_t(protob_t<const Term> body, std::vector<sym_t> arg_names,
+    // Constructs a wire_func_t with a body and arglist and backtrace, but no scope.
+    wire_func_t(const raw_term_t *body,
+                std::vector<sym_t> arg_names,
                 backtrace_id_t backtrace);
 
     counted_t<const func_t> compile_wire_func() const;

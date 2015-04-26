@@ -6,7 +6,6 @@
 #include <utility>
 #include <algorithm>
 
-#include "rdb_protocol/counted_term.hpp"
 #include "rdb_protocol/datum.hpp"
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/pb_utils.hpp"
@@ -40,13 +39,13 @@
 
 namespace ql {
 
-class minidriver_context_t {
+class minidriver_t {
 public:
     /** reql_t
      *
      * A class that allows building raw_term_ts using the ReQL syntax. The
      * raw_term_ts will be added to the term_storage_t that the
-     * minidriver_context_t was instantiated with.  If the term is used as
+     * minidriver_t was instantiated with.  If the term is used as
      * an arg or optarg in multiple places, a reference will be added in
      * the term_storage_t rather than recursively copying the term.
      *
@@ -57,21 +56,20 @@ public:
         void copy_optargs_from_term(const raw_term_t *from);
         void copy_args_from_term(const raw_term_t *from, size_t start_index);
     private:
-        friend class minidriver_context_t;
-        reql_t(minidriver_context_t *_r, scoped_ptr_t<Term> &&term_);
-        reql_t(minidriver_context_t *_r, const double val);
-        reql_t(minidriver_context_t *_r, const std::string &val);
-        reql_t(minidriver_context_t *_r, const datum_t &d);
-        reql_t(minidriver_context_t *_r, std::vector<reql_t> &&val);
-        reql_t(minidriver_context_t *_r, pb::dummy_var_t var);
+        friend class minidriver_t;
+        reql_t(minidriver_t *_r, scoped_ptr_t<Term> &&term_);
+        reql_t(minidriver_t *_r, const double val);
+        reql_t(minidriver_t *_r, const std::string &val);
+        reql_t(minidriver_t *_r, const datum_t &d);
+        reql_t(minidriver_t *_r, std::vector<reql_t> &&val);
+        reql_t(minidriver_t *_r, pb::dummy_var_t var);
 
         reql_t(reql_t &&other);
         reql_t &operator= (reql_t &&other);
 
         template <class... T>
-        reql_t(minidriver_context_t *_r, Term_TermType type, T &&... args) :
-                : raw_term_(r->new_term()) {
-            raw_term_->type = type;
+        reql_t(minidriver_t *_r, Term_TermType type, T &&... args) :
+                raw_term_(r->new_term(type)) {
             // TODO: set datum value if datum - or disallow datum terms in this constructor
             add_args(std::forward<T>(args)...);
         }
@@ -127,11 +125,11 @@ public:
 
     private:
         raw_term_t *raw_term_;
-        minidriver_context_t *r;
+        minidriver_t *r;
     };
 
-    minidriver_context_t(term_storage_t *_term_storage,
-                         backtrace_id_t bt) :
+    minidriver_t(term_storage_t *_term_storage,
+                 backtrace_id_t bt) :
         term_storage(_term_storage), default_backtrace(bt) { }
 
     template <class T>
@@ -183,6 +181,7 @@ public:
 private:
     friend class reql_t;
     raw_term_t *new_term(Term::TermType type);
+    raw_term_t *new_ref(const raw_term_t *source);
 
     term_storage_t *term_storage;
     backtrace_id_t default_backtrace;
@@ -191,12 +190,13 @@ private:
 
 // This template-specialization of add_arg is actually adding an optarg
 template <>
-inline void reql_t::add_arg(std::pair<std::string, reql_t> &&optarg) {
+inline void minidriver_t::reql_t::add_arg(
+        std::pair<std::string, minidriver_t::reql_t> &&optarg) {
     raw_term_t *optarg_term = optarg.second.term;
     if (optarg_term->in_a_list()) {
         // We need to make a reference to this object - it is already in use
         // by a different term and we wouldn't want to overwrite its optarg name.
-        optarg_term = r->new_ref(term);
+        optarg_term = r->new_ref(optarg_term);
     }
     optarg_term->name = optarg.first;
     term->optargs->push_back(optarg_term);

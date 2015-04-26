@@ -1,101 +1,75 @@
 #ifndef RDB_PROTOCOL_QUERY_HPP_
 #define RDB_PROTOCOL_QUERY_HPP_
+
+#include <map>
+
+#include "rapidjson/rapidjson.h"
+
+#include "containers/intrusive_list.hpp"
+#include "containers/segmented_vector.hpp"
+
+#include "rdb_protocol/backtrace.hpp"
+#include "rdb_protocol/datum.hpp"
+#include "rdb_protocol/error.hpp"
+#include "rdb_protocol/ql2.pb.h"
+
+namespace ql {
+
+class query_cache_t;
+
 // TODO: change guarantees to sanity checks
-
-
-// Returns a reference to the JSON Value of the root term, which can
-// then be parsed into a raw_term_tree_t.
-const rapidjson::Value &parse_query_params(const rapidjson::Value &v,
-                                           query_params_t *params_out);
-
+// TODO: split term_storage_t out into its own file
 struct query_params_t {
 public:
-    query_params_t(int64_t _token, const rapidjson::Value &v) :
-            token(_token), root_term_json(nullptr), global_optargs_json(nullptr),
-            noreply(false), profile(profile_bool_t::DONT_PROFILE) {
-        if (!v.IsArray()) {
-            throw bt_exc_t();
-        }
-        if (v.Size() == 0 || v.Size() > 3) {
-            throw bt_exc_t();
-        }
-        if (!v[0].IsNumber()) {
-            throw bt_exc_t();
-        }
-        type = v[0].AsInt();
+    query_params_t(int64_t _token,
+                   ql::query_cache_t *_query_cache,
+                   rapidjson::Document &&query_json);
 
-        for (size_t i = 1; i < v.Size(); ++i) {
-            if (v[i].IsArray()) {
-                if (root_term_json != nullptr) {
-                    throw bt_exc_t();
-                }
-                root_term_json = &v[i];
-            } else if (v[i].IsObject()) {
-                if (global_optargs_json != nullptr) {
-                    throw bt_exc_t();
-                }
-                global_optargs_json = &v[i];
-            } else {
-                throw bt_exc_t();
-            }
-        }
+    // A query id is allocated when each query is received from the client
+    // in order, so order can be checked for in queries that require it
+    class query_id_t : public intrusive_list_node_t<query_id_t> {
+    public:
+        explicit query_id_t(query_cache_t *_parent);
+        query_id_t(query_id_t &&other);
+        ~query_id_t();
 
-        // Parse out optargs that are needed before query evaluation
-        if (global_optargs_json != nullptr) {
-            datum_t noreply_datum = static_optarg("noreply");
-            datum_t profile_datum = static_optarg("profile");
-            if (noreply_datum.has() && noreply_datum.get_type() == datum_t::type_t::R_BOOL) {
-                noreply = noreply_datum.as_bool();
-            }
-            if (profile_datum.has() && profile_datum.get_type() == datum_t::type_t::R_BOOL) {
-                profile = profile_datum.as_bool() ?
-                    profile_bool_t::PROFILE : profile_bool_t::DONT_PROFILE;
-            }
-        }
-    }
+        uint64_t value() const;
 
+    private:
+        query_cache_t *parent;
+        uint64_t value_;
+        DISABLE_COPYING(query_id_t);
+    };
+
+    query_cache_t *query_cache;
+    rapidjson::Document doc;
     int64_t token;
+    query_id_t id;
+
     Query::QueryType type;
     bool noreply;
-    profile_bool_t profile;
+    bool profile;
 
     const rapidjson::Value *root_term_json;
     const rapidjson::Value *global_optargs_json;
 private:
-    datum_t static_optarg(const std::string &key) {
-        guarantee(global_optargs_json != nullptr);
-        auto it = global_optargs_json->FindMember(key.c_str());
-        if (it == global_optargs_json->MemberEnd() ||
-            !it->IsArray() || it->Size() != 2 ||
-            !(*it)[0].IsNumber() || (*it)[0].AsInt() != Term::DATUM) {
-            return datum_t();
-        }
-        return to_datum((*it)[1], configured_limits_t::unlimited(), reql_version_t::LATEST);
-    }
-}
+    bool static_optarg_as_bool(const std::string &key, bool default_value);
+};
 
 class raw_term_t;
 
 class raw_term_iterator_t {
 public:
-    const raw_term_t *next() {
-        const raw_term_t *res = item;
-        r_sanity_check(res != nullptr, "Tried to read too many args or optargs from a term.");
-        item = list.next(item);    
-        return res;
-    }
+    const raw_term_t *next();
 private:
     friend class raw_term_t;
-    raw_term_iterator_t(intrusive_list_t<raw_term_t> *_list) :
-        list(_list), item(list->head()) { }
+    raw_term_iterator_t(const intrusive_list_t<raw_term_t> *_list);
 
-    intrusive_list_t<raw_term_t> *list;
+    const intrusive_list_t<raw_term_t> *list;
     const raw_term_t *item;
 };
 
-class raw_term_t : public intrusive_list_node_t<raw_term_t> {
-    raw_term_t(Term::TermType _type, backtrace_id_t _bt) : type(_type), bt(_bt) { }
-
+struct raw_term_t : public intrusive_list_node_t<raw_term_t> {
     size_t num_args() const { return args_.size(); }
     size_t num_optargs() const { return optargs_.size(); }
 
@@ -133,6 +107,9 @@ private:
     segmented_vector_t<raw_term_t, 100> terms;
     std::map<std::string, wire_func_t> global_optargs_;
     backtrace_registry_t backtrace_registry;
+    datum_t start_time;
+
+    datum_t get_time();
 
     raw_term_t *new_term(int type, backtrace_id_t bt);
 
@@ -149,7 +126,8 @@ private:
     raw_term_t *parse_internal(const rapidjson::Value &v,
                                backtrace_registry_t *bt_reg,
                                backtrace_id_t bt);
-
 };
+
+} // namespace ql
 
 #endif // RDB_PROTOCOL_QUERY_HPP_

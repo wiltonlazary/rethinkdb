@@ -97,7 +97,15 @@ public:
         return null_if_self(elem->next_);
     }
 
+    const T *next(const T *elem) const {
+        return null_if_self(elem->next_);
+    }
+
     T *prev(T *elem) const {
+        return null_if_self(elem->prev_);
+    }
+
+    const T *prev(const T *elem) const {
         return null_if_self(elem->prev_);
     }
 
@@ -193,6 +201,10 @@ private:
 
     T *null_if_self(intrusive_list_node_t<T> *node) const {
         return node == this ? NULL : static_cast<T *>(node);
+    }
+
+    const T *null_if_self(const intrusive_list_node_t<T> *node) const {
+        return node == this ? NULL : static_cast<const T *>(node);
     }
 
     size_t size_;

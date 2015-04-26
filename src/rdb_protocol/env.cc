@@ -6,7 +6,6 @@
 
 #include "concurrency/cross_thread_watchable.hpp"
 #include "extproc/js_runner.hpp"
-#include "rdb_protocol/counted_term.hpp"
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/minidriver.hpp"
 #include "rdb_protocol/term_walker.hpp"
@@ -20,41 +19,6 @@
 const size_t LRU_CACHE_SIZE = 1000;
 
 namespace ql {
-
-wire_func_t construct_optarg_wire_func(const raw_term_t *val,
-                                       term_storage_t *term_storage) {
-    protob_t<Term> arg = r::fun(r::expr(val)).release_counted();
-    propagate_backtrace(arg.get(), backtrace_id_t::empty());
-
-    compile_env_t empty_compile_env((var_visibility_t()));
-    counted_t<func_term_t> func_term
-        = make_counted<func_term_t>(&empty_compile_env, arg);
-    counted_t<const func_t> func = func_term->eval_to_func(var_scope_t());
-    return wire_func_t(func);
-}
-
-std::map<std::string, wire_func_t> parse_global_optargs(protob_t<Query> q) {
-    std::map<std::string, wire_func_t> optargs;
-    for (int i = 0; i < q->global_optargs_size(); ++i) {
-        const Query::AssocPair &ap = q->global_optargs(i);
-        auto insert_res
-            = optargs.insert(std::make_pair(ap.key(),
-                                            construct_optarg_wire_func(ap.val())));
-        if (!insert_res.second) {
-            rfail_toplevel(
-                    base_exc_t::GENERIC,
-                    "Duplicate global optarg: %s", ap.key().c_str());
-        }
-    }
-
-    // Supply a default db of "test" if there is no "db" optarg.
-    if (!optargs.count("db")) {
-        Term arg = r::db("test").get();
-        optargs["db"] = construct_optarg_wire_func(arg);
-    }
-
-    return optargs;
-}
 
 global_optargs_t::global_optargs_t() { }
 

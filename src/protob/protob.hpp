@@ -20,7 +20,6 @@
 #include "containers/counted.hpp"
 #include "http/http.hpp"
 #include "perfmon/perfmon.hpp"
-#include "rdb_protocol/counted_term.hpp"
 
 class auth_key_t;
 class auth_semilattice_metadata_t;
@@ -28,7 +27,7 @@ template <class> class semilattice_readwrite_view_t;
 
 class rdb_context_t;
 namespace ql {
-class query_id_t;
+class query_params_t;
 class query_cache_t;
 }
 
@@ -78,10 +77,8 @@ class query_handler_t {
 public:
     virtual ~query_handler_t() { }
 
-    virtual void run_query(ql::query_id_t &&query_id,
-                           const ql::protob_t<Query> &query,
+    virtual void run_query(ql::query_params_t *query_params,
                            Response *response_out,
-                           ql::query_cache_t *query_cache,
                            signal_t *interruptor) = 0;
 };
 

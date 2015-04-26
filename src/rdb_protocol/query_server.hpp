@@ -12,7 +12,7 @@
 
 namespace ql {
 template <class> class protob_t;
-class query_id_t;
+class query_params_t;
 class query_cache_t;
 }
 class rdb_context_t;
@@ -30,10 +30,8 @@ public:
     http_app_t *get_http_app();
     int get_port() const;
 
-    void run_query(ql::query_id_t &&query_id,
-                   const ql::protob_t<Query> &query,
+    void run_query(ql::query_params_t *query_params,
                    Response *response_out,
-                   ql::query_cache_t *query_cache,
                    signal_t *interruptor);
 public:
     static const uint32_t default_http_timeout_sec = 300;

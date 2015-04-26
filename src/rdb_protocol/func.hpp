@@ -99,6 +99,13 @@ private:
     // The argument names, for the corresponding positional argument number.
     std::vector<sym_t> arg_names;
 
+    struct term_storage_storage_t {
+        term_storage_t *get();
+
+        term_storage_t *ptr;
+        boost::optional<term_storage_t> storage;
+    };
+
     // The body of the function, which gets ->eval(...) called when call(...) is called.
     counted_t<const term_t> body;
 

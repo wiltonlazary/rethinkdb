@@ -149,10 +149,10 @@ std::string too_large_response_message(size_t size) {
 
 class json_protocol_t {
 public:
-    static bool parse_query(tcp_conn_t *conn,
-                            signal_t *interruptor,
-                            query_handler_t *handler,
-                            query_t *query_out) {
+    static scoped_ptr_t<ql::query_params_t> parse_query(tcp_conn_t *conn,
+                                                        signal_t *interruptor,
+                                                        query_cache_t *query_cache,
+                                                        query_handler_t *handler) {
         int64_t token;
         uint32_t size;
         conn->read(&token, sizeof(token), interruptor);
@@ -166,22 +166,25 @@ public:
                            ql::backtrace_registry_t::EMPTY_BACKTRACE);
             send_response(error_response, handler, conn, interruptor);
             throw tcp_conn_read_closed_exc_t();
-        } else {
-            scoped_array_t<char> data(size + 1);
-            conn->read(data.data(), size, interruptor);
-            data[size] = 0; // Null terminate the string, which the json parser requires
-
-            if (!json_shim::parse_json_pb(query_out->get(), token, data.data())) {
-                Response error_response;
-                error_response.set_token(token);
-                ql::fill_error(&error_response, Response::CLIENT_ERROR,
-                               unparseable_query_message,
-                               ql::backtrace_registry_t::EMPTY_BACKTRACE);
-                send_response(error_response, handler, conn, interruptor);
-                return false;
-            }
         }
-        return true;
+
+        scoped_array_t<char> data(size + 1);
+        conn->read(data.data(), size, interruptor);
+        data[size] = 0; // Null terminate the string, which the json parser requires
+        rapidjson::Document doc;
+        doc.ParseInsitu(data.data());
+
+        if (doc.HasParseError()) {
+            Response error_response;
+            error_response.set_token(token);
+            ql::fill_error(&error_response, Response::CLIENT_ERROR,
+                           unparseable_query_message,
+                           ql::backtrace_registry_t::EMPTY_BACKTRACE);
+            send_response(error_response, handler, conn, interruptor);
+            return scoped_ptr_t<ql::query_params_t>();
+        }
+
+        return make_scoped<ql::query_params_t>(token, query_cache, std::move(doc));
     }
 
     static void send_response(const Response &response,
@@ -221,66 +224,6 @@ public:
         }
 
         conn->write(str.data(), str.size(), interruptor);
-    }
-};
-
-class protobuf_protocol_t {
-public:
-    static bool parse_query(tcp_conn_t *conn,
-                            signal_t *interruptor,
-                            query_handler_t *handler,
-                            ql::protob_t<Query> *query_out) {
-        uint32_t size;
-        conn->read(&size, sizeof(size), interruptor);
-
-        if (size >= TOO_LARGE_QUERY_SIZE) {
-            Response error_response;
-            error_response.set_token(0); // We don't actually know the token
-            ql::fill_error(&error_response, Response::CLIENT_ERROR,
-                           too_large_query_message(size),
-                           ql::backtrace_registry_t::EMPTY_BACKTRACE);
-            send_response(error_response, handler, conn, interruptor);
-            return false;
-        } else {
-            scoped_array_t<char> data(size);
-            conn->read(data.data(), size, interruptor);
-
-            if (!query_out->get()->ParseFromArray(data.data(), size)) {
-                Response error_response;
-                error_response.set_token(query_out->get()->has_token() ?
-                                         query_out->get()->token() : 0);
-                ql::fill_error(&error_response, Response::CLIENT_ERROR,
-                               unparseable_query_message,
-                               ql::backtrace_registry_t::EMPTY_BACKTRACE);
-                send_response(error_response, handler, conn, interruptor);
-                return false;
-            }
-        }
-        return true;
-    }
-
-    static void send_response(const Response &response,
-                              query_handler_t *handler,
-                              tcp_conn_t *conn,
-                              signal_t *interruptor) {
-        const uint32_t data_size = static_cast<uint32_t>(response.ByteSize());
-        if (data_size >= TOO_LARGE_RESPONSE_SIZE) {
-            Response error_response;
-            error_response.set_token(response.token());
-            ql::fill_error(&error_response, Response::RUNTIME_ERROR,
-                           too_large_response_message(data_size),
-                           ql::backtrace_registry_t::EMPTY_BACKTRACE);
-            send_response(error_response, handler, conn, interruptor);
-        } else {
-            const size_t prefix_size = sizeof(data_size);
-            const size_t total_size = prefix_size + data_size;
-
-            scoped_array_t<char> scoped_array(total_size);
-            memcpy(scoped_array.data(), &data_size, sizeof(data_size));
-            response.SerializeToArray(scoped_array.data() + prefix_size, data_size);
-
-            conn->write(scoped_array.data(), total_size, interruptor);
-        }
     }
 };
 
@@ -401,12 +344,13 @@ void query_server_t::handle_conn(const scoped_ptr_t<tcp_conn_descriptor_t> &ncon
                                               ql::return_empty_normal_batches_t::NO);
 
         switch (wire_protocol) {
-            case VersionDummy::JSON:
-            case VersionDummy::PROTOBUF: break;
-            default: {
+            case VersionDummy::JSON: break;
+            case VersionDummy::PROTOBUF:
+                throw protob_server_exc_t("The PROTOBUF protocol version is "
+                                          "no longer supported");
+            default:
                 throw protob_server_exc_t(strprintf("Unrecognized protocol specified: '%d'",
                                                     wire_protocol));
-            }
         }
 
         if (!pre_2) {
@@ -416,9 +360,6 @@ void query_server_t::handle_conn(const scoped_ptr_t<tcp_conn_descriptor_t> &ncon
 
         if (wire_protocol == VersionDummy::JSON) {
             connection_loop<json_protocol_t>(
-                conn.get(), max_concurrent_queries, &query_cache, &ct_keepalive);
-        } else if (wire_protocol == VersionDummy::PROTOBUF) {
-            connection_loop<protobuf_protocol_t>(
                 conn.get(), max_concurrent_queries, &query_cache, &ct_keepalive);
         } else {
             unreachable();
@@ -505,38 +446,36 @@ void query_server_t::connection_loop(tcp_conn_t *conn,
     wait_any_t interruptor(drain_signal, &abort);
 #endif  // __linux
 
-    // query_info_t and the nascent_query_list_t exist to guarantee that ql::query_id_ts
-    // (which are RAII) are allocated and destroyed properly.  When we read a query off
-    // of the wire, it needs to be allocated a query_id_t immediately, because we then
-    // put it into the coro pool.  Once it is in the coro pool, all ordering guarantees
-    // are lost, so it must be done as soon as we receive the query.
+    // The nascent_query_list_t exists to guarantee that ql::query_param_ts (which are
+    // RAII) are allocated and destroyed properly.  When we read a query off of the
+    // wire, it needs to be allocated a query_id_t immediately, because we then put it
+    // into the coro pool.  Once it is in the coro pool, all ordering guarantees are
+    // lost, so it must be done as soon as we receive the query.
     //
-    // The nascent_query_list_t holds ownership of the query_info_t until it is
+    // The nascent_query_list_t holds ownership of the ql::query_param_t until it is
     // successfully handed over to the coroutine that will run the query.  This allows us
     // to guarantee proper destruction of query_id_ts in exceptional interruption or
     // error cases.
     //
     // A ql::query_id_t is used to provide an absolute ordering of queries, and is
     // necessary for proper NOREPLY_WAIT semantics.
-    typedef std::list<std::pair<ql::query_id_t, ql::protob_t<Query> > >
-        nascent_query_list_t;
+    typedef std::list<ql::query_params_t> nascent_query_list_t;
     nascent_query_list_t query_list;
+
 
     std_function_callback_t<nascent_query_list_t::iterator> callback(
         [&](nascent_query_list_t::iterator query_it,
             signal_t *pool_interruptor) {
 
-            ql::query_id_t query_id(std::move(query_it->first));
-            ql::protob_t<Query> query_pb(std::move(query_it->second));
+            scoped_ptr_t<query_params_t> q(std::move(*query_it));
             query_list.erase(query_it);
             wait_any_t cb_interruptor(pool_interruptor, &interruptor);
             Response response;
             bool replied = false;
 
             save_exception(&err, &err_str, &abort, [&]() {
-                    handler->run_query(std::move(query_id), query_pb, &response,
-                                       query_cache, &cb_interruptor);
-                    if (!ql::is_noreply(query_pb)) {
+                    handler->run_query(q.get(), &response, &cb_interruptor);
+                    if (!q->noreply) {
                         response.set_token(query_pb->token());
                         new_mutex_acq_t send_lock(&send_mutex, &cb_interruptor);
                         protocol_t::send_response(response, handler,
@@ -545,7 +484,7 @@ void query_server_t::connection_loop(tcp_conn_t *conn,
                     }
                 });
 
-            if (!replied && !ql::is_noreply(query_pb)) {
+            if (!replied && !q->noreply) {
                 save_exception(&err, &err_str, &abort, [&]() {
                         make_error_response(drain_signal->is_pulsed(), *conn,
                                             err_str, &response);
@@ -560,15 +499,15 @@ void query_server_t::connection_loop(tcp_conn_t *conn,
         // Pick a small limit so queries back up on the TCP connection.
         limited_fifo_queue_t<nascent_query_list_t::iterator> coro_queue(4);
         coro_pool_t<nascent_query_list_t::iterator> coro_pool(max_concurrent_queries,
-                                                              &coro_queue,
-                                                              &callback);
+                                                                    &coro_queue,
+                                                                    &callback);
 
         while (!err) {
-            ql::protob_t<Query> query(ql::make_counted_query());
             save_exception(&err, &err_str, &abort, [&]() {
-                    if (protocol_t::parse_query(conn, &interruptor, handler, &query)) {
-                        query_list.push_front(std::make_pair(ql::query_id_t(query_cache),
-                                                             std::move(query)));
+                    scoped_ptr_t<query_params_t> q =
+                        protocol_t::parse_query(conn, &interruptor, query_cache, handler);
+                    if (q.has()) {
+                        query_list.push_front(std::move(q));
                         coro_queue.push(query_list.begin());
                     }
                 });
@@ -579,8 +518,8 @@ void query_server_t::connection_loop(tcp_conn_t *conn,
     }
 
     // Respond to any queries still in the run queue
-    for (auto const &pair : query_list) {
-        if (!ql::is_noreply(pair.second)) {
+    for (auto const &q : query_list) {
+        if (!q->noreply) {
             Response response;
             save_exception(&err, &err_str, &abort, [&]() {
                     make_error_response(drain_signal->is_pulsed(), *conn,
@@ -640,14 +579,14 @@ void query_server_t::handle(const http_req_t &req,
     }
 
     // Parse the token out from the start of the request
-    const char *data = req.body.c_str();
+    char *data = req.body.c_str();
     token = *reinterpret_cast<const int64_t *>(data);
     data += sizeof(token);
 
-    const bool parse_succeeded =
-        json_shim::parse_json_pb(query.get(), token, data);
+    rapidjson::Document query_json;
+    query_json.ParseInsitu(data);
 
-    if (!parse_succeeded) {
+    if (query_json.HasParseError()) {
         ql::fill_error(&response, Response::CLIENT_ERROR,
                        unparseable_query_message,
                        ql::backtrace_registry_t::EMPTY_BACKTRACE);
@@ -658,9 +597,10 @@ void query_server_t::handle(const http_req_t &req,
                            "This HTTP connection is not open.",
                            ql::backtrace_registry_t::EMPTY_BACKTRACE);
         } else {
+            query_params_t q(token, conn->get_query_cache(), std::move(query_json));
             // Check for noreply, which we don't support here, as it causes
             // problems with interruption
-            if (ql::is_noreply(query)) {
+            if (q->noreply) {
                 *result = http_res_t(http_status_code_t::BAD_REQUEST,
                                      "application/text",
                                      "noreply queries are not supported over HTTP\n");
@@ -669,10 +609,8 @@ void query_server_t::handle(const http_req_t &req,
 
             wait_any_t true_interruptor(interruptor, conn->get_interruptor(),
                                         drainer.get_drain_signal());
-            ql::query_id_t query_id(conn->get_query_cache());
             try {
-                handler->run_query(std::move(query_id), query, &response,
-                                   conn->get_query_cache(), &true_interruptor);
+                handler->run_query(&q, &response, &true_interruptor);
             } catch (const interrupted_exc_t &ex) {
                 if (http_conn_cache.is_expired(*conn)) {
                     // This will only be sent back if this was interrupted by a http conn

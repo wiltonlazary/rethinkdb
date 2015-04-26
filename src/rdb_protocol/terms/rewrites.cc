@@ -58,7 +58,7 @@ public:
         auto n = pb::dummy_var_t::INNERJOIN_N;
         auto m = pb::dummy_var_t::INNERJOIN_M;
 
-        minidriver_context_t r(env->term_storage, in->backtrace());
+        minidriver_t r(env->term_storage, in->backtrace());
         reql_t term =
             r.expr(in->arg(0)).concat_map(
                 r.fun(n,
@@ -92,7 +92,7 @@ public:
         auto m = pb::dummy_var_t::OUTERJOIN_M;
         auto lst = pb::dummy_var_t::OUTERJOIN_LST;
 
-        minidriver_context_t r(env->term_storage, in->backtrace());
+        minidriver_t r(env->term_storage, in->backtrace());
         r::reql_t inner_concat_map =
             r.expr(right).concat_map(
                 r.fun(m,
@@ -133,7 +133,7 @@ private:
         auto row = pb::dummy_var_t::EQJOIN_ROW;
         auto v = pb::dummy_var_t::EQJOIN_V;
 
-        minidriver_context_t r(env->term_storage, in->backtrace());
+        minidriver_t r(env->term_storage, in->backtrace());
         r::reql_t get_all =
             r.expr(right).get_all(
                 r.expr(left_attr)(row, r.optarg("_SHORTCUT_", GET_FIELD_SHORTCUT)));
@@ -162,7 +162,7 @@ private:
         const raw_term_t *val = arg_it.next();
         auto x = pb::dummy_var_t::IGNORED;
 
-        minidriver_context_t r(env->term_storage, in->backtrace());
+        minidriver_t r(env->term_storage, in->backtrace());
         r::reql_t term = r.expr(val).replace(r.fun(x, r.null()));
         term.copy_optargs_from_term(in);
         return term;

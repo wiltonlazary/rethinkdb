@@ -40,8 +40,6 @@ class cross_thread_signal_t;
 struct secondary_index_t;
 class traversal_progress_combiner_t;
 template <class> class watchable_t;
-class Term;
-class Datum;
 
 enum class profile_bool_t {
     PROFILE,
@@ -75,13 +73,6 @@ enum class sindex_rename_result_t {
 ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(
         sindex_rename_result_t, int8_t,
         sindex_rename_result_t::OLD_NAME_DOESNT_EXIST, sindex_rename_result_t::SUCCESS);
-
-#define RDB_DECLARE_PROTOB_SERIALIZABLE(pb_t) \
-    void serialize_protobuf(write_message_t *wm, const pb_t &p); \
-    MUST_USE archive_result_t deserialize_protobuf(read_stream_t *s, pb_t *p)
-
-RDB_DECLARE_PROTOB_SERIALIZABLE(Term);
-RDB_DECLARE_PROTOB_SERIALIZABLE(Datum);
 
 class key_le_t {
 public:

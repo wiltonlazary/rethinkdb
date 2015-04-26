@@ -6,7 +6,6 @@
 #include "containers/cow_ptr.hpp"
 #include "concurrency/cross_thread_watchable.hpp"
 #include "rdb_protocol/backtrace.hpp"
-#include "rdb_protocol/counted_term.hpp"
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/minidriver.hpp"
@@ -210,42 +209,36 @@ counted_t<const term_t> compile_term(compile_env_t *env, const protob_t<const Te
 // If the query wants a reply, we can release the query id, which is
 // only used for tracking the ordering of noreply queries for the
 // purpose of noreply_wait.
-void maybe_release_query_id(query_id_t &&id,
-                            const protob_t<Query> &query) {
-    if (!is_noreply(query)) {
-        query_id_t destroyer(std::move(id));
+void maybe_release_query_id(query_params_t *query_params) {
+    if (q.noreply) {
+        q.destory_query_id();
     }
 }
 
-void run(query_id_t &&query_id,
-         int64_t token,
-         const rapidjson::Value &query_json,
+void run(query_params_t *query_params,
          Response *res,
-         query_cache_t *query_cache,
          signal_t *interruptor) {
-    // TODO: make sure validate_pb/validate_optargs are still performed
-    query_params_t q_params(token, query_json);
-
+    // RSI (grey): make sure validate_pb/validate_optargs are still performed
     try {
-        switch (q->type()) {
+        switch (query_params->type) {
         case Query_QueryType_START: {
-            maybe_release_query_id(std::move(query_id), q);
+            maybe_release_query_id(query_params);
             scoped_ptr_t<query_cache_t::ref_t> query_ref =
-                query_cache->create(std::move(q), interruptor);
+                query_params->query_cache->create(query_params, interruptor);
             query_ref->fill_response(res);
         } break;
         case Query_QueryType_CONTINUE: {
-            maybe_release_query_id(std::move(query_id), q);
+            maybe_release_query_id(query_params);
             scoped_ptr_t<query_cache_t::ref_t> query_ref =
-                query_cache->get(q.token(), interruptor);
+                query_params->query_cache->get(query_params, interruptor);
             query_ref->fill_response(res);
         } break;
         case Query_QueryType_STOP: {
-            query_cache->terminate_query(q.token());
+            query_params->query_cache->terminate_query(query_params);
             res->set_type(Response::SUCCESS_SEQUENCE);
         } break;
         case Query_QueryType_NOREPLY_WAIT: {
-            query_cache->noreply_wait(query_id, q.token(), interruptor);
+            query_params->query_cache->noreply_wait(query_params, interruptor);
             res->set_type(Response::WAIT_COMPLETE);
         } break;
         default: unreachable();
@@ -290,6 +283,7 @@ protob_t<const Term> term_t::get_src() const {
 }
 
 scoped_ptr_t<val_t> runtime_term_t::eval(scope_env_t *env, eval_flags_t eval_flags) const {
+    guarantee(env->env->term_storage != nullptr); // RSI (grey): better solution for eval-time term_storage
     // This is basically a hook for unit tests to change things mid-query
     profile::starter_t starter(strprintf("Evaluating %s.", name()), env->env->trace);
     env->env->do_eval_callback();

@@ -153,9 +153,11 @@ private:
 // evaluate anything, it doesn't need an env_t *.
 class compile_env_t {
 public:
-    explicit compile_env_t(var_visibility_t &&_visibility)
-        : visibility(std::move(_visibility)) { }
+    explicit compile_env_t(var_visibility_t &&_visibility,
+                           term_storage_t *_term_storage)
+        : visibility(std::move(_visibility)), term_storage(_term_storage) { }
     var_visibility_t visibility;
+    term_storage_t *term_storage;
 };
 
 // This is an environment for evaluating things that use variables in scope.  It

@@ -62,16 +62,20 @@ public:
         return get_element(index);
     }
 
-    void push_back(const element_t &element) {
+    element_t &push_back(const element_t &element) {
         size_t old_size = size_;
         set_size(old_size + 1);
-        (*this)[old_size] = element;
+        element_t &res = (*this)[old_size];
+        res = element;
+        return res;
     }
 
-    void push_back(element_t &&element) {
+    element_t &push_back(element_t &&element) {
         size_t old_size = size_;
         set_size(old_size + 1);
-        (*this)[old_size] = std::move(element);
+        element_t &res = (*this)[old_size];
+        res = std::move(element);
+        return res;
     }
 
     element_t &back() {
