@@ -20,9 +20,10 @@ enum poly_type_t {
 
 class obj_or_seq_op_impl_t {
 public:
-    obj_or_seq_op_impl_t(const term_t *self,
+    obj_or_seq_op_impl_t(compile_env_t *env,
+                         const term_t *self,
                          poly_type_t _poly_type,
-                         protob_t<const Term> term,
+                         const raw_term_t *term,
                          std::set<std::string> &&_acceptable_ptypes);
 
     scoped_ptr_t<val_t> eval_impl_dereferenced(const term_t *target, scope_env_t *env,
@@ -32,7 +33,7 @@ public:
 
 private:
     poly_type_t poly_type;
-    protob_t<Term> func;
+    const raw_term_t *func;
     const term_t *parent;
     const std::set<std::string> acceptable_ptypes;
 
@@ -44,9 +45,9 @@ private:
 // from it just need to implement evaluation on objects (`obj_eval`).
 class obj_or_seq_op_term_t : public grouped_seq_op_term_t {
 public:
-    obj_or_seq_op_term_t(compile_env_t *env, protob_t<const Term> term,
+    obj_or_seq_op_term_t(compile_env_t *env, const raw_term_t *term,
                          poly_type_t _poly_type, argspec_t argspec);
-    obj_or_seq_op_term_t(compile_env_t *env, protob_t<const Term> term,
+    obj_or_seq_op_term_t(compile_env_t *env, const raw_term_t *term,
                          poly_type_t _poly_type, argspec_t argspec,
                          std::set<std::string> &&ptypes);
 

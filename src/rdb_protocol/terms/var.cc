@@ -1,39 +1,29 @@
 // Copyright 2010-2013 RethinkDB, all rights reserved.
 #include "rdb_protocol/terms/terms.hpp"
 
-#include "rdb_protocol/op.hpp"
 #include "rdb_protocol/error.hpp"
+#include "rdb_protocol/op.hpp"
+#include "rdb_protocol/query.hpp"
 #include "math.hpp"
 
 namespace ql {
 
 class var_term_t : public term_t {
 public:
-    var_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    var_term_t(compile_env_t *env, const raw_term_t *term)
             : term_t(term) {
-        rcheck(term->args_size() == 1, base_exc_t::GENERIC,
+        rcheck(term->num_args() == 1, base_exc_t::GENERIC,
                "A variable term has the wrong number of arguments.");
 
-        const Term &arg0 = term->args(0);
-        rcheck(arg0.type() == Term::DATUM, base_exc_t::GENERIC,
+        const raw_term_t *arg0 = term->args().next();
+        rcheck(arg0->type == Term::DATUM, base_exc_t::GENERIC,
                "A variable term has a non-numeric argument.");
-        rcheck(arg0.has_datum(), base_exc_t::GENERIC,
-               "A datum term (in a variable term) is missing its datum field.");
-
-        const Datum &datum = arg0.datum();
-        rcheck(datum.type() == Datum::R_NUM, base_exc_t::GENERIC,
+        rcheck(arg0->value.get_type() == datum_t::type_t::R_NUM, base_exc_t::GENERIC,
                "A variable term has a non-numeric variable name argument.");
-        rcheck(datum.has_r_num(), base_exc_t::GENERIC,
-               "A variable term's datum term is missing its r_num field.");
 
-        const double number = datum.r_num();
-        const int64_t var_value = checked_convert_to_int(this, number);
-
-        sym_t var(var_value);
-        rcheck(env->visibility.contains_var(var), base_exc_t::GENERIC,
+        varname = sym_t(arg0->value.as_int());
+        rcheck(env->visibility.contains_var(varname), base_exc_t::GENERIC,
                "Variable name not found.");
-
-        varname = var;
     }
 
 private:
@@ -54,10 +44,10 @@ private:
 
 class implicit_var_term_t : public term_t {
 public:
-    implicit_var_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    implicit_var_term_t(compile_env_t *env, const raw_term_t *term)
         : term_t(term) {
         rcheck(
-            term->args_size() == 0 && term->optargs_size() == 0, base_exc_t::GENERIC,
+            term->num_args() == 0 && term->num_optargs() == 0, base_exc_t::GENERIC,
             "Expected no arguments or optional arguments on implicit variable term.");
 
         rcheck(env->visibility.implicit_is_accessible(), base_exc_t::GENERIC,
@@ -81,11 +71,11 @@ private:
 };
 
 counted_t<term_t> make_var_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<var_term_t>(env, term);
 }
 counted_t<term_t> make_implicit_var_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<implicit_var_term_t>(env, term);
 }
 

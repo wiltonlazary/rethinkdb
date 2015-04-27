@@ -7,6 +7,7 @@
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/protocol.hpp"
+#include "rdb_protocol/query.hpp"
 #include "rdb_protocol/term_walker.hpp"
 #include "stl_utils.hpp"
 
@@ -18,10 +19,13 @@ wire_func_t::wire_func_t(const counted_t<const func_t> &f) : func(f) {
     r_sanity_check(func.has());
 }
 
-wire_func_t::wire_func_t(protob_t<const Term> body,
+wire_func_t::wire_func_t(const raw_term_t *body,
                          std::vector<sym_t> arg_names,
                          backtrace_id_t bt) {
-    compile_env_t env(var_visibility_t().with_func_arg_name_list(arg_names));
+    // RSI (grey): arrange for full lifetime of this storage
+    term_storage_t temp_storage;
+    compile_env_t env(var_visibility_t().with_func_arg_name_list(arg_names),
+                      &temp_storage);
     func = make_counted<reql_func_t>(bt, var_scope_t(), arg_names,
                                      compile_term(&env, body));
 }
@@ -62,8 +66,9 @@ public:
         serialize<W>(wm, scope);
         const std::vector<sym_t> &arg_names = reql_func->arg_names;
         serialize<W>(wm, arg_names);
-        const protob_t<const Term> &body = reql_func->body->get_src();
-        serialize_protobuf(wm, *body);
+        // RSI (grey): serialize a raw_term_t tree
+        // const raw_term_t *body = reql_func->body->get_src();
+        // serialize_protobuf(wm, *body);
         backtrace_id_t backtrace = reql_func->backtrace();
         serialize<W>(wm, backtrace);
     }
@@ -106,16 +111,20 @@ archive_result_t deserialize(read_stream_t *s, wire_func_t *wf) {
         res = deserialize<W>(s, &arg_names);
         if (bad(res)) { return res; }
 
-        protob_t<Term> body = make_counted_term();
-        res = deserialize_protobuf(s, &*body);
-        if (bad(res)) { return res; }
+        // RSI (grey): deserialize a raw_term_t tree
+        // protob_t<Term> body = make_counted_term();
+        // res = deserialize_protobuf(s, &*body);
+        // if (bad(res)) { return res; }
+        const raw_term_t *body = nullptr;
 
         backtrace_id_t bt;
         res = deserialize<W>(s, &bt);
         if (bad(res)) { return res; }
 
-        compile_env_t env(
-            scope.compute_visibility().with_func_arg_name_list(arg_names));
+        // RSI (grey): arrange for more-permanent storage
+        term_storage_t temp_storage;
+        compile_env_t env(scope.compute_visibility().with_func_arg_name_list(arg_names),
+                          &temp_storage);
         wf->func = make_counted<reql_func_t>(
             bt, scope, arg_names, compile_term(&env, body));
         return res;

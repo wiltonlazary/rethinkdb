@@ -58,7 +58,7 @@ durability_requirement_t parse_durability_optarg(const scoped_ptr_t<val_t> &arg)
 
 class insert_term_t : public op_term_t {
 public:
-    insert_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    insert_term_t(compile_env_t *env, const raw_term_t *term)
         : op_term_t(env, term, argspec_t(2),
                     optargspec_t({"conflict", "durability", "return_vals",
                                   "return_changes"})) { }
@@ -209,7 +209,7 @@ private:
 
 class replace_term_t : public op_term_t {
 public:
-    replace_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    replace_term_t(compile_env_t *env, const raw_term_t *term)
         : op_term_t(env, term, argspec_t(2),
                     optargspec_t({"non_atomic", "durability",
                                   "return_vals", "return_changes"})) { }
@@ -254,10 +254,12 @@ private:
 
             if (f->is_deterministic()) {
                 // Attach a transformation to `ds` to pull out the primary key.
-                minidriver_t r(env->env->term_storage, backtrace());
+                // RSI (grey): more permanent term storage
+                term_storage_t term_storage;
+                minidriver_t r(&term_storage, backtrace());
                 auto x = pb::dummy_var_t::REPLACE_HELPER_ROW;
                 const raw_term_t *map = r.fun(x, r::expr(x)[tbl->get_pkey()]).raw_term();
-                compile_env_t compile_env((var_visibility_t()), env->env->term_storage);
+                compile_env_t compile_env((var_visibility_t()), &term_storage);
                 func_term_t func_term(&compile_env, map);
                 var_scope_t var_scope;
                 counted_t<const func_t> func = func_term.eval_to_func(var_scope);
@@ -300,7 +302,7 @@ private:
 
 class foreach_term_t : public op_term_t {
 public:
-    foreach_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    foreach_term_t(compile_env_t *env, const raw_term_t *term)
         : op_term_t(env, term, argspec_t(2)) { }
 
 private:
@@ -347,17 +349,17 @@ private:
 };
 
 counted_t<term_t> make_insert_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<insert_term_t>(env, term);
 }
 
 counted_t<term_t> make_replace_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<replace_term_t>(env, term);
 }
 
 counted_t<term_t> make_foreach_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<foreach_term_t>(env, term);
 }
 

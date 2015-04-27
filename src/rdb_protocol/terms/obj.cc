@@ -8,7 +8,7 @@ namespace ql {
 
 class keys_term_t : public op_term_t {
 public:
-    keys_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    keys_term_t(compile_env_t *env, const raw_term_t *term)
         : op_term_t(env, term, argspec_t(1)) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -45,7 +45,7 @@ private:
 
 class object_term_t : public op_term_t {
 public:
-    object_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    object_term_t(compile_env_t *env, const raw_term_t *term)
         : op_term_t(env, term, argspec_t(0, -1)) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -72,12 +72,12 @@ private:
 };
 
 counted_t<term_t> make_keys_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<keys_term_t>(env, term);
 }
 
 counted_t<term_t> make_object_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<object_term_t>(env, term);
 }
 

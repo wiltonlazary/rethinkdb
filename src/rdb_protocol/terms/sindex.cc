@@ -18,7 +18,7 @@ namespace ql {
 // `op_term_t`.
 class sindex_create_term_t : public op_term_t {
 public:
-    sindex_create_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    sindex_create_term_t(compile_env_t *env, const raw_term_t *term)
         : op_term_t(env, term, argspec_t(2, 3), optargspec_t({"multi", "geo"})) { }
 
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -73,13 +73,14 @@ public:
                 index_func = v->as_func();
             }
         } else {
+            // RSI (grey): more permanent term storage
+            term_storage_t term_storage;
+            minidriver_t r(&term_storage, backtrace());
 
             pb::dummy_var_t x = pb::dummy_var_t::SINDEXCREATE_X;
-            protob_t<Term> func_term
-                = r::fun(x, r::var(x)[name_datum]).release_counted();
-            propagate_backtrace(func_term.get(), backtrace());
+            const raw_term_t *func_term = r.fun(x, r.var(x)[name_datum]).raw_term();
 
-            compile_env_t empty_compile_env((var_visibility_t()));
+            compile_env_t empty_compile_env((var_visibility_t()), &term_storage);
             counted_t<func_term_t> func_term_term = make_counted<func_term_t>(
                 &empty_compile_env, func_term);
 
@@ -117,7 +118,7 @@ public:
 
 class sindex_drop_term_t : public op_term_t {
 public:
-    sindex_drop_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    sindex_drop_term_t(compile_env_t *env, const raw_term_t *term)
         : op_term_t(env, term, argspec_t(2)) { }
 
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -139,7 +140,7 @@ public:
 
 class sindex_list_term_t : public op_term_t {
 public:
-    sindex_list_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    sindex_list_term_t(compile_env_t *env, const raw_term_t *term)
         : op_term_t(env, term, argspec_t(1)) { }
 
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -153,7 +154,7 @@ public:
 
 class sindex_status_term_t : public op_term_t {
 public:
-    sindex_status_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    sindex_status_term_t(compile_env_t *env, const raw_term_t *term)
         : op_term_t(env, term, argspec_t(1, -1)) { }
 
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -183,7 +184,7 @@ bool all_ready(datum_t statuses) {
 
 class sindex_wait_term_t : public op_term_t {
 public:
-    sindex_wait_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    sindex_wait_term_t(compile_env_t *env, const raw_term_t *term)
         : op_term_t(env, term, argspec_t(1, -1)) { }
 
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -212,7 +213,7 @@ public:
 
 class sindex_rename_term_t : public op_term_t {
 public:
-    sindex_rename_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    sindex_rename_term_t(compile_env_t *env, const raw_term_t *term)
         : op_term_t(env, term, argspec_t(3, 3), optargspec_t({"overwrite"})) { }
 
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -261,27 +262,27 @@ public:
 };
 
 counted_t<term_t> make_sindex_create_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<sindex_create_term_t>(env, term);
 }
 counted_t<term_t> make_sindex_drop_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<sindex_drop_term_t>(env, term);
 }
 counted_t<term_t> make_sindex_list_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<sindex_list_term_t>(env, term);
 }
 counted_t<term_t> make_sindex_status_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<sindex_status_term_t>(env, term);
 }
 counted_t<term_t> make_sindex_wait_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<sindex_wait_term_t>(env, term);
 }
 counted_t<term_t> make_sindex_rename_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<sindex_rename_term_t>(env, term);
 }
 

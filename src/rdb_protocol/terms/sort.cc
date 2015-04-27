@@ -27,7 +27,7 @@ namespace ql {
 
 class asc_term_t : public op_term_t {
 public:
-    asc_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    asc_term_t(compile_env_t *env, const raw_term_t *term)
         : op_term_t(env, term, argspec_t(1)) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -38,7 +38,7 @@ private:
 
 class desc_term_t : public op_term_t {
 public:
-    desc_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    desc_term_t(compile_env_t *env, const raw_term_t *term)
         : op_term_t(env, term, argspec_t(1)) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -49,9 +49,9 @@ private:
 
 class orderby_term_t : public op_term_t {
 public:
-    orderby_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    orderby_term_t(compile_env_t *env, const raw_term_t *term)
         : op_term_t(env, term, argspec_t(1, -1),
-          optargspec_t({"index"})), src_term(term) { }
+          optargspec_t({"index"})) { }
 private:
     enum order_direction_t { ASC, DESC };
     class lt_cmp_t {
@@ -112,8 +112,11 @@ private:
     virtual scoped_ptr_t<val_t>
     eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
         std::vector<std::pair<order_direction_t, counted_t<const func_t> > > comparisons;
-        for (size_t i = 1; i < args->num_args(); ++i) {
-            if (get_src()->args(i).type() == Term::DESC) {
+        // RSI (grey): this probably doesn't (and didn't) work properly with r.args
+        auto arg_it = get_src()->args();
+        arg_it.next(); // Skip arg0
+        for (const raw_term_t *t = arg_it.next(); t != nullptr; t = arg_it.next()) {
+            if (t->type == Term::DESC) {
                 comparisons.push_back(
                     std::make_pair(
                         DESC, args->arg(env, i)->as_func(GET_FIELD_SHORTCUT)));
@@ -152,13 +155,12 @@ private:
             rcheck(!seq.has(), base_exc_t::GENERIC,
                    "Indexed order_by can only be performed on a TABLE or TABLE_SLICE.");
             sorting_t sorting = sorting_t::UNORDERED;
-            for (int i = 0; i < get_src()->optargs_size(); ++i) {
-                if (get_src()->optargs(i).key() == "index") {
-                    if (get_src()->optargs(i).val().type() == Term::DESC) {
-                        sorting = sorting_t::DESCENDING;
-                    } else {
-                        sorting = sorting_t::ASCENDING;
-                    }
+            auto optarg_it = get_src()->optargs();
+            for (const raw_term_t *t = optarg_it.next();
+                 t != nullptr; t = optarg_it.next()) {
+                if (t->name == "index") {
+                    sorting = t.type == Term::DESC ?
+                        sorting_t::DESCENDING : sorting_t::ASCENDING;
                 }
             }
             r_sanity_check(sorting != sorting_t::UNORDERED);
@@ -200,14 +202,11 @@ private:
     }
 
     virtual const char *name() const { return "orderby"; }
-
-private:
-    protob_t<const Term> src_term;
 };
 
 class distinct_term_t : public op_term_t {
 public:
-    distinct_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    distinct_term_t(compile_env_t *env, const raw_term_t *term)
         : op_term_t(env, term, argspec_t(1), optargspec_t({"index"})) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args,
@@ -265,19 +264,19 @@ private:
 };
 
 counted_t<term_t> make_orderby_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<orderby_term_t>(env, term);
 }
 counted_t<term_t> make_distinct_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<distinct_term_t>(env, term);
 }
 counted_t<term_t> make_asc_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<asc_term_t>(env, term);
 }
 counted_t<term_t> make_desc_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<desc_term_t>(env, term);
 }
 

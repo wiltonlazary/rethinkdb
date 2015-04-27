@@ -4,29 +4,30 @@
 #include <string>
 
 #include "rdb_protocol/op.hpp"
+#include "rdb_protocol/query.hpp"
 
 namespace ql {
 
 class datum_term_t : public term_t {
 public:
-    datum_term_t(const protob_t<const Term> t, const configured_limits_t &limits,
-                 reql_version_t reql_version)
-        : term_t(t), datum(to_datum(&t->datum(), limits, reql_version)) { }
+    // RSI (grey): make sure it is ok to ignore limits and version
+    datum_term_t(const raw_term_t *term, const configured_limits_t &,
+                 reql_version_t)
+        : term_t(term) { }
 private:
     virtual void accumulate_captures(var_captures_t *) const { /* do nothing */ }
     virtual bool is_deterministic() const { return true; }
     virtual scoped_ptr_t<val_t> term_eval(scope_env_t *, eval_flags_t) const {
-        return new_val(datum);
+        return new_val(get_src()->value);
     }
     virtual const char *name() const { return "datum"; }
-    datum_t datum;
 };
 
 class constant_term_t : public op_term_t {
 public:
-    constant_term_t(compile_env_t *env, const protob_t<const Term> t,
+    constant_term_t(compile_env_t *env, const raw_term_t *term,
                     double constant, const char *name)
-        : op_term_t(env, t, argspec_t(0)), _constant(constant), _name(name) { }
+        : op_term_t(env, term, argspec_t(0)), _constant(constant), _name(name) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *, args_t *, eval_flags_t) const {
         return new_val(datum_t(_constant));
@@ -38,7 +39,7 @@ private:
 
 class make_array_term_t : public op_term_t {
 public:
-    make_array_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    make_array_term_t(compile_env_t *env, const raw_term_t *term)
         : op_term_t(env, term, argspec_t(0, -1)) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -58,21 +59,19 @@ private:
 
 class make_obj_term_t : public term_t {
 public:
-    make_obj_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    make_obj_term_t(compile_env_t *env, const raw_term_t *term)
         : term_t(term) {
         // An F.Y.I. for driver developers.
-        rcheck(term->args_size() == 0,
+        rcheck(term->num_args() == 0,
                base_exc_t::GENERIC,
                "MAKE_OBJ term must not have any args.");
 
-        for (int i = 0; i < term->optargs_size(); ++i) {
-            const Term_AssocPair *pair = &term->optargs(i);
-            counted_t<const term_t> t = compile_term(env, term.make_child(&pair->val()));
-            auto res = optargs.insert(std::make_pair(pair->key(), std::move(t)));
-            rcheck(res.second,
-                   base_exc_t::GENERIC,
-                   strprintf("Duplicate object key: %s",
-                             pair->key().c_str()));
+        auto it = term->optargs();
+        for (const raw_term_t *o = it.next(); o != nullptr; o = it.next()) {
+            counted_t<const term_t> t = compile_term(env, o);
+            auto res = optargs.insert(std::make_pair(o->optarg_name(), std::move(t)));
+            rcheck(res.second, base_exc_t::GENERIC,
+                   strprintf("Duplicate object key: %s", o->optarg_name()));
         }
     }
 
@@ -110,7 +109,7 @@ private:
 
 class binary_term_t : public op_term_t {
 public:
-    binary_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    binary_term_t(compile_env_t *env, const raw_term_t *term)
         : op_term_t(env, term, argspec_t(1, 1)) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -128,25 +127,25 @@ private:
 };
 
 counted_t<term_t> make_datum_term(
-        const protob_t<const Term> &term, const configured_limits_t &limits,
+        const raw_term_t *term, const configured_limits_t &limits,
         reql_version_t reql_version) {
     return make_counted<datum_term_t>(term, limits, reql_version);
 }
 counted_t<term_t> make_constant_term(
-        compile_env_t *env, const protob_t<const Term> &term,
+        compile_env_t *env, const raw_term_t *term,
         double constant, const char *name) {
     return make_counted<constant_term_t>(env, term, constant, name);
 }
 counted_t<term_t> make_make_array_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<make_array_term_t>(env, term);
 }
 counted_t<term_t> make_make_obj_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<make_obj_term_t>(env, term);
 }
 counted_t<term_t> make_binary_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<binary_term_t>(env, term);
 }
 

@@ -18,32 +18,32 @@
 namespace ql {
 
 obj_or_seq_op_impl_t::obj_or_seq_op_impl_t(
-        const term_t *self, poly_type_t _poly_type, const protob_t<const Term> term,
+        compile_env_t *env, const term_t *self,
+        poly_type_t _poly_type, const raw_term_t *term,
         std::set<std::string> &&_acceptable_ptypes)
-    : poly_type(_poly_type), func(make_counted_term()), parent(self),
+    : poly_type(_poly_type), func(nullptr), parent(self),
       acceptable_ptypes(std::move(_acceptable_ptypes)) {
     auto varnum = pb::dummy_var_t::OBJORSEQ_VARNUM;
 
     // body is a new reql expression similar to term except that the first argument
     // is replaced by a new variable.
     // For example, foo.pluck('a') becomes varnum.pluck('a')
-    r::reql_t body = r::var(varnum).call(term->type());
-    body.copy_args_from_term(*term, 1);
-    body.add_arg(r::optarg("_NO_RECURSE_", r::boolean(true)));
+    minidriver_t r(env->term_storage, self->backtrace());
+
+    minidriver_t::reql_t body = r.var(varnum).call(term->type);
+    body.copy_args_from_term(term, 1);
+    body.add_arg(r.optarg("_NO_RECURSE_", r.boolean(true)));
 
     switch (poly_type) {
     case MAP: // fallthru
-    case FILTER: {
-        func->Swap(&r::fun(varnum, std::move(body)).get());
-    } break;
-    case SKIP_MAP: {
-        func->Swap(&r::fun(varnum,
-                           r::array(std::move(body)).default_(r::array())).get());
-    } break;
+    case FILTER:
+        func = r.fun(varnum, body).raw_term();
+        break;
+    case SKIP_MAP:
+        func = r.fun(varnum, r.array(body).default_(r.array())).raw_term();
+        break;
     default: unreachable();
     }
-
-    propagate_backtrace(func.get(), self->backtrace());
 }
 
 scoped_ptr_t<val_t> obj_or_seq_op_impl_t::eval_impl_dereferenced(
@@ -119,17 +119,17 @@ scoped_ptr_t<val_t> obj_or_seq_op_impl_t::eval_impl_dereferenced(
 }
 
 obj_or_seq_op_term_t::obj_or_seq_op_term_t(
-        compile_env_t *env, const protob_t<const Term> term,
+        compile_env_t *env, const raw_term_t *term,
         poly_type_t _poly_type, argspec_t argspec)
     : grouped_seq_op_term_t(env, term, argspec, optargspec_t({"_NO_RECURSE_"})),
-      impl(this, _poly_type, term, std::set<std::string>()) {
+      impl(env, this, _poly_type, term, std::set<std::string>()) {
 }
 
 obj_or_seq_op_term_t::obj_or_seq_op_term_t(
-        compile_env_t *env, const protob_t<const Term> term,
+        compile_env_t *env, const raw_term_t *term,
         poly_type_t _poly_type, argspec_t argspec, std::set<std::string> &&ptypes)
     : grouped_seq_op_term_t(env, term, argspec, optargspec_t({"_NO_RECURSE_"})),
-      impl(this, _poly_type, term, std::move(ptypes)) {
+      impl(env, this, _poly_type, term, std::move(ptypes)) {
 }
 
 scoped_ptr_t<val_t> obj_or_seq_op_term_t::eval_impl(scope_env_t *env, args_t *args,
@@ -141,7 +141,7 @@ scoped_ptr_t<val_t> obj_or_seq_op_term_t::eval_impl(scope_env_t *env, args_t *ar
 
 class pluck_term_t : public obj_or_seq_op_term_t {
 public:
-    pluck_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    pluck_term_t(compile_env_t *env, const raw_term_t *term)
         : obj_or_seq_op_term_t(env, term, MAP, argspec_t(1, -1)) { }
 private:
     virtual scoped_ptr_t<val_t> obj_eval(
@@ -163,7 +163,7 @@ private:
 
 class without_term_t : public obj_or_seq_op_term_t {
 public:
-    without_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    without_term_t(compile_env_t *env, const raw_term_t *term)
         : obj_or_seq_op_term_t(env, term, MAP, argspec_t(1, -1)) { }
 private:
     virtual scoped_ptr_t<val_t> obj_eval(
@@ -185,7 +185,7 @@ private:
 
 class literal_term_t : public op_term_t {
 public:
-    literal_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    literal_term_t(compile_env_t *env, const raw_term_t *term)
         : op_term_t(env, term, argspec_t(0, 1)) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(
@@ -211,7 +211,7 @@ private:
 
 class merge_term_t : public obj_or_seq_op_term_t {
 public:
-    merge_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    merge_term_t(compile_env_t *env, const raw_term_t *term)
         : obj_or_seq_op_term_t(env, term, MAP, argspec_t(1, -1, LITERAL_OK)) { }
 private:
     virtual scoped_ptr_t<val_t> obj_eval(
@@ -274,7 +274,7 @@ private:
 
 class has_fields_term_t : public obj_or_seq_op_term_t {
 public:
-    has_fields_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    has_fields_term_t(compile_env_t *env, const raw_term_t *term)
         : obj_or_seq_op_term_t(env, term, FILTER, argspec_t(1, -1)) { }
 private:
     virtual scoped_ptr_t<val_t> obj_eval(
@@ -295,7 +295,7 @@ private:
 
 class get_field_term_t : public obj_or_seq_op_term_t {
 public:
-    get_field_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    get_field_term_t(compile_env_t *env, const raw_term_t *term)
         : obj_or_seq_op_term_t(env, term, SKIP_MAP, argspec_t(2)) { }
 private:
     virtual scoped_ptr_t<val_t> obj_eval(
@@ -308,10 +308,10 @@ private:
 
 class bracket_term_t : public grouped_seq_op_term_t {
 public:
-    bracket_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    bracket_term_t(compile_env_t *env, const raw_term_t *term)
         : grouped_seq_op_term_t(env, term, argspec_t(2),
                                 optargspec_t({"_NO_RECURSE_"})),
-          impl(this, SKIP_MAP, term, std::set<std::string>()) {}
+          impl(env, this, SKIP_MAP, term, std::set<std::string>()) {}
 private:
     scoped_ptr_t<val_t> obj_eval_dereferenced(
         const scoped_ptr_t<val_t> &v0, const scoped_ptr_t<val_t> &v1) const {
@@ -358,37 +358,37 @@ private:
 };
 
 counted_t<term_t> make_get_field_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<get_field_term_t>(env, term);
 }
 
 counted_t<term_t> make_bracket_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<bracket_term_t>(env, term);
 }
 
 counted_t<term_t> make_has_fields_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<has_fields_term_t>(env, term);
 }
 
 counted_t<term_t> make_pluck_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<pluck_term_t>(env, term);
 }
 
 counted_t<term_t> make_without_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<without_term_t>(env, term);
 }
 
 counted_t<term_t> make_literal_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<literal_term_t>(env, term);
 }
 
 counted_t<term_t> make_merge_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t *term) {
     return make_counted<merge_term_t>(env, term);
 }
 

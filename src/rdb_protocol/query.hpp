@@ -77,13 +77,18 @@ struct raw_term_t : public intrusive_list_node_t<raw_term_t> {
     raw_term_iterator_t args() const { return raw_term_iterator_t(&args_); }
     raw_term_iterator_t optargs() const { return raw_term_iterator_t(&optargs_); }
 
+    const char *optarg_name() const { return optarg_name_; }
+    void set_optarg_name(const std::string &name);
+
+    Term::TermType type;
+    backtrace_id_t bt;
+    datum_t value; // Only used for datum type
+
     intrusive_list_t<raw_term_t> args_; // Not used for datum type
     intrusive_list_t<raw_term_t> optargs_; // Not used for datum type
 
-    Term::TermType type;
-    datum_string_t name; // Only used when an optarg
-    datum_t value; // Only used for datum type
-    backtrace_id_t bt;
+private:
+    const char *optarg_name_; // Only used when an optarg
 };
 
 class term_storage_t {
