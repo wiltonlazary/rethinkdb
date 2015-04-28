@@ -13,10 +13,6 @@
 
 namespace pprint {
 
-// we know what we're doing here, and I don't think 169 random
-// Term types is going to clarify anything.
-#pragma GCC diagnostic ignored "-Wswitch-enum"
-
 class js_pretty_printer_t
     : public generic_term_walker_t<counted_t<const document_t> > {
     unsigned int depth;
@@ -30,7 +26,7 @@ protected:
         ++depth;
         if (depth > MAX_DEPTH) return dotdotdot; // Crude attempt to avoid blowing stack
         counted_t<const document_t> doc;
-        switch (t->type) {
+        switch (static_cast<int>(t->type)) {
         case Term::DATUM:
             doc = to_js_datum(t->value);
             if (!in_r_expr) {
@@ -90,7 +86,7 @@ protected:
 
 private:
     std::string to_js_name(const ql::raw_term_t *t) {
-        return to_js_name(Term_TermType_Name(t->type));
+        return to_js_name(Term::TermType_Name(t->type));
     }
 
     std::string to_js_name(std::string s) {
@@ -506,7 +502,7 @@ private:
     }
 
     counted_t<const document_t> term_name(const ql::raw_term_t *t) {
-        switch (t->type) {
+        switch (static_cast<int>(t->type)) {
         case Term::JAVASCRIPT:
             return js;
         default:
@@ -515,7 +511,7 @@ private:
     }
 
     bool should_use_rdot(const ql::raw_term_t *t) {
-        switch (t->type) {
+        switch (static_cast<int>(t->type)) {
         case Term::VAR:
         case Term::DATUM:
             return false;
@@ -525,7 +521,7 @@ private:
     }
 
     bool should_continue_string(const ql::raw_term_t *t) {
-        switch (t->type) {
+        switch (static_cast<int>(t->type)) {
         case Term::ERROR:
         case Term::UUID:
         case Term::HTTP:
@@ -603,7 +599,7 @@ private:
     bool should_use_parens(const ql::raw_term_t *t) {
         // handle malformed protobufs
         if (t->num_args() > 0) return true;
-        switch (t->type) {
+        switch (static_cast<int>(t->type)) {
         case Term::MINVAL:
         case Term::MAXVAL:
         case Term::IMPLICIT_VAR:
@@ -741,14 +737,10 @@ counted_t<const document_t> render_as_javascript(const ql::raw_term_t *t) {
 
 } // namespace pprint
 
-// Turn the switch diagnostic back on, and turn off unused function
-// diagnostics (because this function will never be used).
-#pragma GCC diagnostic error "-Wswitch-enum"
-#pragma GCC diagnostic ignored "-Wunused-function"
 
 // This function is not called by anything nor should it ever be
 // exported from this file.  Its sole reason for existence is to
-// remind people who add new Term types and new Datum types to update
+// remind people who add new Term types and new datum types to update
 // the pretty printer.
 //
 // Pretty printer elements that need to be updated:
@@ -776,6 +768,7 @@ counted_t<const document_t> render_as_javascript(const ql::raw_term_t *t) {
 //
 // Finally if a new datum type is added, `to_js_datum` would need to
 // be updated.
+#pragma GCC diagnostic ignored "-Wunused-function"
 static void pprint_update_reminder() {
     Term::TermType type = Term::UPDATE;
     switch (type) {

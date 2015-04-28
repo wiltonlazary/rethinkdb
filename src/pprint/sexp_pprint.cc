@@ -11,10 +11,6 @@
 
 namespace pprint {
 
-// we know what we're doing here, and I don't think 169 random
-// Term types is going to clarify anything.
-#pragma GCC diagnostic ignored "-Wswitch-enum"
-
 class sexp_pretty_printer_t
     : public generic_term_walker_t<counted_t<const document_t> > {
     unsigned int depth;
@@ -137,6 +133,7 @@ private:
             term.push_back(rbrace);
             return make_nest(make_concat(std::move(term)));
         }
+        case ql::datum_t::type_t::UNINITIALIZED:
         default:
             unreachable();
         }

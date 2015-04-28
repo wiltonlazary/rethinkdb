@@ -103,10 +103,6 @@ debugf_in_dtor_t::~debugf_in_dtor_t() {
     debugf("%s", message.c_str());
 }
 
-void pb_print(DEBUG_VAR Term *t) {
-    debugf("%s\n", t->DebugString().c_str());
-}
-
 debug_timer_t::debug_timer_t(std::string _name)
     : start(current_microtime()), last(start), name(_name), out("\n") {
     tick("start");

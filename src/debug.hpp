@@ -66,9 +66,6 @@ private:
     std::string message;
 };
 
-class Term;
-void pb_print(Term *t);
-
 // TODO: make this more efficient (use `clock_monotonic` and use a vector of
 // integers rather than accumulating a string).
 class debug_timer_t {
