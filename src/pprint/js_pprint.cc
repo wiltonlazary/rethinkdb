@@ -956,15 +956,18 @@ static void pprint_update_reminder() {
     case Term::ROUND:
         break;
     }
-    Datum_DatumType d = Datum::R_NULL;
+    ql::datum_t::type_t d = ql::datum_t::type_t::R_NULL;
     switch(d) {
-    case Datum::R_NULL:
-    case Datum::R_BOOL:
-    case Datum::R_NUM:
-    case Datum::R_STR:
-    case Datum::R_JSON:
-    case Datum::R_ARRAY:
-    case Datum::R_OBJECT:
+    case ql::datum_t::type_t::R_NULL:
+    case ql::datum_t::type_t::MINVAL:
+    case ql::datum_t::type_t::MAXVAL:
+    case ql::datum_t::type_t::R_BOOL:
+    case ql::datum_t::type_t::R_NUM:
+    case ql::datum_t::type_t::R_STR:
+    case ql::datum_t::type_t::R_BINARY:
+    case ql::datum_t::type_t::R_ARRAY:
+    case ql::datum_t::type_t::R_OBJECT:
+    case ql::datum_t::type_t::UNINITIALIZED:
         break;
     }
 }

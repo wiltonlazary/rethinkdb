@@ -106,7 +106,7 @@ void jobs_manager_t::on_get_job_reports(
                         }
 
                         auto render = pprint::render_as_javascript(
-                            pair.second->original_query->query());
+                            pair.second->term_storage.root_term());
 
                         query_job_reports_inner.emplace_back(
                             pair.second->job_id,

@@ -214,8 +214,9 @@ void term_storage_t::add_global_optargs(const rapidjson::Value &optargs) {
 }
 
 void term_storage_t::add_global_optarg(const char *key, const rapidjson::Value &v) {
+    // RSI (grey): Check optarg key
     rcheck_toplevel(global_optargs_.count(key) == 0, base_exc_t::GENERIC,
-                    strprintf("Duplicate global optarg: %s.", key.c_str()));
+                    strprintf("Duplicate global optarg: %s.", key));
     const raw_term_t *term = parse_internal(v, nullptr, backtrace_id_t::empty());
 
     minidriver_t r(this, backtrace_id_t::empty());
@@ -292,10 +293,10 @@ void term_storage_t::add_optargs(const rapidjson::Value &optargs,
             backtrace_id_t::empty() :
             bt_reg->new_frame(bt,
                 ql::datum_t(datum_string_t(it->name.GetStringLength(),
-                                           it->name.GetString()));
+                                           it->name.GetString())));
         raw_term_t *t = parse_internal(it->value, bt_reg, child_bt);
         optargs_out->push_back(t);
-        t->name = it->name;
+        t->set_optarg_name(it->name.GetString());
     }
 }
 

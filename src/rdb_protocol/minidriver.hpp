@@ -28,7 +28,7 @@ public:
      **/
     class reql_t {
     public:
-        const raw_term_t *raw_term() const { return raw_term_; }
+        const raw_term_t *raw_term() const;
         void copy_optargs_from_term(const raw_term_t *from);
         void copy_args_from_term(const raw_term_t *from, size_t start_index);
 
@@ -75,8 +75,8 @@ public:
             return reql_t(r, type, *this, std::forward<T>(args)...);
         }
 
-        reql_t(reql_t &&other);
-        reql_t &operator= (reql_t &&other);
+        reql_t(const reql_t &other);
+        reql_t &operator= (const reql_t &other);
 
         template <class... T>
         void add_args(T &&... args) {
@@ -92,7 +92,6 @@ public:
     private:
         friend class minidriver_t;
         reql_t(minidriver_t *_r, const raw_term_t *term_);
-        reql_t(minidriver_t *_r, raw_term_t *&&term_);
         reql_t(minidriver_t *_r, const reql_t &other);
         reql_t(minidriver_t *_r, const double val);
         reql_t(minidriver_t *_r, const std::string &val);
@@ -169,7 +168,7 @@ private:
     // We may need to make a reference to this object if it is already in use
     // by a different term - we wouldn't want to overwrite its optarg name or
     // intrusive list pointers.
-    raw_term_t *maybe_ref(const raw_term_t *source);
+    raw_term_t *new_ref(const raw_term_t *source);
 
     term_storage_t *term_storage;
     backtrace_id_t default_backtrace;
@@ -180,14 +179,14 @@ private:
 template <>
 inline void minidriver_t::reql_t::add_arg(
         std::pair<std::string, minidriver_t::reql_t> &&optarg) {
-    raw_term_t *optarg_term = r->maybe_ref(optarg.second.raw_term_);
+    raw_term_t *optarg_term = r->new_ref(optarg.second.raw_term_);
     optarg_term->set_optarg_name(optarg.first);
     raw_term_->optargs_.push_back(optarg_term);
 }
 
 template <>
 inline void minidriver_t::reql_t::add_arg(minidriver_t::reql_t &&arg) {
-    raw_term_->args_.push_back(r->maybe_ref(arg.raw_term_));
+    raw_term_->args_.push_back(r->new_ref(arg.raw_term_));
 }
 
 }  // namespace ql

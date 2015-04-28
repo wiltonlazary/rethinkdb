@@ -6,7 +6,8 @@
 #include <memory>
 
 #include "pprint/generic_term_walker.hpp"
-#include "rdb_protocol/ql2_extensions.pb.h"
+#include "rdb_protocol/datum.hpp"
+#include "rdb_protocol/query.hpp"
 
 namespace pprint {
 
@@ -21,13 +22,13 @@ class sexp_pretty_printer_t
 public:
     sexp_pretty_printer_t() : depth(0) {}
 protected:
-    counted_t<const document_t> visit_generic(const Term &t) override {
+    counted_t<const document_t> visit_generic(const ql::raw_term_t *t) override {
         ++depth;
         if (depth > MAX_DEPTH) return dotdotdot; // Crude attempt to avoid blowing stack
         counted_t<const document_t> doc;
-        switch (t.type()) {
+        switch (static_cast<int>(t->type)) {
         case Term::DATUM:
-            doc = to_lisp_datum(t.datum());
+            doc = to_lisp_datum(t->value);
             break;
         case Term::BRACKET:
             doc = string_gets_together(t);
@@ -38,31 +39,35 @@ protected:
         case Term::FUNC:
             doc = to_lisp_func(t);
             break;
-        case Term::VAR:
-            guarantee(t.args_size() == 1);
-            guarantee(t.args(0).type() == Term::DATUM);
-            doc = var_name(t.args(0).datum());
+        case Term::VAR: {
+            guarantee(t->num_args() == 1);
+            const ql::raw_term_t *arg0 = t->args().next();
+            guarantee(arg0->type == Term::DATUM);
+            doc = var_name(arg0->value);
             break;
-        default:
-        {
+        }
+        default: {
             std::vector<counted_t<const document_t> > term;
             term.push_back(lparen);
             term.push_back(make_text(to_lisp_name(t)));
-            if (t.args_size() > 0 || t.optargs_size() > 0) {
+            if (t->num_args() > 0 || t->num_optargs() > 0) {
                 term.push_back(sp);
                 std::vector<counted_t<const document_t> > args;
-                for (int i = 0; i < t.args_size(); ++i) {
+                auto arg_it = t->args();
+                auto optarg_it = t->optargs();
+                for (size_t i = 0; i < t->num_args(); ++i) {
                     // don't insert redundant space
                     if (args.size() != 0) args.push_back(cond_linebreak);
-                    args.push_back(visit_generic(t.args(i)));
+                    args.push_back(visit_generic(arg_it.next()));
                 }
-                for (int i = 0; i < t.optargs_size(); ++i) {
+                for (size_t i = 0; i < t->num_optargs(); ++i) {
                     // don't insert redundant space
                     if (args.size() != 0) args.push_back(cond_linebreak);
-                    const Term_AssocPair &ap = t.optargs(i);
-                    args.push_back(make_text(":" + to_lisp_name(ap.key())));
+                    const ql::raw_term_t *optarg = optarg_it.next();
+                    args.push_back(make_text(
+                        strprintf(":%s", to_lisp_name(optarg->optarg_name()).c_str())));
                     args.push_back(cond_linebreak);
-                    args.push_back(visit_generic(ap.val()));
+                    args.push_back(visit_generic(optarg));
                 }
                 term.push_back(make_nest(make_concat(std::move(args))));
             }
@@ -74,10 +79,12 @@ protected:
         --depth;
         return doc;
     }
+
 private:
-    std::string to_lisp_name(const Term &t) {
-        return to_lisp_name(Term_TermType_Name(t.type()));
+    std::string to_lisp_name(const ql::raw_term_t *t) {
+        return to_lisp_name(Term::TermType_Name(t->type));
     }
+
     std::string to_lisp_name(std::string s) {
         for (char &c : s) {
             c = tolower(c);
@@ -85,114 +92,118 @@ private:
         }
         return s;
     }
+
     // Largely follow Clojure syntax here rather than CL, mostly
     // because it's easier to read.
-    counted_t<const document_t> to_lisp_datum(const Datum &d) {
-        switch (d.type()) {
-        case Datum::R_NULL:
+    counted_t<const document_t> to_lisp_datum(const ql::datum_t &d) {
+        switch (d.get_type()) {
+        case ql::datum_t::type_t::MINVAL:
+            return minval; // RSI (grey): this should probably not be naked
+        case ql::datum_t::type_t::MAXVAL:
+            return maxval;
+        case ql::datum_t::type_t::R_NULL:
             return nil;
-        case Datum::R_BOOL:
-            return d.r_bool() ? true_v : false_v;
-        case Datum::R_NUM:
-        {
-            double num = d.r_num();
-            return make_text((fabs(num - trunc(num)) < 1e-10)
-                             ? std::to_string(lrint(num))
-                             : std::to_string(num));
-        }
-        case Datum::R_STR:
-            return make_text("\"" + d.r_str() + "\"");
-        case Datum::R_ARRAY:
-        {
+        case ql::datum_t::type_t::R_BOOL:
+            return d.as_bool() ? true_v : false_v;
+        case ql::datum_t::type_t::R_NUM:
+            return make_text((fabs(d.as_num() - trunc(d.as_num())) < 1e-10)
+                             ? std::to_string(lrint(d.as_num()))
+                             : std::to_string(d.as_num()));
+        case ql::datum_t::type_t::R_BINARY:
+            return nil; // RSI (grey): implement binary pretty-printing
+        case ql::datum_t::type_t::R_STR:
+            return make_text(strprintf("\"%s\"", d.as_str().to_std().c_str()));
+        case ql::datum_t::type_t::R_ARRAY: {
             std::vector<counted_t<const document_t> > term;
             term.push_back(lbrack);
-            for (int i = 0; i < d.r_array_size(); ++i) {
+            for (size_t i = 0; i < d.arr_size(); ++i) {
                 if (i != 0) term.push_back(cond_linebreak);
-                term.push_back(to_lisp_datum(d.r_array(i)));
+                term.push_back(to_lisp_datum(d.get(i)));
             }
             term.push_back(rbrack);
             return make_nest(make_concat(std::move(term)));
         }
-        case Datum::R_OBJECT:
-        {
+        case ql::datum_t::type_t::R_OBJECT: {
             std::vector<counted_t<const document_t> > term;
             term.push_back(lbrace);
-            for (int i = 0; i < d.r_object_size(); ++i) {
+            for (size_t i = 0; i < d.obj_size(); ++i) {
                 if (i != 0) term.push_back(cond_linebreak);
-                const Datum_AssocPair &ap = d.r_object(i);
+                auto pair = d.get_pair(i);
                 term.push_back(colon);
-                term.push_back(make_text(ap.key()));
+                term.push_back(make_text(pair.first.to_std()));
                 term.push_back(sp);
-                term.push_back(to_lisp_datum(ap.val()));
+                term.push_back(to_lisp_datum(pair.second));
             }
             term.push_back(rbrace);
             return make_nest(make_concat(std::move(term)));
         }
-        case Datum::R_JSON:
-            return make_concat({lparen, json, cond_linebreak,
-                                quote, make_text(d.r_str()), quote,
-                                rparen});
         default:
             unreachable();
         }
     }
-    counted_t<const document_t> string_gets_together(const Term &t) {
+
+    counted_t<const document_t> string_gets_together(const ql::raw_term_t *t) {
         std::vector<counted_t<const document_t> > term;
         term.push_back(lparen);
         term.push_back(dotdot);
-        guarantee(t.args_size() == 2);
+        guarantee(t->num_args() == 2);
         term.push_back(sp);
         std::vector<counted_t<const document_t> > nest;
-        const Term *var = &(t.args(0));
-        if (should_continue_string(var->type())) {
+        auto arg_it = t->args();
+        const ql::raw_term_t *arg0 = arg_it.next();
+        if (should_continue_string(arg0->type)) {
             std::vector<counted_t<const document_t> > stack;
-            while (should_continue_string(var->type())) {
-                guarantee(var->args_size() == 2);
-                stack.push_back(visit_stringing(var->type(), var->args(1)));
+            while (should_continue_string(arg0->type)) {
+                guarantee(arg0->num_args() == 2);
+                auto arg_arg_it = arg0->args();
+                const ql::raw_term_t *next_arg = arg_arg_it.next();
+                stack.push_back(visit_stringing(arg0->type, arg_arg_it.next()));
                 stack.push_back(cond_linebreak);
-                var = &(var->args(0));
+                arg0 = next_arg;
             }
-            stack.push_back(visit_generic(*var));
+            stack.push_back(visit_generic(arg0));
             nest.insert(nest.end(), stack.rbegin(), stack.rend());
         } else {
-            nest.push_back(visit_generic(*var));
+            nest.push_back(visit_generic(arg0));
             nest.push_back(cond_linebreak);
-            nest.push_back(visit_generic(t.args(1)));
+            nest.push_back(visit_generic(arg_it.next()));
         }
         term.push_back(make_nest(make_concat(std::move(nest))));
         term.push_back(rparen);
         return make_concat(std::move(term));
     }
-    counted_t<const document_t> string_branches_together(const Term &t) {
+
+    counted_t<const document_t> string_branches_together(const ql::raw_term_t *var) {
         std::vector<counted_t<const document_t> > term;
         term.push_back(lparen);
         term.push_back(cond);
-        guarantee(t.args_size() == 3);
+        guarantee(var->num_args() == 3);
         term.push_back(sp);
         std::vector<counted_t<const document_t> > branches;
-        const Term *var = &t;
-        while (var->type() == Term::BRANCH) {
+        while (var->type == Term::BRANCH) {
+            auto arg_it = var->args();
             std::vector<counted_t<const document_t> > branch;
             branch.push_back(lparen);
-            branch.push_back(make_nest(make_concat({visit_generic(var->args(0)),
+            branch.push_back(make_nest(make_concat({visit_generic(arg_it.next()),
                                                     cond_linebreak,
-                                                    visit_generic(var->args(1))})));
+                                                    visit_generic(arg_it.next())})));
             branch.push_back(rparen);
             branches.push_back(make_concat(std::move(branch)));
             branches.push_back(cond_linebreak);
-            var = &(var->args(2));
+            var = arg_it.next();
         }
         branches.push_back(make_concat({lparen,
                                         make_nest(make_concat({true_v,
                                                                cond_linebreak,
-                                                               visit_generic(*var)})),
+                                                               visit_generic(var)})),
                                         rparen}));
         term.push_back(make_nest(make_concat(std::move(branches))));
         term.push_back(rparen);
         return make_concat(std::move(term));
     }
-    bool should_continue_string(Term_TermType type) {
-        switch (type) {
+
+    bool should_continue_string(Term::TermType type) {
+        switch (static_cast<int>(type)) {
         case Term::BRACKET:
         case Term::TABLE:
         case Term::GET:
@@ -202,8 +213,9 @@ private:
             return false;
         }
     }
-    counted_t<const document_t> visit_stringing(Term_TermType type, const Term &t) {
-        switch (type) {
+
+    counted_t<const document_t> visit_stringing(Term::TermType type, const ql::raw_term_t *t) {
+        switch (static_cast<int>(type)) {
         case Term::TABLE:
             return make_concat({lparen, table, sp, visit_generic(t), rparen});
         case Term::GET:
@@ -213,44 +225,47 @@ private:
             return visit_generic(t);
         }
     }
-    counted_t<const document_t> var_name(const Datum &d) {
-        guarantee(d.type() == Datum::R_NUM);
-        return make_text("var" + std::to_string(lrint(d.r_num())));
+
+    counted_t<const document_t> var_name(const ql::datum_t &d) {
+        guarantee(d.get_type() == ql::datum_t::type_t::R_NUM);
+        return make_text("var" + std::to_string(lrint(d.as_num())));
     }
-    counted_t<const document_t> to_lisp_func(const Term &t) {
-        guarantee(t.type() == Term::FUNC);
-        guarantee(t.args_size() >= 2);
+
+    counted_t<const document_t> to_lisp_func(const ql::raw_term_t *t) {
+        guarantee(t->type == Term::FUNC);
+        guarantee(t->num_args() >= 2);
         std::vector<counted_t<const document_t> > nest;
-        if (t.args(0).type() == Term::MAKE_ARRAY) {
-            const Term &args_term = t.args(0);
+        auto arg_it = t->args();
+        const ql::raw_term_t *arg0 = arg_it.next();
+        if (arg0->type == Term::MAKE_ARRAY) {
+            auto arg_arg_it = arg0->args();
             std::vector<counted_t<const document_t> > args;
-            for (int i = 0; i < args_term.args_size(); ++i) {
+            for (size_t i = 0; i < arg0->num_args(); ++i) {
                 if (i != 0) args.push_back(cond_linebreak);
-                const Term &arg_term = args_term.args(i);
-                guarantee(arg_term.type() == Term::DATUM);
-                guarantee(arg_term.datum().type() == Datum::R_NUM);
-                args.push_back(var_name(arg_term.datum()));
+                const ql::raw_term_t *arg_term = arg_arg_it.next();
+                guarantee(arg_term->type == Term::DATUM);
+                guarantee(arg_term->value.get_type() == ql::datum_t::type_t::R_NUM);
+                args.push_back(var_name(arg_term->value));
             }
             nest.push_back(make_concat({lparen,
                                         make_nest(make_concat(std::move(args))),
                                         rparen}));
-        } else if (t.args(0).type() == Term::DATUM &&
-                   t.args(0).datum().type() == Datum::R_ARRAY) {
-            const Datum &arg_term = t.args(0).datum();
+        } else if (arg0->type == Term::DATUM &&
+                   arg0->value.get_type() == ql::datum_t::type_t::R_ARRAY) {
             std::vector<counted_t<const document_t> > args;
-            for (int i = 0; i < arg_term.r_array_size(); ++i) {
+            for (size_t i = 0; i < arg0->value.arr_size(); ++i) {
                 if (i != 0) args.push_back(cond_linebreak);
-                args.push_back(var_name(arg_term.r_array(i)));
+                args.push_back(var_name(arg0->value.get(i)));
             }
             nest.push_back(make_concat({lparen,
                                         make_nest(make_concat(std::move(args))),
                                         rparen}));
         } else {
-            nest.push_back(visit_generic(t.args(0)));
+            nest.push_back(visit_generic(arg0));
         }
-        for (int i = 1; i < t.args_size(); ++i) {
+        for (size_t i = 1; i < t->num_args(); ++i) {
             nest.push_back(cond_linebreak);
-            nest.push_back(visit_generic(t.args(i)));
+            nest.push_back(visit_generic(arg_it.next()));
         }
         return make_concat({lparen, lambda, sp, make_nest(make_concat(std::move(nest))),
                             rparen});
@@ -258,8 +273,8 @@ private:
 
     static counted_t<const document_t> lparen, rparen, lbrack, rbrack, lbrace, rbrace;
     static counted_t<const document_t> colon, quote, sp, dotdot, dotdotdot;
-    static counted_t<const document_t> nil, true_v, false_v, json, table, get, cond,
-        lambda;
+    static counted_t<const document_t> nil, minval, maxval, true_v, false_v;
+    static counted_t<const document_t> json, table, get, cond, lambda;
 
     static const unsigned int MAX_DEPTH = 20;
 };
@@ -274,6 +289,8 @@ counted_t<const document_t> sexp_pretty_printer_t::colon = make_text(":");
 counted_t<const document_t> sexp_pretty_printer_t::dotdot = make_text("..");
 counted_t<const document_t> sexp_pretty_printer_t::dotdotdot = make_text("...");
 counted_t<const document_t> sexp_pretty_printer_t::nil = make_text("nil");
+counted_t<const document_t> sexp_pretty_printer_t::minval = make_text("minval");
+counted_t<const document_t> sexp_pretty_printer_t::maxval = make_text("maxval");
 counted_t<const document_t> sexp_pretty_printer_t::true_v = make_text("true");
 counted_t<const document_t> sexp_pretty_printer_t::false_v = make_text("false");
 counted_t<const document_t> sexp_pretty_printer_t::sp = make_text(" ");
@@ -284,7 +301,7 @@ counted_t<const document_t> sexp_pretty_printer_t::get = make_text("get");
 counted_t<const document_t> sexp_pretty_printer_t::cond = make_text("cond");
 counted_t<const document_t> sexp_pretty_printer_t::lambda = make_text("fn"); // follow Clojure here
 
-counted_t<const document_t> render_as_sexp(const Term &t) {
+counted_t<const document_t> render_as_sexp(const ql::raw_term_t *t) {
     return sexp_pretty_printer_t().walk(t);
 }
 

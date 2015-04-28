@@ -17,10 +17,10 @@
 
 namespace ql {
 
-counted_t<const term_t> compile_term(compile_env_t *env, const protob_t<const Term> t) {
+counted_t<const term_t> compile_term(compile_env_t *env, const raw_term_t *t) {
     // HACK: per @srh, use unlimited array size at compile time
     ql::configured_limits_t limits = ql::configured_limits_t::unlimited;
-    switch (t->type()) {
+    switch (t->type) {
     case Term::DATUM:              return make_datum_term(t, limits,
                                                           reql_version_t::LATEST);
     case Term::MAKE_ARRAY:         return make_make_array_term(env, t);
@@ -242,8 +242,8 @@ runtime_term_t::runtime_term_t(backtrace_id_t bt)
 
 runtime_term_t::~runtime_term_t() { }
 
-term_t::term_t(protob_t<const Term> _src)
-    : runtime_term_t(backtrace_id_t(_src.get())),
+term_t::term_t(const raw_term_t *_src)
+    : runtime_term_t(backtrace_id_t(_src->bt)),
       src(_src) { }
 
 term_t::~term_t() { }
@@ -267,12 +267,12 @@ TLS_with_init(int, DBG_depth, 0);
 #define DEC_DEPTH
 #endif // INSTRUMENT
 
-protob_t<const Term> term_t::get_src() const {
+const raw_term_t *term_t::get_src() const {
     return src;
 }
 
 scoped_ptr_t<val_t> runtime_term_t::eval(scope_env_t *env, eval_flags_t eval_flags) const {
-    guarantee(env->env->term_storage != nullptr); // RSI (grey): better solution for eval-time term_storage
+    // guarantee(env->env->term_storage != nullptr); // RSI (grey): better solution for eval-time term_storage
     // This is basically a hook for unit tests to change things mid-query
     profile::starter_t starter(strprintf("Evaluating %s.", name()), env->env->trace);
     env->env->do_eval_callback();

@@ -265,7 +265,7 @@ void run_sindex_backfill_test(std::pair<io_backender_t *, simple_mailbox_cluster
         const ql::sym_t one(1);
         ql::term_storage_t term_storage;
         ql::minidriver_t r(&term_storage, ql::backtrace_id_t::empty());
-        const raw_term_t *mapping = r.var(one)["id"].raw_term();
+        const ql::raw_term_t *mapping = r.var(one)["id"].raw_term();
         ql::map_wire_func_t m(mapping, make_vector(one), ql::backtrace_id_t::empty());
 
         write_t write(sindex_create_t(id, m, sindex_multi_bool_t::SINGLE,
