@@ -8,7 +8,6 @@
 #include "rdb_protocol/datum.hpp"
 #include "rdb_protocol/error.hpp"
 #include "rdb_protocol/ql2.pb.h"
-#include "rdb_protocol/ql2_extensions.pb.h"
 
 namespace ql {
 
@@ -60,14 +59,6 @@ private:
     std::vector<frame_t> frames;
     DISABLE_COPYING(backtrace_registry_t);
 };
-
-void fill_backtrace(Backtrace *bt_out,
-                    datum_t backtrace);
-
-void fill_error(Response *res_out,
-                Response::ResponseType type,
-                const std::string &message,
-                datum_t backtrace);
 
 } // namespace ql
 

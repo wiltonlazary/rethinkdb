@@ -1,3 +1,4 @@
+// Copyright 2010-2015 RethinkDB, all rights reserved.
 #include "pprint/pprint.hpp"
 
 #include <vector>

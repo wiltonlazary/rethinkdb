@@ -3,23 +3,18 @@
 #define RDB_PROTOCOL_QUERY_SERVER_HPP_
 
 #include <set>
-#include <string>
 
 #include "arch/address.hpp"
-#include "protob/protob.hpp"
 #include "concurrency/one_per_thread.hpp"
-#include "rdb_protocol/ql2.pb.h"
+#include "protob/protob.hpp"
 
 namespace ql {
-template <class> class protob_t;
 class query_params_t;
 class query_cache_t;
+class response_t;
 }
-class rdb_context_t;
 
-// Overloads used by protob_server_t.
-void make_empty_protob_bearer(ql::protob_t<Query> *request);
-Query *underlying_protob_value(ql::protob_t<Query> *request);
+class rdb_context_t;
 
 class rdb_query_server_t : public query_handler_t {
 public:
@@ -31,7 +26,7 @@ public:
     int get_port() const;
 
     void run_query(const ql::query_params_t &query_params,
-                   Response *response_out,
+                   ql::response_t *response_out,
                    signal_t *interruptor);
 public:
     static const uint32_t default_http_timeout_sec = 300;

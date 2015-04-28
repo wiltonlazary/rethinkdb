@@ -1,3 +1,4 @@
+// Copyright 2010-2015 RethinkDB, all rights reserved.
 #include "rdb_protocol/minidriver.hpp"
 
 namespace ql {

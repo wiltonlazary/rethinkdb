@@ -10,8 +10,8 @@
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/minidriver.hpp"
 #include "rdb_protocol/query_cache.hpp"
+#include "rdb_protocol/response.hpp"
 #include "rdb_protocol/term_walker.hpp"
-#include "rdb_protocol/validate.hpp"
 #include "rdb_protocol/terms/terms.hpp"
 #include "thread_local.hpp"
 
@@ -207,33 +207,32 @@ counted_t<const term_t> compile_term(compile_env_t *env, const raw_term_t *t) {
 }
 
 void run(const query_params_t &query_params,
-         Response *res,
+         response_t *response_out,
          signal_t *interruptor) {
-    // RSI (grey): make sure validate_pb/validate_optargs are still performed
     try {
         switch (query_params.type) {
         case Query_QueryType_START: {
             scoped_ptr_t<query_cache_t::ref_t> query_ref =
                 query_params.query_cache->create(query_params, interruptor);
-            query_ref->fill_response(res);
+            query_ref->fill_response(response_out);
         } break;
         case Query_QueryType_CONTINUE: {
             scoped_ptr_t<query_cache_t::ref_t> query_ref =
                 query_params.query_cache->get(query_params, interruptor);
-            query_ref->fill_response(res);
+            query_ref->fill_response(response_out);
         } break;
         case Query_QueryType_STOP: {
             query_params.query_cache->terminate_query(query_params);
-            res->set_type(Response::SUCCESS_SEQUENCE);
+            response_out->set_type(Response::SUCCESS_SEQUENCE);
         } break;
         case Query_QueryType_NOREPLY_WAIT: {
             query_params.query_cache->noreply_wait(query_params, interruptor);
-            res->set_type(Response::WAIT_COMPLETE);
+            response_out->set_type(Response::WAIT_COMPLETE);
         } break;
         default: unreachable();
         }
     } catch (const bt_exc_t &ex) {
-        fill_error(res, ex.response_type, ex.message, ex.bt_datum);
+        response_out->fill_error(ex.response_type, ex.message, ex.bt_datum);
     }
 }
 

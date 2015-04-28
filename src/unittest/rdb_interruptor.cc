@@ -10,6 +10,7 @@
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/minidriver.hpp"
+#include "rdb_protocol/response.hpp"
 #include "unittest/gtest.hpp"
 #include "unittest/rdb_env.hpp"
 #include "unittest/unittest_utils.hpp"
@@ -266,7 +267,7 @@ public:
     static const std::string stop_query_message;
 
     void run_query(const ql::query_params_t &query_params,
-                   Response *res,
+                   ql::response_t *res_out,
                    signal_t *interruptor) {
         assert_thread();
 
@@ -292,9 +293,8 @@ public:
         }
 
         // The real server sends a SUCCESS_SEQUENCE, but this makes the test simpler
-        res->set_token(query_params.token);
-        ql::fill_error(res, Response::RUNTIME_ERROR, stop_query_message,
-                       ql::backtrace_registry_t::EMPTY_BACKTRACE);
+        res_out->fill_error(Response::RUNTIME_ERROR, stop_query_message,
+                            ql::backtrace_registry_t::EMPTY_BACKTRACE);
     }
 private:
     std::map<int64_t, cond_t *> interruptors;

@@ -30,8 +30,6 @@ class datum_t;
 class term_t;
 class term_storage_t;
 
-std::map<std::string, wire_func_t> parse_global_optargs(protob_t<Query> q);
-
 class global_optargs_t {
 public:
     global_optargs_t();

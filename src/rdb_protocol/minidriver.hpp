@@ -1,3 +1,4 @@
+// Copyright 2010-2015 RethinkDB, all rights reserved.
 #ifndef RDB_PROTOCOL_MINIDRIVER_HPP_
 #define RDB_PROTOCOL_MINIDRIVER_HPP_
 

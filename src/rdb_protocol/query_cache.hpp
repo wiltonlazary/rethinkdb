@@ -47,7 +47,7 @@ public:
     class ref_t {
     public:
         ~ref_t();
-        void fill_response(Response *res);
+        void fill_response(response_t *res);
     private:
         friend class query_cache_t;
         ref_t(query_cache_t *_query_cache,
@@ -55,8 +55,8 @@ public:
               query_cache_t::entry_t *_entry,
               signal_t *interruptor);
 
-        void run(env_t *env, Response *res); // Run a new query
-        void serve(env_t *env, Response *res); // Serve a batch from a stream
+        void run(env_t *env, response_t *res); // Run a new query
+        void serve(env_t *env, response_t *res); // Serve a batch from a stream
 
         query_cache_t::entry_t *const entry;
         const int64_t token;

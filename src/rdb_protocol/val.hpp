@@ -22,7 +22,6 @@ namespace ql {
 
 class datum_t;
 class env_t;
-template <class> class protob_t;
 class scope_env_t;
 class term_t;
 class val_t;

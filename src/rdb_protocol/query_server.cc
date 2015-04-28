@@ -29,12 +29,12 @@ int rdb_query_server_t::get_port() const {
 // Predeclaration for run, only used here
 namespace ql {
     void run(const query_params_t &query_params,
-             Response *response_out,
+             response_t *response_out,
              signal_t *interruptor);
 }
 
 void rdb_query_server_t::run_query(const ql::query_params_t &query_params,
-                                   Response *response_out,
+                                   ql::response_t *response_out,
                                    signal_t *interruptor) {
     guarantee(interruptor != nullptr);
     guarantee(rdb_ctx->cluster_interface != nullptr);
@@ -46,9 +46,9 @@ void rdb_query_server_t::run_query(const ql::query_params_t &query_params,
         throw; // Interruptions should be handled by our caller, who can provide context
 #ifdef NDEBUG // In debug mode we crash, in release we send an error.
     } catch (const std::exception &e) {
-        ql::fill_error(response_out, Response::RUNTIME_ERROR,
-                       strprintf("Unexpected exception: %s\n", e.what()),
-                       ql::backtrace_registry_t::EMPTY_BACKTRACE);
+        response_out->fill_error(Response::RUNTIME_ERROR,
+                                 strprintf("Unexpected exception: %s\n", e.what()),
+                                 ql::backtrace_registry_t::EMPTY_BACKTRACE);
 #endif // NDEBUG
     }
 

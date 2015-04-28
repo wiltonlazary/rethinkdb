@@ -207,7 +207,8 @@ public:
     bool has() const;
     void reset();
 
-    void write_to_protobuf(Datum *out) const;
+    template <class json_writer_t>
+    void write_json(json_writer_t *writer) const;
 
     type_t get_type() const;
     bool is_ptype() const;

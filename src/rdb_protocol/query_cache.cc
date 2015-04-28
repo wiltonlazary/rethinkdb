@@ -2,9 +2,8 @@
 #include "rdb_protocol/query_cache.hpp"
 
 #include "rdb_protocol/env.hpp"
+#include "rdb_protocol/response.hpp"
 #include "rdb_protocol/term_walker.hpp"
-
-#include "debug.hpp"
 
 namespace ql {
 
@@ -168,7 +167,7 @@ query_cache_t::ref_t::~ref_t() {
     }
 }
 
-void query_cache_t::ref_t::fill_response(Response *res) {
+void query_cache_t::ref_t::fill_response(response_t *res) {
     query_cache->assert_thread();
     if (entry->state != entry_t::state_t::START &&
         entry->state != entry_t::state_t::STREAM) {
@@ -197,7 +196,7 @@ void query_cache_t::ref_t::fill_response(Response *res) {
         }
 
         if (trace.has()) {
-            trace->as_datum().write_to_protobuf(res->mutable_profile());
+            res->set_profile(trace->as_datum());
         }
     } catch (const interrupted_exc_t &ex) {
         if (entry->persistent_interruptor.is_pulsed()) {
@@ -207,7 +206,7 @@ void query_cache_t::ref_t::fill_response(Response *res) {
                     backtrace_registry_t::EMPTY_BACKTRACE);
             }
             // For compatibility, we return a SUCCESS_SEQUENCE in this case
-            res->Clear();
+            res->clear();
             res->set_type(Response::SUCCESS_SEQUENCE);
         } else {
             query_cache->terminate_internal(entry);
@@ -224,7 +223,7 @@ void query_cache_t::ref_t::fill_response(Response *res) {
     }
 }
 
-void query_cache_t::ref_t::run(env_t *env, Response *res) {
+void query_cache_t::ref_t::run(env_t *env, response_t *res) {
     // The state will be overwritten if we end up with a stream
     entry->state = entry_t::state_t::DONE;
 
@@ -233,20 +232,20 @@ void query_cache_t::ref_t::run(env_t *env, Response *res) {
     scoped_ptr_t<val_t> val = entry->root_term->eval(&scope_env);
     if (val->get_type().is_convertible(val_t::type_t::DATUM)) {
         res->set_type(Response::SUCCESS_ATOM);
-        val->as_datum().write_to_protobuf(res->add_response());
+        res->set_data(val->as_datum());
     } else if (counted_t<grouped_data_t> gd =
             val->maybe_as_promiscuous_grouped_data(scope_env.env)) {
         datum_t d = to_datum_for_client_serialization(std::move(*gd),
                                                       env->reql_version(),
                                                       env->limits());
         res->set_type(Response::SUCCESS_ATOM);
-        d.write_to_protobuf(res->add_response());
+        res->set_data(d);
     } else if (val->get_type().is_convertible(val_t::type_t::SEQUENCE)) {
         counted_t<datum_stream_t> seq = val->as_seq(env);
         const datum_t arr = seq->as_array(env);
         if (arr.has()) {
             res->set_type(Response::SUCCESS_ATOM);
-            arr.write_to_protobuf(res->add_response());
+            res->set_data(arr);
         } else {
             entry->stream = seq;
             entry->has_sent_batch = false;
@@ -260,7 +259,7 @@ void query_cache_t::ref_t::run(env_t *env, Response *res) {
     }
 }
 
-void query_cache_t::ref_t::serve(env_t *env, Response *res) {
+void query_cache_t::ref_t::serve(env_t *env, response_t *res) {
     guarantee(entry->stream.has());
 
     batch_type_t batch_type = entry->has_sent_batch
@@ -269,9 +268,7 @@ void query_cache_t::ref_t::serve(env_t *env, Response *res) {
     std::vector<datum_t> ds = entry->stream->next_batch(
             env, batchspec_t::user(batch_type, env));
     entry->has_sent_batch = true;
-    for (auto d = ds.begin(); d != ds.end(); ++d) {
-        d->write_to_protobuf(res->add_response());
-    }
+    res->set_data(std::move(ds));
 
     // Note that `SUCCESS_SEQUENCE` is possible for feeds if you call `.limit`
     // after the feed.
@@ -290,19 +287,19 @@ void query_cache_t::ref_t::serve(env_t *env, Response *res) {
         // `case` statement is that feeds can sometimes have 0-size responses
         // for other reasons (e.g. in their first batch, or just whenever with a
         // V0_3 protocol).
-        if (res->response_size() == 0) res->set_type(Response::SUCCESS_SEQUENCE);
+        if (res->data().size() == 0) res->set_type(Response::SUCCESS_SEQUENCE);
         break;
     case feed_type_t::stream:
-        res->add_notes(Response::SEQUENCE_FEED);
+        res->add_note(Response::SEQUENCE_FEED);
         break;
     case feed_type_t::point:
-        res->add_notes(Response::ATOM_FEED);
+        res->add_note(Response::ATOM_FEED);
         break;
     case feed_type_t::orderby_limit:
-        res->add_notes(Response::ORDER_BY_LIMIT_FEED);
+        res->add_note(Response::ORDER_BY_LIMIT_FEED);
         break;
     case feed_type_t::unioned:
-        res->add_notes(Response::UNIONED_FEED);
+        res->add_note(Response::UNIONED_FEED);
         break;
     default: unreachable();
     }

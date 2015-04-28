@@ -1,3 +1,4 @@
+// Copyright 2010-2015 RethinkDB, all rights reserved.
 #ifndef RDB_PROTOCOL_TERM_WALKER_HPP_
 #define RDB_PROTOCOL_TERM_WALKER_HPP_
 

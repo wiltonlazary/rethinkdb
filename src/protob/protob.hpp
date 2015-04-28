@@ -29,6 +29,7 @@ class rdb_context_t;
 namespace ql {
 class query_params_t;
 class query_cache_t;
+class response_t;
 }
 
 class http_conn_cache_t : public repeating_timer_callback_t,
@@ -78,7 +79,7 @@ public:
     virtual ~query_handler_t() { }
 
     virtual void run_query(const ql::query_params_t &query_params,
-                           Response *response_out,
+                           ql::response_t *response_out,
                            signal_t *interruptor) = 0;
 };
 
@@ -104,7 +105,7 @@ private:
     void make_error_response(bool is_draining,
                              const tcp_conn_t &conn,
                              const std::string &err,
-                             Response *response_out);
+                             ql::response_t *response_out);
 
     // For the client driver socket
     void handle_conn(const scoped_ptr_t<tcp_conn_descriptor_t> &nconn,

@@ -1755,11 +1755,6 @@ bool datum_t::key_is_truncated(const store_key_t &key) {
     }
 }
 
-void datum_t::write_to_protobuf(Datum *d) const {
-    d->set_type(Datum::R_JSON);
-    d->set_r_str(as_json().PrintUnformatted());
-}
-
 // `key` is unused because this is passed to `datum_t::merge`, which takes a
 // generic conflict resolution function, but this particular conflict resolution
 // function doesn't care about they key (although we could add some
