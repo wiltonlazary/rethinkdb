@@ -258,7 +258,7 @@ private:
                 term_storage_t term_storage;
                 minidriver_t r(&term_storage, backtrace());
                 auto x = pb::dummy_var_t::REPLACE_HELPER_ROW;
-                const raw_term_t *map = r.fun(x, r::expr(x)[tbl->get_pkey()]).raw_term();
+                const raw_term_t *map = r.fun(x, r.expr(x)[tbl->get_pkey()]).raw_term();
                 compile_env_t compile_env((var_visibility_t()), &term_storage);
                 func_term_t func_term(&compile_env, map);
                 var_scope_t var_scope;

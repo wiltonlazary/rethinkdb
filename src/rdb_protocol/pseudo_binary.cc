@@ -171,7 +171,7 @@ datum_string_t decode_base64_ptype(
     return res;
 }
 
-void write_binary_to_protobuf(Datum *d, const datum_string_t &data) {
+datum_t binary_as_pseudotype(Datum *d, const datum_string_t &data) {
     d->set_type(Datum::R_OBJECT);
 
     // Add pseudotype field with binary type

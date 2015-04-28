@@ -206,28 +206,28 @@ counted_t<const term_t> compile_term(compile_env_t *env, const protob_t<const Te
     unreachable();
 }
 
-void run(query_params_t *query_params,
+void run(const query_params_t &query_params,
          Response *res,
          signal_t *interruptor) {
     // RSI (grey): make sure validate_pb/validate_optargs are still performed
     try {
-        switch (query_params->type) {
+        switch (query_params.type) {
         case Query_QueryType_START: {
             scoped_ptr_t<query_cache_t::ref_t> query_ref =
-                query_params->query_cache->create(query_params, interruptor);
+                query_params.query_cache->create(query_params, interruptor);
             query_ref->fill_response(res);
         } break;
         case Query_QueryType_CONTINUE: {
             scoped_ptr_t<query_cache_t::ref_t> query_ref =
-                query_params->query_cache->get(query_params, interruptor);
+                query_params.query_cache->get(query_params, interruptor);
             query_ref->fill_response(res);
         } break;
         case Query_QueryType_STOP: {
-            query_params->query_cache->terminate_query(query_params);
+            query_params.query_cache->terminate_query(query_params);
             res->set_type(Response::SUCCESS_SEQUENCE);
         } break;
         case Query_QueryType_NOREPLY_WAIT: {
-            query_params->query_cache->noreply_wait(query_params, interruptor);
+            query_params.query_cache->noreply_wait(query_params, interruptor);
             res->set_type(Response::WAIT_COMPLETE);
         } break;
         default: unreachable();

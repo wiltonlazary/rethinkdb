@@ -166,24 +166,22 @@ op_term_t::op_term_t(compile_env_t *env, const raw_term_t *term,
                      argspec_t argspec, optargspec_t optargspec)
         : term_t(term) {
     std::vector<counted_t<const term_t> > original_args;
-    original_args.reserve(term->args_size());
-    for (int i = 0; i < term->args_size(); ++i) {
-        counted_t<const term_t> t
-            = compile_term(env, term.make_child(&term->args(i)));
+    original_args.reserve(term->num_args());
+    auto arg_it = term->args();
+    for (const raw_term_t *arg = arg_it.next(); arg != nullptr; arg = arg_it.next()) {
+        counted_t<const term_t> t = compile_term(env, arg);
         original_args.push_back(t);
     }
     arg_terms.init(new arg_terms_t(term, std::move(argspec), std::move(original_args)));
 
-    auto it = term->optargs();
-    for (raw_term_t *optarg = it.next(); optarg != nullptr; optarg = it.next()) {
-        rcheck_src(optarg->bt, optargspec.contains(optarg->name),
-                   base_exc_t::GENERIC, strprintf("Unrecognized optional argument `%s`.",
-                                                  optarg->name));
-        counted_t<const term_t> t = compile_term(env, optarg);
-        auto res = optargs.insert(std::make_pair(optarg->name, std::move(t)));
-        rcheck_src(optarg->bt, res.second,
-                   base_exc_t::GENERIC, strprintf("Duplicate optional argument: %s",
-                                                  optarg->name));
+    auto opt_it = term->optargs();
+    for (const raw_term_t *opt = opt_it.next(); opt != nullptr; opt = opt_it.next()) {
+        rcheck_src(opt->bt, optargspec.contains(opt->optarg_name()), base_exc_t::GENERIC,
+            strprintf("Unrecognized optional argument `%s`.", opt->optarg_name()));
+        counted_t<const term_t> t = compile_term(env, opt);
+        auto res = optargs.insert(std::make_pair(opt->optarg_name(), std::move(t)));
+        rcheck_src(opt->bt, res.second, base_exc_t::GENERIC,
+            strprintf("Duplicate optional argument: %s", opt->optarg_name()));
     }
 }
 op_term_t::~op_term_t() { }

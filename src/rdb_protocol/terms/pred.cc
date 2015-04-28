@@ -2,6 +2,7 @@
 #include "rdb_protocol/terms/terms.hpp"
 
 #include "rdb_protocol/op.hpp"
+#include "rdb_protocol/query.hpp"
 
 namespace ql {
 
@@ -33,32 +34,32 @@ public:
     predicate_term_t(compile_env_t *env, const raw_term_t *term)
         : op_term_t(env, term, argspec_t(2, -1)),
           namestr(0), invert(false), pred(0) {
-        switch (term->type) {
-        case Term::EQ: {
+        switch (static_cast<int>(term->type)) {
+        case Term::EQ:
             namestr = "EQ";
             pred = &datum_eq;
-        } break;
-        case Term::NE: {
+            break;
+        case Term::NE:
             namestr = "NE";
             pred = &datum_eq;
             invert = true; // we invert the == operator so (!= 1 2 3) makes sense
-        } break;
-        case Term::LT: {
+            break;
+        case Term::LT:
             namestr = "LT";
             pred = &datum_lt;
-        } break;
-        case Term::LE: {
+            break;
+        case Term::LE:
             namestr = "LE";
             pred = &datum_le;
-        } break;
-        case Term::GT: {
+            break;
+        case Term::GT:
             namestr = "GT";
             pred = &datum_gt;
-        } break;
-        case Term::GE: {
+            break;
+        case Term::GE:
             namestr = "GE";
             pred = &datum_ge;
-        } break;
+            break;
         default: unreachable();
         }
         guarantee(namestr && pred);

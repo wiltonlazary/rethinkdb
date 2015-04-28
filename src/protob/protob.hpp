@@ -77,7 +77,7 @@ class query_handler_t {
 public:
     virtual ~query_handler_t() { }
 
-    virtual void run_query(ql::query_params_t *query_params,
+    virtual void run_query(const ql::query_params_t &query_params,
                            Response *response_out,
                            signal_t *interruptor) = 0;
 };

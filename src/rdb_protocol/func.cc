@@ -1,5 +1,7 @@
 #include "rdb_protocol/func.hpp"
 
+#include "pprint/js_pprint.hpp"
+#include "pprint/pprint.hpp"
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/minidriver.hpp"
 #include "rdb_protocol/pseudo_literal.hpp"
@@ -142,13 +144,13 @@ void js_func_t::visit(func_visitor_t *visitor) const {
 func_term_t::func_term_t(compile_env_t *env, const raw_term_t *t)
         : term_t(t) {
     r_sanity_check(t != nullptr);
-    r_sanity_check(t->type() == Term::FUNC);
+    r_sanity_check(t->type == Term::FUNC);
     rcheck(t->num_optargs() == 0,
            base_exc_t::GENERIC,
            "FUNC takes no optional arguments.");
     rcheck(t->num_args() == 2,
            base_exc_t::GENERIC,
-           strprintf("FUNC takes exactly two arguments (got %d)", t->num_args()));
+           strprintf("FUNC takes exactly two arguments (got %zu)", t->num_args()));
 
     auto it = t->args();
     const raw_term_t *vars = it.next();
@@ -164,18 +166,18 @@ func_term_t::func_term_t(compile_env_t *env, const raw_term_t *t)
             rcheck(dnum.get_type() == datum_t::type_t::R_NUM,
                    base_exc_t::GENERIC,
                    "CLIENT ERROR: FUNC variables must be a literal array of *numbers*.");
-            args.push_back(sym_t(dnum->as_num()));
+            args.push_back(sym_t(dnum.as_num()));
         }
-    } else if (vars->type() == Term::MAKE_ARRAY) {
+    } else if (vars->type == Term::MAKE_ARRAY) {
         auto vars_it = vars->args();
-        for (const raw_term_t *arg = it.next(); arg != nullptr, arg = it.next()) {
-            rcheck(arg->type == Term::DATUM,
+        for (const raw_term_t *v = vars_it.next(); v != nullptr; v = vars_it.next()) {
+            rcheck(v->type == Term::DATUM,
                    base_exc_t::GENERIC,
                    "CLIENT ERROR: FUNC variables must be a *literal* array of numbers.");
-            rcheck(arg->value.get_type() == datum_t::type_t::R_NUM,
+            rcheck(v->value.get_type() == datum_t::type_t::R_NUM,
                    base_exc_t::GENERIC,
                    "CLIENT ERROR: FUNC variables must be a literal array of *numbers*.");
-            args.push_back(sym_t(arg->value.as_num()));
+            args.push_back(sym_t(v->value.as_num()));
         }
     } else {
         rfail(base_exc_t::GENERIC,
@@ -251,8 +253,8 @@ bool filter_match(datum_t predicate, datum_t value,
 bool reql_func_t::filter_helper(env_t *env, datum_t arg) const {
     datum_t d = call(env, make_vector(arg), NO_FLAGS)->as_datum();
     if (d.get_type() == datum_t::R_OBJECT &&
-        (body->get_src()->type() == Term::MAKE_OBJ ||
-         body->get_src()->type() == Term::DATUM)) {
+        (body->get_src()->type == Term::MAKE_OBJ ||
+         body->get_src()->type == Term::DATUM)) {
         return filter_match(d, arg, this);
     } else {
         return d.as_bool();
@@ -260,16 +262,7 @@ bool reql_func_t::filter_helper(env_t *env, datum_t arg) const {
 }
 
 std::string reql_func_t::print_source() const {
-    std::string ret = "function (captures = " + captured_scope.print() + ") (args = [";
-    for (size_t i = 0; i < arg_names.size(); ++i) {
-        if (i != 0) {
-            ret += ", ";
-        }
-        ret += strprintf("%" PRIi64, arg_names[i].value);
-    }
-    ret += "]) ";
-    ret += body->get_src()->DebugString();
-    return ret;
+    return pprint::pretty_print(80, pprint::render_as_javascript(body->get_src()));
 }
 
 std::string js_func_t::print_source() const {
@@ -342,7 +335,7 @@ counted_t<const func_t> new_get_field_func(datum_t key, backtrace_id_t bt,
                                            term_storage_t *term_storage) {
     minidriver_t r(term_storage, bt);
     pb::dummy_var_t obj = pb::dummy_var_t::FUNC_GETFIELD;
-    const raw_term_t *twrap = r::fun(obj, r.expr(obj)[key]).raw_term();
+    const raw_term_t *twrap = r.fun(obj, r.expr(obj)[key]).raw_term();
 
     compile_env_t empty_compile_env((var_visibility_t()), term_storage);
     counted_t<func_term_t> func_term = make_counted<func_term_t>(&empty_compile_env,

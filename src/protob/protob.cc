@@ -474,7 +474,7 @@ void query_server_t::connection_loop(tcp_conn_t *conn,
             bool replied = false;
 
             save_exception(&err, &err_str, &abort, [&]() {
-                    handler->run_query(q.get(), &response, &cb_interruptor);
+                    handler->run_query(*q.get(), &response, &cb_interruptor);
                     if (!q->noreply) {
                         response.set_token(q->token);
                         new_mutex_acq_t send_lock(&send_mutex, &cb_interruptor);
@@ -609,7 +609,7 @@ void query_server_t::handle(const http_req_t &req,
             wait_any_t true_interruptor(interruptor, conn->get_interruptor(),
                                         drainer.get_drain_signal());
             try {
-                handler->run_query(&q, &response, &true_interruptor);
+                handler->run_query(q, &response, &true_interruptor);
             } catch (const interrupted_exc_t &ex) {
                 if (http_conn_cache.is_expired(*conn)) {
                     // This will only be sent back if this was interrupted by a http conn

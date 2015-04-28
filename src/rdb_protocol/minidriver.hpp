@@ -32,9 +32,9 @@ public:
         void copy_optargs_from_term(const raw_term_t *from);
         void copy_args_from_term(const raw_term_t *from, size_t start_index);
 
-#define REQL_METHOD(name, termtype)                                     \
-    template<class... T>                                                \
-    reql_t name(T &&... a)                                              \
+#define REQL_METHOD(name, termtype)  \
+    template <class... T>            \
+    reql_t name(T &&... a)           \
     { return reql_t(r, Term::termtype, *this, std::forward<T>(a)...); }
 
         REQL_METHOD(operator +, ADD)
@@ -70,39 +70,45 @@ public:
         reql_t operator !();
         reql_t do_(pb::dummy_var_t arg, const reql_t &body);
 
-    private:
-        friend class minidriver_t;
-        reql_t(minidriver_t *_r, const raw_term_t *term_);
-        reql_t(minidriver_t *_r, raw_term_t *&&term_);
-        reql_t(minidriver_t *_r, const double val);
-        reql_t(minidriver_t *_r, const std::string &val);
-        reql_t(minidriver_t *_r, const datum_t &d);
-        reql_t(minidriver_t *_r, std::vector<reql_t> &&val);
-        reql_t(minidriver_t *_r, pb::dummy_var_t var);
+        template <class... T>
+        reql_t call(Term::TermType type, T &&... args) {
+            return reql_t(r, type, *this, std::forward<T>(args)...);
+        }
 
         reql_t(reql_t &&other);
         reql_t &operator= (reql_t &&other);
-
-        template <class... T>
-        reql_t(minidriver_t *_r, Term_TermType type, T &&... args) :
-                raw_term_(r->new_term(type)) {
-            // TODO: set datum value if datum - or disallow datum terms in this constructor
-            add_args(std::forward<T>(args)...);
-        }
 
         template <class... T>
         void add_args(T &&... args) {
             UNUSED int _[] = { (add_arg(std::forward<T>(args)), 1)... };
         }
 
-        template<class T>
+        template <class T>
         void add_arg(T &&a) {
             reql_t new_term(r, std::forward<T>(a));
             raw_term_->args_.push_back(new_term.raw_term_);
         }
 
-        raw_term_t *raw_term_;
+    private:
+        friend class minidriver_t;
+        reql_t(minidriver_t *_r, const raw_term_t *term_);
+        reql_t(minidriver_t *_r, raw_term_t *&&term_);
+        reql_t(minidriver_t *_r, const reql_t &other);
+        reql_t(minidriver_t *_r, const double val);
+        reql_t(minidriver_t *_r, const std::string &val);
+        reql_t(minidriver_t *_r, const datum_t &d);
+        reql_t(minidriver_t *_r, std::vector<reql_t> &&val);
+        reql_t(minidriver_t *_r, pb::dummy_var_t var);
+
+        template <class... T>
+        reql_t(minidriver_t *_r, Term::TermType type, T &&... args) :
+                r(_r), raw_term_(r->new_term(type)) {
+            // TODO: set datum value if datum - or disallow datum terms in this constructor
+            add_args(std::forward<T>(args)...);
+        }
+
         minidriver_t *r;
+        raw_term_t *raw_term_;
     };
 
     minidriver_t(term_storage_t *_term_storage,
@@ -116,25 +122,26 @@ public:
 
     reql_t boolean(bool b);
 
+    // Takes n r.var reql_ts, plus a function that takes n arguments
     reql_t fun(const reql_t &body);
     reql_t fun(pb::dummy_var_t a, const reql_t &body);
     reql_t fun(pb::dummy_var_t a, pb::dummy_var_t b, const reql_t &body);
 
-    template<class... Ts>
-    reql_t array(Ts &&... xs) {
-        return reql_t(Term::MAKE_ARRAY, std::forward<Ts>(xs)...);
+    template <class... T>
+    reql_t array(T &&... args) {
+        return reql_t(this, Term::MAKE_ARRAY, std::forward<T>(args)...);
     }
 
-    template<class... Ts>
-    reql_t object(Ts &&... xs) {
-        return reql_t(Term::MAKE_OBJ, std::forward<Ts>(xs)...);
+    template <class... T>
+    reql_t object(T &&... args) {
+        return reql_t(this, Term::MAKE_OBJ, std::forward<T>(args)...);
     }
 
     reql_t null();
 
     template <class T>
     std::pair<std::string, reql_t> optarg(const std::string &key, T &&value) {
-        return std::pair<std::string, reql_t>(key, reql_t(std::forward<T>(value)));
+        return std::pair<std::string, reql_t>(key, reql_t(this, std::forward<T>(value)));
     }
 
     reql_t db(const std::string &name);
@@ -144,9 +151,9 @@ public:
         return reql_t(Term::ERROR, std::forward<T>(message));
     }
 
-    template<class Cond, class Then, class Else>
+    template <class Cond, class Then, class Else>
     reql_t branch(Cond &&a, Then &&b, Else &&c) {
-        return reql_t(Term::BRANCH,
+        return reql_t(this, Term::BRANCH,
                       std::forward<Cond>(a),
                       std::forward<Then>(b),
                       std::forward<Else>(c));
@@ -176,6 +183,11 @@ inline void minidriver_t::reql_t::add_arg(
     raw_term_t *optarg_term = r->maybe_ref(optarg.second.raw_term_);
     optarg_term->set_optarg_name(optarg.first);
     raw_term_->optargs_.push_back(optarg_term);
+}
+
+template <>
+inline void minidriver_t::reql_t::add_arg(minidriver_t::reql_t &&arg) {
+    raw_term_->args_.push_back(r->maybe_ref(arg.raw_term_));
 }
 
 }  // namespace ql

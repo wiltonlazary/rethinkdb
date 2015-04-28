@@ -3,6 +3,7 @@
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/minidriver.hpp"
 #include "rdb_protocol/pseudo_time.hpp"
+#include "rdb_protocol/query_cache.hpp"
 
 namespace ql {
 

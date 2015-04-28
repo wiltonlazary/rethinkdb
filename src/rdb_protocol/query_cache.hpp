@@ -135,7 +135,7 @@ private:
     std::map<int64_t, scoped_ptr_t<entry_t> > queries;
 
     // Used for noreply waiting, this contains all allocated-but-incomplete query ids
-    friend class query_id_t;
+    friend class query_params_t::query_id_t;
     uint64_t next_query_id;
     intrusive_list_t<query_params_t::query_id_t> outstanding_query_ids;
     watchable_variable_t<uint64_t> oldest_outstanding_query_id;

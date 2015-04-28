@@ -115,7 +115,8 @@ private:
         // RSI (grey): this probably doesn't (and didn't) work properly with r.args
         auto arg_it = get_src()->args();
         arg_it.next(); // Skip arg0
-        for (const raw_term_t *t = arg_it.next(); t != nullptr; t = arg_it.next()) {
+        for (size_t i = 0; i < get_src()->num_args(); ++i) {
+            const raw_term_t *t = arg_it.next();
             if (t->type == Term::DESC) {
                 comparisons.push_back(
                     std::make_pair(
@@ -158,8 +159,8 @@ private:
             auto optarg_it = get_src()->optargs();
             for (const raw_term_t *t = optarg_it.next();
                  t != nullptr; t = optarg_it.next()) {
-                if (t->name == "index") {
-                    sorting = t.type == Term::DESC ?
+                if (strcmp(t->optarg_name(), "index") == 0) {
+                    sorting = t->type == Term::DESC ?
                         sorting_t::DESCENDING : sorting_t::ASCENDING;
                 }
             }
@@ -220,7 +221,9 @@ private:
             if (idx.has() && idx_str == tbl_pkey) {
                 auto row = pb::dummy_var_t::DISTINCT_ROW;
                 std::vector<sym_t> distinct_args{dummy_var_to_sym(row)}; // NOLINT(readability/braces) yes we bloody well do need the ;
-                minidriver_t r(env->env->term_storage, backtrace())
+                // RSI (grey): more permanent term storage
+                term_storage_t term_storage;
+                minidriver_t r(&term_storage, backtrace());
                 const raw_term_t *body = r.var(row)[idx_str].raw_term();
                 map_wire_func_t mwf(body, std::vector<sym_t>(1, dummy_var_to_sym(row)),
                                     backtrace());

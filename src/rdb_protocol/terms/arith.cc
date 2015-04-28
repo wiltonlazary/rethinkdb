@@ -15,7 +15,7 @@ class arith_term_t : public op_term_t {
 public:
     arith_term_t(compile_env_t *env, const raw_term_t *term)
         : op_term_t(env, term, argspec_t(1, -1)), namestr(0), op(0) {
-        switch (term->type) {
+        switch (static_cast<int>(term->type)) {
         case Term::ADD: namestr = "ADD"; op = &arith_term_t::add; break;
         case Term::SUB: namestr = "SUB"; op = &arith_term_t::sub; break;
         case Term::MUL: namestr = "MUL"; op = &arith_term_t::mul; break;

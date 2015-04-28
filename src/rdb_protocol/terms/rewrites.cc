@@ -19,13 +19,13 @@ public:
                    argspec_t argspec,
                    minidriver_t::reql_t (*rewrite)(compile_env_t *env,
                                                    const raw_term_t *in))
-            : term_t(term), in(term) {
-        rcheck(argspec.contains(term.num_args()),
+            : term_t(term) {
+        rcheck(argspec.contains(term->num_args()),
                base_exc_t::GENERIC,
-               strprintf("Expected %s but found %d.",
-                         argspec.print().c_str(), term.num_args()));
-        rewrite_src = rewrite(env, in)->raw_term();
-        real = compile_term(env, out);
+               strprintf("Expected %s but found %zu.",
+                         argspec.print().c_str(), term->num_args()));
+        rewrite_src = rewrite(env, term).raw_term();
+        real = compile_term(env, rewrite_src);
     }
 
 private:
@@ -51,26 +51,27 @@ public:
 
     static minidriver_t::reql_t rewrite(compile_env_t *env,
                                         const raw_term_t *in) {
+        minidriver_t r(env->term_storage, in->bt);;
+
         auto arg_it = in->args();
-        const raw_term_t *left = *(arg_it++);
-        const raw_term_t *right = *(arg_it++);
-        const raw_term_t *func = *(arg_it++);
+        const raw_term_t *left = arg_it.next();
+        const raw_term_t *right = arg_it.next();
+        const raw_term_t *func = arg_it.next();
         auto n = pb::dummy_var_t::INNERJOIN_N;
         auto m = pb::dummy_var_t::INNERJOIN_M;
 
-        minidriver_t r(env->term_storage, in->backtrace());
-        reql_t term =
-            r.expr(in->arg(0)).concat_map(
+        minidriver_t::reql_t term =
+            r.expr(left).concat_map(
                 r.fun(n,
-                    r.expr(right).concat_map(
+                     r.expr(right).concat_map(
                         r.fun(m,
                             r.branch(
                                 r.expr(func)(r.var(n), r.var(m)),
                                 r.array(r.object(r.optarg("left", n),
-                                                 r.obtarg("right", m))),
+                                                 r.optarg("right", m))),
                                 r.array())))));
 
-        term.copy_optargs_from_term(*in);
+        term.copy_optargs_from_term(in);
         return term;
     }
 
@@ -84,20 +85,21 @@ public:
 
     static minidriver_t::reql_t rewrite(compile_env_t *env,
                                         const raw_term_t *in) {
+        minidriver_t r(env->term_storage, in->bt);
+
         auto arg_it = in->args();
-        const raw_term_t *left = *(arg_it++);
-        const raw_term_t *right = *(arg_it++);
-        const raw_term_t *func = *(arg_it++);
+        const raw_term_t *left = arg_it.next();
+        const raw_term_t *right = arg_it.next();
+        const raw_term_t *func = arg_it.next();
         auto n = pb::dummy_var_t::OUTERJOIN_N;
         auto m = pb::dummy_var_t::OUTERJOIN_M;
         auto lst = pb::dummy_var_t::OUTERJOIN_LST;
 
-        minidriver_t r(env->term_storage, in->backtrace());
         minidriver_t::reql_t inner_concat_map =
             r.expr(right).concat_map(
                 r.fun(m,
                     r.branch(
-                        r.expr(func)(n, m),
+                        r.expr(func)(r.var(n), r.var(m)),
                         r.array(r.object(r.optarg("left", n),
                                          r.optarg("right", m))),
                         r.array())));
@@ -106,11 +108,11 @@ public:
             r.expr(left).concat_map(
                 r.fun(n,
                     inner_concat_map.coerce_to("ARRAY").do_(lst,
-                        r.branch(r.expr(lst).count() > 0,
-                                 lst,
+                        r.branch(r.var(lst).count() > 0,
+                                 r.var(lst),
                                  r.array(r.object(r.optarg("left", n)))))));
 
-        term.copy_optargs_from_term(*optargs_in);
+        term.copy_optargs_from_term(in);
         return term;
     }
 
@@ -124,24 +126,24 @@ public:
 private:
 
     static minidriver_t::reql_t rewrite(compile_env_t *env,
-                             const raw_term_t *in) {
+                                        const raw_term_t *in) {
+        minidriver_t r(env->term_storage, in->bt);
+
         auto arg_it = in->args();
         const raw_term_t *left = arg_it.next();
         const raw_term_t *left_attr = arg_it.next();
         const raw_term_t *right = arg_it.next();
-
         auto row = pb::dummy_var_t::EQJOIN_ROW;
         auto v = pb::dummy_var_t::EQJOIN_V;
 
-        minidriver_t r(env->term_storage, in->backtrace());
         minidriver_t::reql_t get_all =
             r.expr(right).get_all(
-                r.expr(left_attr)(row, r.optarg("_SHORTCUT_", GET_FIELD_SHORTCUT)));
+                r.expr(left_attr)(r.var(row), r.optarg("_SHORTCUT_", GET_FIELD_SHORTCUT)));
         get_all.copy_optargs_from_term(in);
         return r.expr(left).concat_map(
             r.fun(row,
                   r.branch(
-                       r.null() == row,
+                       r.null() == r.var(row),
                        r.array(),
                        get_all.default_(r.array()).map(
                            r.fun(v, r.object(r.optarg("left", row),
@@ -159,11 +161,12 @@ private:
 
     static minidriver_t::reql_t rewrite(compile_env_t *env,
                                         const raw_term_t *in) {
+        minidriver_t r(env->term_storage, in->bt);
+
         auto arg_it = in->args();
         const raw_term_t *val = arg_it.next();
         auto x = pb::dummy_var_t::IGNORED;
 
-        minidriver_t r(env->term_storage, in->backtrace());
         minidriver_t::reql_t term = r.expr(val).replace(r.fun(x, r.null()));
         term.copy_optargs_from_term(in);
         return term;
@@ -178,6 +181,7 @@ public:
 private:
     static minidriver_t::reql_t rewrite(compile_env_t *env,
                                         const raw_term_t *in) {
+        minidriver_t r(env->term_storage, in->bt);
         auto arg_it = in->args();
         const raw_term_t *arg0 = arg_it.next();
         const raw_term_t *arg1 = arg_it.next();
@@ -188,14 +192,14 @@ private:
             r.expr(arg0).replace(
                 r.fun(old_row,
                     r.branch(
-                        r.null() == old_row,
+                        r.null() == r.var(old_row),
                         r.null(),
                         r.fun(new_row,
                             r.branch(
-                                r.null() == new_row,
+                                r.null() == r.var(new_row),
                                 old_row,
-                                r.expr(old_row).merge(new_row)))(
-                                    r.expr(arg1)(old_row,
+                                r.var(old_row).merge(r.var(new_row))))(
+                                    r.expr(arg1)(r.var(old_row),
                                         r.optarg("_EVAL_FLAGS_", LITERAL_OK)),
                                     r.optarg("_EVAL_FLAGS_", LITERAL_OK)))));
 
@@ -212,6 +216,7 @@ public:
 private:
     static minidriver_t::reql_t rewrite(compile_env_t *env,
                                         const raw_term_t *in) {
+        minidriver_t r(env->term_storage, in->bt);
         auto arg_it = in->args();
         const raw_term_t *arg0 = arg_it.next();
         const raw_term_t *arg1 = arg_it.next();
@@ -232,13 +237,14 @@ public:
 private:
     static minidriver_t::reql_t rewrite(compile_env_t *env,
                                         const raw_term_t *in) {
+        minidriver_t r(env->term_storage, in->bt);
         auto arg_it = in->args();
         const raw_term_t *arg0 = arg_it.next();
         const raw_term_t *arg1 = arg_it.next();
         auto row = pb::dummy_var_t::DIFFERENCE_ROW;
 
         minidriver_t::reql_t term =
-            r.expr(arg0).filter(r.fun(row, !(r.expr(arg1).contains(row))));
+            r.expr(arg0).filter(r.fun(row, !(r.expr(arg1).contains(r.var(row)))));
 
         term.copy_optargs_from_term(in);
         return term;
@@ -254,6 +260,7 @@ public:
 private:
     static minidriver_t::reql_t rewrite(compile_env_t *env,
                                         const raw_term_t *in) {
+        minidriver_t r(env->term_storage, in->bt);
         auto arg_it = in->args();
         const raw_term_t *arg0 = arg_it.next();
 

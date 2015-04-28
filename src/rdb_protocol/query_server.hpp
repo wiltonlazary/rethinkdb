@@ -30,7 +30,7 @@ public:
     http_app_t *get_http_app();
     int get_port() const;
 
-    void run_query(ql::query_params_t *query_params,
+    void run_query(const ql::query_params_t &query_params,
                    Response *response_out,
                    signal_t *interruptor);
 public:
