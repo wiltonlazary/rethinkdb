@@ -65,7 +65,7 @@ public:
     const raw_term_t *next();
 private:
     friend class raw_term_t;
-    raw_term_iterator_t(const intrusive_list_t<raw_term_t> *_list);
+    explicit raw_term_iterator_t(const intrusive_list_t<raw_term_t> *_list);
 
     const intrusive_list_t<raw_term_t> *list;
     const raw_term_t *item;

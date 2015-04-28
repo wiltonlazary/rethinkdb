@@ -1,4 +1,4 @@
-// Copyright 2010-2014 RethinkDB, all rights reserved.
+// Copyright 2010-2015 RethinkDB, all rights reserved.
 #include <functional>
 #include <stdexcept>
 
@@ -137,7 +137,7 @@ private:
 TEST(RDBInterrupt, InsertOp) {
     ql::term_storage_t term_storage;
     ql::minidriver_t r(&term_storage, ql::backtrace_id_t::empty());
-    const ql::raw_term_t *insert_term = 
+    const ql::raw_term_t *insert_term =
         r.db("db").table("table").insert(r.object(r.optarg("id", "key"),
                                                   r.optarg("value", "stuff"))).raw_term();
 
@@ -189,7 +189,7 @@ TEST(RDBInterrupt, GetOp) {
 
     ql::term_storage_t term_storage;
     ql::minidriver_t r(&term_storage, ql::backtrace_id_t::empty());
-    const ql::raw_term_t *get_term = 
+    const ql::raw_term_t *get_term =
         r.db("db").table("table").get_("key").raw_term();
 
     {

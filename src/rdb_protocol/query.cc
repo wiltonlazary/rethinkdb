@@ -175,7 +175,7 @@ raw_term_iterator_t::raw_term_iterator_t(const intrusive_list_t<raw_term_t> *_li
 const raw_term_t *raw_term_iterator_t::next() {
     const raw_term_t *res = item;
     r_sanity_check(res != nullptr, "Tried to read too many args or optargs from a term.");
-    item = list->next(item);    
+    item = list->next(item);
     return res;
 }
 

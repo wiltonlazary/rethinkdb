@@ -1,4 +1,4 @@
-// Copyright 2010-2014 RethinkDB, all rights reserved.
+// Copyright 2010-2015 RethinkDB, all rights reserved.
 #include "utils.hpp"
 
 #include <math.h>
@@ -17,8 +17,6 @@
 #include <sys/types.h>
 #include <sys/resource.h>
 #include <unistd.h>
-
-#include <google/protobuf/stubs/common.h>
 
 #include "errors.hpp"
 #include <boost/date_time.hpp>
@@ -79,7 +77,6 @@ startup_shutdown_t::startup_shutdown_t() {
 }
 
 startup_shutdown_t::~startup_shutdown_t() {
-    google::protobuf::ShutdownProtobufLibrary();
 }
 
 
