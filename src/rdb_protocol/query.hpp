@@ -64,6 +64,7 @@ class raw_term_t;
 
 class raw_term_iterator_t {
 public:
+    raw_term_iterator_t(raw_term_iterator_t &&) = default;
     const raw_term_t *next();
 private:
     friend class raw_term_t;
@@ -71,6 +72,8 @@ private:
 
     const intrusive_list_t<raw_term_t> *list;
     const raw_term_t *item;
+
+    DISABLE_COPYING(raw_term_iterator_t);
 };
 
 struct raw_term_t : public intrusive_list_node_t<raw_term_t> {
@@ -119,6 +122,12 @@ public:
         return backtrace_registry;
     }
 
+    // Deserializes a term tree into the term storage, and provides a pointer to
+    // the root term of the deserialized tree through the root_term_out parameter.
+    template <cluster_version_t W>
+    archive_result_t deserialize_term_tree(read_stream_t *s,
+                                           raw_term_t **root_term_out);
+
 private:
     // We use a segmented vector so items won't be reallocated and moved, which allows us
     // to use pointers to other items in the vector.
@@ -150,6 +159,9 @@ private:
 
     DISABLE_COPYING(term_storage_t);
 };
+
+template <cluster_version_t W>
+void serialize_term_tree(write_message_t *wm, const raw_term_t *root_term);
 
 } // namespace ql
 

@@ -370,4 +370,78 @@ void term_storage_t::add_optargs(const rapidjson::Value &optargs,
     }
 }
 
+template <cluster_version_t W>
+archive_result_t term_storage_t::deserialize_term_tree(read_stream_t *s,
+                                                       raw_term_t **term_out) {
+    archive_result_t res;
+
+    int32_t type;
+    backtrace_id_t bt;
+    res = deserialize<W>(s, &type);
+    if (bad(res)) { return res; }
+    res = deserialize<W>(s, &bt);
+    if (bad(res)) { return res; }
+    raw_term_t *term = new_term(static_cast<Term::TermType>(type), bt);
+
+    if (term->type == Term::DATUM) {
+        deserialize<W>(s, &term->value);
+    } else {
+        size_t num_args;
+        res = deserialize<W>(s, &num_args);
+        if (bad(res)) { return res; }
+        for (size_t i = 0; i < num_args; ++i) {
+            res = deserialize_term_tree<W>(s, term_out);
+            if (bad(res)) { return res; }
+            term->args_.push_back(*term_out);
+        }
+        size_t num_optargs;
+        res = deserialize<W>(s, &num_optargs);
+        if (bad(res)) { return res; }
+        for (size_t i = 0; i < num_optargs; ++i) {
+            res = deserialize_term_tree<W>(s, term_out);
+            if (bad(res)) { return res; }
+            term->optargs_.push_back(*term_out);
+        }
+    }
+
+    *term_out = term;
+    return res;
+}
+
+template <cluster_version_t W>
+void serialize_term_tree(write_message_t *wm, const raw_term_t *term) {
+    serialize<W>(wm, static_cast<int32_t>(term->type));
+    serialize<W>(wm, term->bt);
+    if (term->type == Term::DATUM) {
+        serialize<W>(wm, term->value);
+    } else {
+        size_t num_args = term->num_args();
+        serialize<W>(wm, num_args);
+        auto arg_it = term->args();
+        for (const raw_term_t *t = arg_it.next();
+             t != nullptr; t = arg_it.next()) {
+            serialize_term_tree<W>(wm, t);
+            --num_args;
+        }
+        size_t num_optargs = term->num_optargs();
+        serialize<W>(wm, num_optargs);
+        auto optarg_it = term->optargs();
+        for (const raw_term_t *t = optarg_it.next();
+             t != nullptr; t = optarg_it.next()) {
+            serialize_term_tree<W>(wm, t);
+            --num_optargs;
+        }
+        guarantee(num_args == 0);
+        guarantee(num_optargs == 0);
+    }
+}
+
+template
+archive_result_t term_storage_t::deserialize_term_tree<cluster_version_t::CLUSTER>(
+    read_stream_t *s, raw_term_t **term_out);
+
+template
+void serialize_term_tree<cluster_version_t::CLUSTER>(
+    write_message_t *wm, const raw_term_t *term);
+
 } // namespace ql
