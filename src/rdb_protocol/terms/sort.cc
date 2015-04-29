@@ -112,7 +112,8 @@ private:
     virtual scoped_ptr_t<val_t>
     eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
         std::vector<std::pair<order_direction_t, counted_t<const func_t> > > comparisons;
-        // RSI (grey): this probably doesn't (and didn't) work properly with r.args
+        r_sanity_check(get_src()->num_args() == args->num_args());
+        // TODO: get this working with r.args
         auto arg_it = get_src()->args();
         arg_it.next(); // Skip arg0
         for (size_t i = 0; i < get_src()->num_args(); ++i) {
