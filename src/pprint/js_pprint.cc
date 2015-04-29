@@ -6,11 +6,12 @@
 #include <vector>
 #include <memory>
 
+#include "errors.hpp"
+
 #include "pprint/generic_term_walker.hpp"
 #include "rdb_protocol/datum.hpp"
+#include "rdb_protocol/pseudo_binary.hpp"
 #include "rdb_protocol/query.hpp"
-#include "errors.hpp"
-#include "debug.hpp"
 
 namespace pprint {
 
@@ -177,7 +178,12 @@ private:
                              ? std::to_string(lrint(d.as_num()))
                              : std::to_string(d.as_num()));
         case ql::datum_t::type_t::R_BINARY: {
-            return nil; // RSI (grey): implement binary pretty-printing
+            std::vector<counted_t<const document_t> > args;
+            args.push_back(make_text(ql::pseudo::encode_base64(d.as_binary())));
+            args.push_back(comma);
+            args.push_back(cond_linebreak);
+            args.push_back(base64_str);
+            return make_c(node_buffer, lparen, make_nc(std::move(args)), rparen);
         }
         case ql::datum_t::type_t::R_STR:
             return make_text(strprintf("\"%s\"", d.as_str().to_std().c_str()));
@@ -191,7 +197,7 @@ private:
                 }
                 term.push_back(to_js_datum(d.get(i)));
             }
-            return make_c(lbrack, make_nest(make_concat(std::move(term))), rbrack);
+            return make_c(lbrack, make_nc(std::move(term)), rbrack);
         }
         case ql::datum_t::type_t::R_OBJECT:
         {
@@ -695,10 +701,11 @@ private:
                        rbrace);
     }
 
-    static counted_t<const document_t> lparen, rparen, lbrack, rbrack, lbrace, rbrace,
-        colon, quote, sp, justdot, dotdotdot, comma, semicolon;
-    static counted_t<const document_t> nil, minval, maxval, true_v, false_v, r_st, json,
-        row, do_st, return_st, lambda_1, lambda_2, expr, object, js;
+    static counted_t<const document_t> lparen, rparen, lbrack, rbrack, lbrace, rbrace;
+    static counted_t<const document_t> colon, quote, sp, justdot, dotdotdot, comma;
+    static counted_t<const document_t> nil, minval, maxval, true_v, false_v, r_st, json;
+    static counted_t<const document_t> row, do_st, return_st, lambda_1, lambda_2, expr;
+    static counted_t<const document_t> object, js, node_buffer, base64_str, semicolon;
 
     static const unsigned int MAX_DEPTH = 15;
 };
@@ -731,6 +738,8 @@ counted_t<const document_t> js_pretty_printer_t::lambda_2 = make_text("tion");
 counted_t<const document_t> js_pretty_printer_t::expr = make_text("expr");
 counted_t<const document_t> js_pretty_printer_t::object = make_text("object");
 counted_t<const document_t> js_pretty_printer_t::js = make_text("js");
+counted_t<const document_t> js_pretty_printer_t::node_buffer = make_text("Buffer");
+counted_t<const document_t> js_pretty_printer_t::base64_str = make_text("'base64'");
 
 counted_t<const document_t> render_as_javascript(const ql::raw_term_t *t) {
     return js_pretty_printer_t().walk(t);

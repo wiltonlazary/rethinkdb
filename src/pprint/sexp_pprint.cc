@@ -9,6 +9,7 @@
 #include "pprint/generic_term_walker.hpp"
 #include "rdb_protocol/datum.hpp"
 #include "rdb_protocol/query.hpp"
+#include "rdb_protocol/pseudo_binary.hpp"
 
 namespace pprint {
 
@@ -95,7 +96,7 @@ private:
     counted_t<const document_t> to_lisp_datum(const ql::datum_t &d) {
         switch (d.get_type()) {
         case ql::datum_t::type_t::MINVAL:
-            return minval; // RSI (grey): this should probably not be naked
+            return minval;
         case ql::datum_t::type_t::MAXVAL:
             return maxval;
         case ql::datum_t::type_t::R_NULL:
@@ -106,8 +107,13 @@ private:
             return make_text((fabs(d.as_num() - trunc(d.as_num())) < 1e-10)
                              ? std::to_string(lrint(d.as_num()))
                              : std::to_string(d.as_num()));
-        case ql::datum_t::type_t::R_BINARY:
-            return nil; // RSI (grey): implement binary pretty-printing
+        case ql::datum_t::type_t::R_BINARY: {
+            // This prints the object straight, no linebreaks for each key
+            rapidjson::StringBuffer buffer;
+            rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+            ql::pseudo::encode_base64_ptype(d.as_binary(), &writer);
+            return make_text(std::string(buffer.GetString(), buffer.GetSize()));
+        }
         case ql::datum_t::type_t::R_STR:
             return make_text(strprintf("\"%s\"", d.as_str().to_std().c_str()));
         case ql::datum_t::type_t::R_ARRAY: {

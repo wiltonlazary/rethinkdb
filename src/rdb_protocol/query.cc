@@ -6,6 +6,67 @@
 #include "rdb_protocol/pseudo_time.hpp"
 #include "rdb_protocol/query_cache.hpp"
 
+static const std::set<std::string> acceptable_optargs = {
+    "_EVAL_FLAGS_",
+    "_NO_RECURSE_",
+    "_SHORTCUT_",
+    "array_limit",
+    "attempts",
+    "auth",
+    "base",
+    "binary_format",
+    "conflict",
+    "data",
+    "db",
+    "default",
+    "default_timezone",
+    "dry_run",
+    "durability",
+    "fill",
+    "first_batch_scaledown_factor",
+    "float",
+    "geo",
+    "geo_system",
+    "group_format",
+    "header",
+    "identifier_format",
+    "include_states",
+    "index",
+    "left_bound",
+    "max_batch_bytes",
+    "max_batch_rows",
+    "max_batch_seconds",
+    "max_dist",
+    "max_results",
+    "method",
+    "min_batch_rows",
+    "multi",
+    "non_atomic",
+    "noreply",
+    "num_vertices",
+    "overwrite",
+    "page",
+    "page_limit",
+    "params",
+    "primary_key",
+    "primary_replica_tag",
+    "profile",
+    "redirects",
+    "replicas",
+    "result_format",
+    "return_changes",
+    "return_vals",
+    "right_bound",
+    "shards",
+    "squash",
+    "time_format",
+    "timeout",
+    "unit",
+    "use_outdated",
+    "verify",
+    "wait_for",
+};
+
 namespace ql {
 
 const char *rapidjson_typestr(rapidjson::Type t) {
@@ -179,6 +240,13 @@ const raw_term_t *raw_term_iterator_t::next() {
     return res;
 }
 
+void raw_term_t::set_optarg_name(const std::string &name) {
+    auto const &it = acceptable_optargs.find(name);
+    rcheck_src(bt, it == acceptable_optargs.end(), base_exc_t::GENERIC,
+               strprintf("Unrecognized optional argument `%s`.", name.c_str()));
+    optarg_name_ = it->c_str();
+}
+
 datum_t term_storage_t::get_time() {
     if (!start_time.has()) {
         start_time = pseudo::time_now();
@@ -215,9 +283,10 @@ void term_storage_t::add_global_optargs(const rapidjson::Value &optargs) {
 }
 
 void term_storage_t::add_global_optarg(const char *key, const rapidjson::Value &v) {
-    // RSI (grey): Check optarg key
+    rcheck_toplevel(acceptable_optargs.count(key) != 0, base_exc_t::GENERIC,
+                    strprintf("Unrecognized optional argument `%s`.", key));
     rcheck_toplevel(global_optargs_.count(key) == 0, base_exc_t::GENERIC,
-                    strprintf("Duplicate global optarg: %s.", key));
+                    strprintf("Duplicate global optional argument: `%s`.", key));
     const raw_term_t *term = parse_internal(v, nullptr, backtrace_id_t::empty());
 
     minidriver_t r(this, backtrace_id_t::empty());
@@ -299,74 +368,6 @@ void term_storage_t::add_optargs(const rapidjson::Value &optargs,
         optargs_out->push_back(t);
         t->set_optarg_name(it->name.GetString());
     }
-}
-
-static const std::set<std::string> acceptable_optargs = {
-    "_EVAL_FLAGS_",
-    "_NO_RECURSE_",
-    "_SHORTCUT_",
-    "array_limit",
-    "attempts",
-    "auth",
-    "base",
-    "binary_format",
-    "conflict",
-    "data",
-    "db",
-    "default",
-    "default_timezone",
-    "dry_run",
-    "durability",
-    "fill",
-    "first_batch_scaledown_factor",
-    "float",
-    "geo",
-    "geo_system",
-    "group_format",
-    "header",
-    "identifier_format",
-    "include_states",
-    "index",
-    "left_bound",
-    "max_batch_bytes",
-    "max_batch_rows",
-    "max_batch_seconds",
-    "max_dist",
-    "max_results",
-    "method",
-    "min_batch_rows",
-    "multi",
-    "non_atomic",
-    "noreply",
-    "num_vertices",
-    "overwrite",
-    "page",
-    "page_limit",
-    "params",
-    "primary_key",
-    "primary_replica_tag",
-    "profile",
-    "redirects",
-    "replicas",
-    "result_format",
-    "return_changes",
-    "return_vals",
-    "right_bound",
-    "shards",
-    "squash",
-    "time_format",
-    "timeout",
-    "unit",
-    "use_outdated",
-    "verify",
-    "wait_for",
-};
-
-void raw_term_t::set_optarg_name(const std::string &name) {
-    auto const &it = acceptable_optargs.find(name);
-    rcheck_src(bt, it == acceptable_optargs.end(), base_exc_t::GENERIC,
-               strprintf("Unrecognized optional argument `%s`.", name.c_str()));
-    optarg_name_ = it->c_str();
 }
 
 } // namespace ql
