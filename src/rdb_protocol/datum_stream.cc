@@ -318,11 +318,11 @@ std::vector<rget_item_t> intersecting_reader_t::do_intersecting_read(
 }
 
 readgen_t::readgen_t(
-    const std::map<std::string, wire_func_t> &_global_optargs,
+    global_optargs_t _global_optargs,
     std::string _table_name,
     profile_bool_t _profile,
     sorting_t _sorting)
-    : global_optargs(_global_optargs),
+    : global_optargs(std::move(_global_optargs)),
       table_name(std::move(_table_name)),
       profile(_profile),
       sorting(_sorting) { }
@@ -354,12 +354,12 @@ bool readgen_t::update_range(key_range_t *active_range,
 }
 
 rget_readgen_t::rget_readgen_t(
-    const std::map<std::string, wire_func_t> &_global_optargs,
+    global_optargs_t _global_optargs,
     std::string _table_name,
     const datum_range_t &_original_datum_range,
     profile_bool_t _profile,
     sorting_t _sorting)
-    : readgen_t(_global_optargs, std::move(_table_name), _profile, _sorting),
+    : readgen_t(std::move(_global_optargs), std::move(_table_name), _profile, _sorting),
       original_datum_range(_original_datum_range) { }
 
 read_t rget_readgen_t::next_read(
@@ -381,12 +381,13 @@ read_t rget_readgen_t::terminal_read(
 }
 
 primary_readgen_t::primary_readgen_t(
-    const std::map<std::string, wire_func_t> &global_optargs,
+    global_optargs_t global_optargs,
     std::string table_name,
     datum_range_t range,
     profile_bool_t profile,
     sorting_t sorting)
-    : rget_readgen_t(global_optargs, std::move(table_name), range, profile, sorting) { }
+    : rget_readgen_t(std::move(global_optargs), std::move(table_name),
+                     range, profile, sorting) { }
 
 scoped_ptr_t<readgen_t> primary_readgen_t::make(
     env_t *env,
@@ -443,13 +444,13 @@ boost::optional<std::string> primary_readgen_t::sindex_name() const {
 }
 
 sindex_readgen_t::sindex_readgen_t(
-    const std::map<std::string, wire_func_t> &global_optargs,
+    global_optargs_t global_optargs,
     std::string table_name,
     const std::string &_sindex,
     datum_range_t range,
     profile_bool_t profile,
     sorting_t sorting)
-    : rget_readgen_t(global_optargs, std::move(table_name), range, profile, sorting),
+    : rget_readgen_t(std::move(global_optargs), std::move(table_name), range, profile, sorting),
       sindex(_sindex),
       sent_first_read(false) { }
 
@@ -597,12 +598,12 @@ boost::optional<std::string> sindex_readgen_t::sindex_name() const {
 }
 
 intersecting_readgen_t::intersecting_readgen_t(
-    const std::map<std::string, wire_func_t> &global_optargs,
+    global_optargs_t global_optargs,
     std::string table_name,
     const std::string &_sindex,
     const datum_t &_query_geometry,
     profile_bool_t profile)
-    : readgen_t(global_optargs, std::move(table_name), profile, sorting_t::UNORDERED),
+    : readgen_t(std::move(global_optargs), std::move(table_name), profile, sorting_t::UNORDERED),
       sindex(_sindex),
       query_geometry(_query_geometry) { }
 

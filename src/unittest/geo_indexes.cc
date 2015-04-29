@@ -197,7 +197,7 @@ std::vector<nearest_geo_read_response_t::dist_pair_t> perform_get_nearest(
     std::string idx_name = "geo";
     read_t read(nearest_geo_read_t(region_t::universe(), center, max_distance,
                                    max_results, WGS84_ELLIPSOID, table_name, idx_name,
-                                   std::map<std::string, ql::wire_func_t>()),
+                                   ql::global_optargs_t()),
                 profile_bool_t::PROFILE);
     read_response_t response;
 
@@ -314,7 +314,7 @@ std::vector<datum_t> perform_get_intersecting(
     std::string table_name = "test_table"; // This is just used to print error messages
     std::string idx_name = "geo";
     read_t read(intersecting_geo_read_t(region_t::universe(),
-                                        std::map<std::string, ql::wire_func_t>(),
+                                        ql::global_optargs_t(),
                                         table_name, ql::batchspec_t::all(),
                                         std::vector<ql::transform_variant_t>(),
                                         boost::optional<ql::terminal_variant_t>(),

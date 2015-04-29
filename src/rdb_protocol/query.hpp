@@ -108,7 +108,6 @@ public:
     // Parse a query from a rapidjson value and attach backtraces
     const raw_term_t *add_term_tree(const rapidjson::Value &v);
     void add_global_optargs(const rapidjson::Value &v);
-    void add_global_optarg(const char *key, const rapidjson::Value &v);
 
     const raw_term_t *root_term() const {
         r_sanity_check(terms.size() > 0, "No root term has been created.");
@@ -154,9 +153,6 @@ private:
     raw_term_t *parse_internal(const rapidjson::Value &v,
                                backtrace_registry_t *bt_reg,
                                backtrace_id_t bt);
-
-    void add_global_optarg_internal(const char *key,
-                                    const raw_term_t *term);
 
     DISABLE_COPYING(term_storage_t);
 };

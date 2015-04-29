@@ -1,4 +1,13 @@
+// Copyright 2010-2015 RethinkDB, all rights reserved.
+#include "rdb_protocol/optargs.hpp"
 
+#include <set>
+
+#include "rdb_protocol/env.hpp"
+#include "rdb_protocol/func.hpp"
+#include "rdb_protocol/val.hpp"
+
+namespace ql {
 
 global_optargs_t::global_optargs_t() { }
 
@@ -10,10 +19,10 @@ global_optargs_t::global_optargs_t(counted_t<term_storage_t> term_storage) {
         counted_t<const func_t> func =
             func_term->eval_to_func(var_scope_t(), term_storage);
 
-        auto res = optargs.insert(std::make_pair(std::string(t->name),
+        auto res = optargs.insert(std::make_pair(std::string(t->optarg_name()),
                                                  wire_func_t(func)));
         rcheck_toplevel(res.second, base_exc_t::GENERIC,
-                        strprintf("Duplicate global optional argument: `%s`.", key));
+            strprintf("Duplicate global optional argument: `%s`.", t->optarg_name()));
     }
 }
 
@@ -29,7 +38,7 @@ scoped_ptr_t<val_t> global_optargs_t::get_optarg(env_t *env, const std::string &
     return it->second.compile_wire_func()->call(env);
 }
 
-static const std::set<const std::string> acceptable_optargs = {
+static const std::set<std::string> acceptable_optargs({
     "_EVAL_FLAGS_",
     "_NO_RECURSE_",
     "_SHORTCUT_",
@@ -88,11 +97,16 @@ static const std::set<const std::string> acceptable_optargs = {
     "use_outdated",
     "verify",
     "wait_for",
-};
+});
 
-static const char *validate_optarg(const std::string &key, backtrace_id_t bt) {
+const char *global_optargs_t::validate_optarg(const std::string &key,
+                                              backtrace_id_t bt) {
     auto const &it = acceptable_optargs.find(key);
     rcheck_src(bt, it == acceptable_optargs.end(), base_exc_t::GENERIC,
                strprintf("Unrecognized optional argument `%s`.", key.c_str()));
     return it->c_str();
 }
+
+RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(global_optargs_t, optargs);
+
+} // namespace ql

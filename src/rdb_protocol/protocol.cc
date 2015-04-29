@@ -684,7 +684,7 @@ void rdb_r_unshard_visitor_t::unshard_range_batch(const query_t &q, sorting_t so
     if (q.transforms.size() != 0 || q.terminal) {
         // This asserts that the optargs have been initialized.  (There is always a
         // 'db' optarg.)  We have the same assertion in rdb_read_visitor_t.
-        rassert(q.optargs.size() != 0);
+        rassert(q.optargs.has_optarg("db"));
     }
     scoped_ptr_t<profile::trace_t> trace = ql::maybe_make_profile_trace(profile);
     ql::env_t env(ctx, ql::return_empty_normal_batches_t::NO,

@@ -51,7 +51,7 @@ void version_checker_t::do_check(bool is_initial, auto_drainer_t::lock_t keepali
     ql::env_t env(rdb_ctx,
                   ql::return_empty_normal_batches_t::NO,
                   keepalive.get_drain_signal(),
-                  std::map<std::string, ql::wire_func_t>(),
+                  ql::global_optargs_t(),
                   nullptr);
     http_opts_t opts;
     opts.limits = env.limits();

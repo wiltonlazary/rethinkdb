@@ -35,7 +35,7 @@ struct make_sindex_read_t {
         return read_t(
             rget_read_t(
                 region_t::universe(),
-                std::map<std::string, ql::wire_func_t>(),
+                ql::global_optargs_t(),
                 "",
                 ql::batchspec_t::default_for(ql::batch_type_t::NORMAL),
                 std::vector<ql::transform_variant_t>(),

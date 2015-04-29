@@ -181,7 +181,7 @@ const raw_term_t *raw_term_iterator_t::next() {
 }
 
 void raw_term_t::set_optarg_name(const std::string &name) {
-    optarg_name_ = global_optargs_t::validate_optarg(name);
+    optarg_name_ = global_optargs_t::validate_optarg(name, bt);
 }
 
 datum_t term_storage_t::get_time() {
@@ -202,25 +202,26 @@ void term_storage_t::add_global_optargs(const rapidjson::Value &optargs) {
     check_type(optargs, rapidjson::kObjectType, backtrace_id_t::empty());
     bool has_db_optarg = false;
     for (auto it = optargs.MemberBegin(); it != optargs.MemberEnd(); ++it) {
-        if (strcmp(it->name.GetString(), "db") == 0) {
+        std::string key(it->name.GetString());
+        if (key == "db") {
             has_db_optarg = true;
         }
-        rcheck_toplevel(acceptable_optargs.count(key) != 0, base_exc_t::GENERIC,
-                        strprintf("Unrecognized optional argument `%s`.", key));
+        global_optargs_t::validate_optarg(key, backtrace_id_t::empty());
 
         minidriver_t r(this, backtrace_id_t::empty());
-        const raw_term_t *term = parse_internal(v, nullptr, backtrace_id_t::empty());
-        global_optarg_list.push_back(r.fun(r.expr(term)).raw_term());
+        raw_term_t *term = parse_internal(it->value, nullptr, backtrace_id_t::empty());
+
+        // Don't do this at home
+        const raw_term_t *func_term = r.fun(r.expr(term)).raw_term();
+        global_optarg_list.push_back(const_cast<raw_term_t *>(func_term));
     }
 
     // Add a default 'test' database optarg if none was specified
     if (!has_db_optarg) {
         minidriver_t r(this, backtrace_id_t::empty());
-        global_optarg_list.push_back(r.fun(r.db("test")).raw_term());
+        const raw_term_t *func_term = r.fun(r.db("test")).raw_term();
+        global_optarg_list.push_back(const_cast<raw_term_t *>(func_term));
     }
-}
-
-void term_storage_t::add_global_optarg(const char *key, const rapidjson::Value &v) {
 }
 
 raw_term_t *term_storage_t::parse_internal(const rapidjson::Value &v,
@@ -317,7 +318,7 @@ archive_result_t term_storage_t::deserialize_term_tree(read_stream_t *s,
         deserialize<W>(s, &term->value);
     } else {
         size_t num_args;
-        res = deserialize<W>(s, &num_args)
+        res = deserialize<W>(s, &num_args);
         if (bad(res)) { return res; }
         for (size_t i = 0; i < num_args; ++i) {
             res = deserialize_term_tree<W>(s, term_out);
@@ -333,7 +334,7 @@ archive_result_t term_storage_t::deserialize_term_tree(read_stream_t *s,
             if (bad(res)) { return res; }
             res = deserialize_term_tree<W>(s, term_out);
             if (bad(res)) { return res; }
-            term_out->set_optarg_name(optarg_name);
+            (*term_out)->set_optarg_name(optarg_name);
             term->optargs_.push_back(*term_out);
         }
     }
@@ -363,7 +364,7 @@ void serialize_term_tree(write_message_t *wm, const raw_term_t *term) {
         auto optarg_it = term->optargs();
         for (const raw_term_t *t = optarg_it.next();
              t != nullptr; t = optarg_it.next()) {
-            optarg_name.assign(t->name);
+            optarg_name.assign(t->optarg_name());
             serialize<W>(wm, optarg_name);
             serialize_term_tree<W>(wm, t);
             --num_optargs;
