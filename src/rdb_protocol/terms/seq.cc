@@ -277,7 +277,8 @@ private:
         counted_t<const func_t> f = v1->as_func(CONSTANT_SHORTCUT);
         boost::optional<wire_func_t> defval;
         if (default_filter_term.has()) {
-            defval = wire_func_t(default_filter_term->eval_to_func(env->scope));
+            defval = wire_func_t(
+                default_filter_term->eval_to_func(env->scope, env->env->term_storage));
         }
 
         if (v0->get_type().is_convertible(val_t::type_t::SELECTION)) {

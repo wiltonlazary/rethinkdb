@@ -17,8 +17,7 @@ func_t::func_t(backtrace_id_t bt)
 func_t::~func_t() { }
 
 scoped_ptr_t<val_t> func_t::call(env_t *env, eval_flags_t eval_flags) const {
-    std::vector<datum_t> args;
-    return call(env, args, eval_flags);
+    return call(env, std::vector<datum_t>(), eval_flags);
 }
 
 scoped_ptr_t<val_t> func_t::call(env_t *env,
@@ -40,18 +39,21 @@ void func_t::assert_deterministic(const char *extra_msg) const {
            strprintf("Could not prove function deterministic.  %s", extra_msg));
 }
 
-reql_func_t::reql_func_t(backtrace_id_t backtrace,
+reql_func_t::reql_func_t(term_storage_t *_term_storage,
+                         backtrace_id_t backtrace,
                          const var_scope_t &_captured_scope,
                          std::vector<sym_t> _arg_names,
                          counted_t<const term_t> _body)
     : func_t(backtrace), captured_scope(_captured_scope),
-      arg_names(std::move(_arg_names)), body(std::move(_body)) { }
+      arg_names(std::move(_arg_names)), term_storage(_term_storage),
+      body(std::move(_body)) { }
 
 reql_func_t::~reql_func_t() { }
 
 scoped_ptr_t<val_t> reql_func_t::call(env_t *env,
                                       const std::vector<datum_t> &args,
                                       eval_flags_t eval_flags) const {
+    // RSI (grey) - insert own term_storage_t into the env, remove when done
     try {
         // We allow arg_names.size() == 0 to specifically permit users (Ruby users
         // especially) to use zero-arity functions without the drivers to know anything
@@ -213,11 +215,13 @@ void func_term_t::accumulate_captures(var_captures_t *captures) const {
 
 scoped_ptr_t<val_t> func_term_t::term_eval(scope_env_t *env,
                                            UNUSED eval_flags_t flags) const {
-    return new_val(eval_to_func(env->scope));
+    return new_val(eval_to_func(env->scope, env->env->term_storage));
 }
 
-counted_t<const func_t> func_term_t::eval_to_func(const var_scope_t &env_scope) const {
-    return make_counted<reql_func_t>(backtrace(),
+counted_t<const func_t> func_term_t::eval_to_func(const var_scope_t &env_scope,
+                                                  term_storage_t *term_storage) const {
+    return make_counted<reql_func_t>(term_storage,
+                                     backtrace(),
                                      env_scope.filtered_by_captures(external_captures),
                                      arg_names, body);
 }
@@ -329,7 +333,7 @@ counted_t<const func_t> new_constant_func(datum_t obj, backtrace_id_t bt,
     compile_env_t empty_compile_env((var_visibility_t()), term_storage);
     counted_t<func_term_t> func_term = make_counted<func_term_t>(&empty_compile_env,
                                                                  twrap);
-    return func_term->eval_to_func(var_scope_t());
+    return func_term->eval_to_func(var_scope_t(), term_storage);
 }
 
 counted_t<const func_t> new_get_field_func(datum_t key, backtrace_id_t bt,
@@ -341,7 +345,7 @@ counted_t<const func_t> new_get_field_func(datum_t key, backtrace_id_t bt,
     compile_env_t empty_compile_env((var_visibility_t()), term_storage);
     counted_t<func_term_t> func_term = make_counted<func_term_t>(&empty_compile_env,
                                                                  twrap);
-    return func_term->eval_to_func(var_scope_t());
+    return func_term->eval_to_func(var_scope_t(), term_storage);
 }
 
 counted_t<const func_t> new_pluck_func(datum_t obj, backtrace_id_t bt,
@@ -353,7 +357,7 @@ counted_t<const func_t> new_pluck_func(datum_t obj, backtrace_id_t bt,
     compile_env_t empty_compile_env((var_visibility_t()), term_storage);
     counted_t<func_term_t> func_term = make_counted<func_term_t>(&empty_compile_env,
                                                                  twrap);
-    return func_term->eval_to_func(var_scope_t());
+    return func_term->eval_to_func(var_scope_t(), term_storage);
 }
 
 counted_t<const func_t> new_eq_comparison_func(datum_t obj, backtrace_id_t bt,
@@ -365,7 +369,7 @@ counted_t<const func_t> new_eq_comparison_func(datum_t obj, backtrace_id_t bt,
     compile_env_t empty_compile_env((var_visibility_t()), term_storage);
     counted_t<func_term_t> func_term = make_counted<func_term_t>(&empty_compile_env,
                                                                  twrap);
-    return func_term->eval_to_func(var_scope_t());
+    return func_term->eval_to_func(var_scope_t(), term_storage);
 }
 
 counted_t<const func_t> new_page_func(datum_t method, backtrace_id_t bt,
@@ -384,7 +388,7 @@ counted_t<const func_t> new_page_func(datum_t method, backtrace_id_t bt,
             compile_env_t empty_compile_env((var_visibility_t()), term_storage);
             counted_t<func_term_t> func_term =
                 make_counted<func_term_t>(&empty_compile_env, twrap);
-            return func_term->eval_to_func(var_scope_t());
+            return func_term->eval_to_func(var_scope_t(), term_storage);
         } else {
             std::string msg = strprintf("`page` method '%s' not recognized, "
                                         "only 'link-next' is available.", name.c_str());

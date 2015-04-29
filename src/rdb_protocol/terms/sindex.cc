@@ -73,18 +73,18 @@ public:
                 index_func = v->as_func();
             }
         } else {
-            // RSI (grey): more permanent term storage
-            term_storage_t term_storage;
-            minidriver_t r(&term_storage, backtrace());
+            minidriver_t r(env->env->term_storage, backtrace());
 
             pb::dummy_var_t x = pb::dummy_var_t::SINDEXCREATE_X;
             const raw_term_t *func_term = r.fun(x, r.var(x)[name_datum]).raw_term();
 
-            compile_env_t empty_compile_env((var_visibility_t()), &term_storage);
-            counted_t<func_term_t> func_term_term = make_counted<func_term_t>(
-                &empty_compile_env, func_term);
+            compile_env_t empty_compile_env((var_visibility_t()),
+                                            env->env->term_storage);
+            counted_t<func_term_t> func_term_term =
+                make_counted<func_term_t>(&empty_compile_env, func_term);
 
-            index_func = func_term_term->eval_to_func(env->scope);
+            index_func =
+                func_term_term->eval_to_func(env->scope, env->env->term_storage);
         }
         r_sanity_check(index_func.has());
 

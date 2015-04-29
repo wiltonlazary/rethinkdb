@@ -70,7 +70,16 @@ private:
 
 class reql_func_t : public func_t {
 public:
-    reql_func_t(backtrace_id_t backtrace, // for bt_rcheckable_t
+    // Used when constructing in an existing environment - reusing another term storage
+    reql_func_t(term_storage_t *term_storage,
+                backtrace_id_t backtrace, // for bt_rcheckable_t
+                const var_scope_t &captured_scope,
+                std::vector<sym_t> arg_names,
+                counted_t<const term_t> body);
+
+    // Used when deserializing a function - new term storage
+    reql_func_t(term_storage_t &&term_storage,
+                backtrace_id_t backtrace, // for bt_rcheckable_t
                 const var_scope_t &captured_scope,
                 std::vector<sym_t> arg_names,
                 counted_t<const term_t> body);
@@ -100,6 +109,8 @@ private:
     std::vector<sym_t> arg_names;
 
     // RSI (grey): term storage
+    boost::optional<counted_t<countable_wrapper_t<term_storage_t> > > term_backup;
+    term_storage_t *term_storage;
 
     // The body of the function, which gets ->eval(...) called when call(...) is called.
     counted_t<const term_t> body;
@@ -198,7 +209,8 @@ public:
 
     // eval(scope_env_t *env) is a dumb wrapper for this.  Evaluates the func_t without
     // going by way of val_t, and without requiring a full-blown env.
-    counted_t<const func_t> eval_to_func(const var_scope_t &env_scope) const;
+    counted_t<const func_t> eval_to_func(const var_scope_t &env_scope,
+                                         term_storage_t *term_storage) const;
 
 private:
     virtual void accumulate_captures(var_captures_t *captures) const;

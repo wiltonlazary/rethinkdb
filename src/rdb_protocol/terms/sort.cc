@@ -223,11 +223,11 @@ private:
             if (idx.has() && idx_str == tbl_pkey) {
                 auto row = pb::dummy_var_t::DISTINCT_ROW;
                 std::vector<sym_t> distinct_args{dummy_var_to_sym(row)}; // NOLINT(readability/braces) yes we bloody well do need the ;
-                // RSI (grey): more permanent term storage
-                term_storage_t term_storage;
-                minidriver_t r(&term_storage, backtrace());
+                minidriver_t r(env->env->term_storage, backtrace());
                 const raw_term_t *body = r.var(row)[idx_str].raw_term();
-                map_wire_func_t mwf(body, std::vector<sym_t>(1, dummy_var_to_sym(row)),
+                map_wire_func_t mwf(body,
+                                    env->env->term_storage,
+                                    std::vector<sym_t>(1, dummy_var_to_sym(row)),
                                     backtrace());
 
                 counted_t<datum_stream_t> s = tbl_slice->as_seq(env->env, backtrace());

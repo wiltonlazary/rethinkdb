@@ -185,7 +185,8 @@ std::string create_sindex(namespace_interface_t *nsi,
     ql::minidriver_t r(&term_storage, ql::backtrace_id_t::empty());
     const ql::raw_term_t *mapping = r.var(arg)["sid"].raw_term();
 
-    ql::map_wire_func_t m(mapping, make_vector(arg), ql::backtrace_id_t::empty());
+    ql::map_wire_func_t m(mapping, &term_storage,
+                          make_vector(arg), ql::backtrace_id_t::empty());
 
     write_t write(sindex_create_t(id, m, sindex_multi_bool_t::SINGLE,
                                   sindex_geo_bool_t::REGULAR),

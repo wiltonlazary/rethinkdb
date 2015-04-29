@@ -16,6 +16,7 @@
 template <class> class counted_t;
 
 namespace ql {
+class term_storage_t;
 class raw_term_t;
 class func_t;
 class env_t;
@@ -30,6 +31,7 @@ public:
 
     // Constructs a wire_func_t with a body and arglist and backtrace, but no scope.
     wire_func_t(const raw_term_t *body,
+                term_storage_t *term_storage,
                 std::vector<sym_t> arg_names,
                 backtrace_id_t backtrace);
 

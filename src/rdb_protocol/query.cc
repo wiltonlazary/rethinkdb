@@ -265,7 +265,7 @@ void term_storage_t::add_global_optarg_internal(const char *key,
                                                 const raw_term_t *term) {
     compile_env_t env((var_visibility_t()), this);
     counted_t<const func_t> func =
-        make_counted<func_term_t>(&env, term)->eval_to_func(var_scope_t());
+        make_counted<func_term_t>(&env, term)->eval_to_func(var_scope_t(), this);
     global_optargs_[key] = wire_func_t(func);
 }
 
