@@ -563,9 +563,10 @@ private:
         scoped_ptr_t<val_t> v = args->arg(env, 1);
         counted_t<const func_t> fun;
         if (v->get_type().is_convertible(val_t::type_t::FUNC)) {
-            fun = v->as_func();
+            fun = v->as_func(env->env);
         } else {
-            fun = new_eq_comparison_func(v->as_datum(), backtrace());
+            fun = new_eq_comparison_func(v->as_datum(), backtrace(),
+                                         env->env->term_storage);
         }
         return new_val(env->env, args->arg(env, 0)->as_seq(env->env)->offsets_of(fun));
     }
@@ -584,7 +585,7 @@ private:
         for (size_t i = 1; i < args->num_args(); ++i) {
             scoped_ptr_t<val_t> v = args->arg(env, i);
             if (v->get_type().is_convertible(val_t::type_t::FUNC)) {
-                required_funcs.push_back(v->as_func());
+                required_funcs.push_back(v->as_func(env->env));
             } else {
                 required_els.push_back(v->as_datum());
             }

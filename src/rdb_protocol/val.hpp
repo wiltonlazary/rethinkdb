@@ -236,7 +236,8 @@ public:
     counted_t<datum_stream_t> as_seq(env_t *env);
     counted_t<single_selection_t> as_single_selection();
     // See func.hpp for an explanation of shortcut functions.
-    counted_t<const func_t> as_func(function_shortcut_t shortcut = NO_SHORTCUT);
+    counted_t<const func_t> as_func(env_t *env,
+                                    function_shortcut_t shortcut = NO_SHORTCUT);
 
     // This set of interfaces is atrocious.  Basically there are some places
     // where we want grouped_data, some places where we maybe want grouped_data,

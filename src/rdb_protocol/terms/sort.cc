@@ -121,11 +121,11 @@ private:
             if (t->type == Term::DESC) {
                 comparisons.push_back(
                     std::make_pair(
-                        DESC, args->arg(env, i)->as_func(GET_FIELD_SHORTCUT)));
+                        DESC, args->arg(env, i)->as_func(env->env, GET_FIELD_SHORTCUT)));
             } else {
                 comparisons.push_back(
                     std::make_pair(
-                        ASC, args->arg(env, i)->as_func(GET_FIELD_SHORTCUT)));
+                        ASC, args->arg(env, i)->as_func(env->env, GET_FIELD_SHORTCUT)));
             }
         }
         lt_cmp_t lt_cmp(comparisons);
@@ -223,7 +223,7 @@ private:
             if (idx.has() && idx_str == tbl_pkey) {
                 auto row = pb::dummy_var_t::DISTINCT_ROW;
                 std::vector<sym_t> distinct_args{dummy_var_to_sym(row)}; // NOLINT(readability/braces) yes we bloody well do need the ;
-                minidriver_t r(env->env->term_storage, backtrace());
+                minidriver_t r(env->env->term_storage.get(), backtrace());
                 const raw_term_t *body = r.var(row)[idx_str].raw_term();
                 map_wire_func_t mwf(body,
                                     env->env->term_storage,

@@ -18,7 +18,7 @@ from_optargs(rdb_context_t *ctx, signal_t *interruptor, global_optargs_t *argume
         env_t env(ctx,
                   return_empty_normal_batches_t::NO,
                   interruptor,
-                  std::map<std::string, wire_func_t>(),
+                  global_optargs_t(),
                   nullptr);
         int64_t limit = arguments->get_optarg(&env, "array_limit")->as_int();
         rcheck_datum(limit > 1, base_exc_t::GENERIC,

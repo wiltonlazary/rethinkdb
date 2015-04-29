@@ -181,11 +181,11 @@ std::string create_sindex(namespace_interface_t *nsi,
     std::string id = uuid_to_str(generate_uuid());
 
     const ql::sym_t arg(1);
-    ql::term_storage_t term_storage;
-    ql::minidriver_t r(&term_storage, ql::backtrace_id_t::empty());
+    counted_t<ql::term_storage_t> term_storage = make_counted<ql::term_storage_t>();
+    ql::minidriver_t r(term_storage.get(), ql::backtrace_id_t::empty());
     const ql::raw_term_t *mapping = r.var(arg)["sid"].raw_term();
 
-    ql::map_wire_func_t m(mapping, &term_storage,
+    ql::map_wire_func_t m(mapping, std::move(term_storage),
                           make_vector(arg), ql::backtrace_id_t::empty());
 
     write_t write(sindex_create_t(id, m, sindex_multi_bool_t::SINGLE,

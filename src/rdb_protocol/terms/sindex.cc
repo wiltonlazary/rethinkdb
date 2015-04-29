@@ -70,16 +70,16 @@ public:
             // We do it this way so that if someone passes a string, we produce
             // a type error asking for a function rather than BINARY.
             if (!index_func.has()) {
-                index_func = v->as_func();
+                index_func = v->as_func(env->env);
             }
         } else {
-            minidriver_t r(env->env->term_storage, backtrace());
+            minidriver_t r(env->env->term_storage.get(), backtrace());
 
             pb::dummy_var_t x = pb::dummy_var_t::SINDEXCREATE_X;
             const raw_term_t *func_term = r.fun(x, r.var(x)[name_datum]).raw_term();
 
             compile_env_t empty_compile_env((var_visibility_t()),
-                                            env->env->term_storage);
+                                            env->env->term_storage.get());
             counted_t<func_term_t> func_term_term =
                 make_counted<func_term_t>(&empty_compile_env, func_term);
 

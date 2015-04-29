@@ -20,25 +20,6 @@ const size_t LRU_CACHE_SIZE = 1000;
 
 namespace ql {
 
-global_optargs_t::global_optargs_t() { }
-
-global_optargs_t::global_optargs_t(std::map<std::string, wire_func_t> _optargs)
-    : optargs(_optargs) { }
-
-bool global_optargs_t::has_optarg(const std::string &key) const {
-    return optargs.count(key) > 0;
-}
-scoped_ptr_t<val_t> global_optargs_t::get_optarg(env_t *env, const std::string &key) {
-    auto it = optargs.find(key);
-    if (it == optargs.end()) {
-        return scoped_ptr_t<val_t>();
-    }
-    return it->second.compile_wire_func()->call(env);
-}
-const std::map<std::string, wire_func_t> &global_optargs_t::get_all_optargs() const {
-    return optargs;
-}
-
 void env_t::set_eval_callback(eval_callback_t *callback) {
     eval_callback_ = callback;
 }
@@ -88,7 +69,7 @@ scoped_ptr_t<profile::trace_t> maybe_make_profile_trace(profile_bool_t profile) 
 env_t::env_t(rdb_context_t *ctx,
              return_empty_normal_batches_t _return_empty_normal_batches,
              signal_t *_interruptor,
-             std::map<std::string, wire_func_t> optargs,
+             global_optargs_t optargs,
              profile::trace_t *_trace)
     : global_optargs_(std::move(optargs)),
       limits_(from_optargs(ctx, _interruptor, &global_optargs_)),

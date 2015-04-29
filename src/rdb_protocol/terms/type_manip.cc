@@ -401,7 +401,7 @@ private:
 
         case FUNC_TYPE: {
             b |= info.add("source_code",
-                datum_t(datum_string_t(v->as_func()->print_source())));
+                datum_t(datum_string_t(v->as_func(env->env)->print_source())));
         } break;
 
         case GROUPED_DATA_TYPE: break; // No more info

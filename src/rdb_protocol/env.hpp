@@ -16,8 +16,11 @@
 #include "rdb_protocol/context.hpp"
 #include "rdb_protocol/datum_stream.hpp"
 #include "rdb_protocol/error.hpp"
+#include "rdb_protocol/optargs.hpp"
 #include "rdb_protocol/protocol.hpp"
+#include "rdb_protocol/query.hpp"
 #include "rdb_protocol/val.hpp"
+#include "rdb_protocol/wire_func.hpp"
 
 class extproc_pool_t;
 
@@ -28,20 +31,6 @@ class RE2;
 namespace ql {
 class datum_t;
 class term_t;
-class term_storage_t;
-
-class global_optargs_t {
-public:
-    global_optargs_t();
-    explicit global_optargs_t(std::map<std::string, wire_func_t> optargs);
-
-    bool has_optarg(const std::string &key) const;
-    // returns NULL if no entry
-    scoped_ptr_t<val_t> get_optarg(env_t *env, const std::string &key);
-    const std::map<std::string, wire_func_t> &get_all_optargs() const;
-private:
-    std::map<std::string, wire_func_t> optargs;
-};
 
 scoped_ptr_t<profile::trace_t> maybe_make_profile_trace(profile_bool_t profile);
 
@@ -57,7 +46,7 @@ public:
     env_t(rdb_context_t *ctx,
           return_empty_normal_batches_t return_empty_normal_batches,
           signal_t *interruptor,
-          std::map<std::string, wire_func_t> optargs,
+          global_optargs_t optargs,
           profile::trace_t *trace);
 
     // Used in unittest and for some secondary index environments (hence the
@@ -93,8 +82,8 @@ public:
     void do_eval_callback();
 
 
-    const std::map<std::string, wire_func_t> &get_all_optargs() const {
-        return global_optargs_.get_all_optargs();
+    const global_optargs_t &get_all_optargs() const {
+        return global_optargs_;
     }
 
     scoped_ptr_t<val_t> get_optarg(env_t *env, const std::string &key) {
@@ -135,6 +124,8 @@ public:
     profile_bool_t profile() const;
 
     rdb_context_t *get_rdb_ctx() { return rdb_ctx_; }
+
+    counted_t<term_storage_t> term_storage;
 private:
     static const uint32_t EVALS_BEFORE_YIELD = 256;
     uint32_t evals_since_yield_;

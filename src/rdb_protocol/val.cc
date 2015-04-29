@@ -641,7 +641,8 @@ counted_t<single_selection_t> val_t::as_single_selection() {
     return single_selection();
 }
 
-counted_t<const func_t> val_t::as_func(function_shortcut_t shortcut) {
+counted_t<const func_t> val_t::as_func(env_t *env, function_shortcut_t shortcut) {
+    r_sanity_check(env->term_storage.has());
     if (get_type().is_convertible(type_t::FUNC)) {
         r_sanity_check(func().has());
         return func();
@@ -660,13 +661,17 @@ counted_t<const func_t> val_t::as_func(function_shortcut_t shortcut) {
     try {
         switch (shortcut) {
         case CONSTANT_SHORTCUT:
-            return new_constant_func(as_datum(), backtrace());
+            return new_constant_func(as_datum(), backtrace(),
+                                     env->term_storage);
         case GET_FIELD_SHORTCUT:
-            return new_get_field_func(as_datum(), backtrace());
+            return new_get_field_func(as_datum(), backtrace(),
+                                      env->term_storage);
         case PLUCK_SHORTCUT:
-            return new_pluck_func(as_datum(), backtrace());
+            return new_pluck_func(as_datum(), backtrace(),
+                                  env->term_storage);
         case PAGE_SHORTCUT:
-            return new_page_func(as_datum(), backtrace());
+            return new_page_func(as_datum(), backtrace(),
+                                 env->term_storage);
         case NO_SHORTCUT:
             // fallthru
         default: unreachable();

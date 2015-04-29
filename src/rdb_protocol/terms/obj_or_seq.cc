@@ -89,7 +89,7 @@ scoped_ptr_t<val_t> obj_or_seq_op_impl_t::eval_impl_dereferenced(
         }
 
         compile_env_t compile_env(env->scope.compute_visibility(),
-                                  env->env->term_storage);
+                                  env->env->term_storage.get());
         counted_t<func_term_t> func_term =
             make_counted<func_term_t>(&compile_env, func);
         counted_t<const func_t> f =
@@ -246,7 +246,7 @@ private:
                 }
                 d = d.merge(d0);
             } else {
-                auto f = v->as_func(CONSTANT_SHORTCUT);
+                auto f = v->as_func(env->env, CONSTANT_SHORTCUT);
                 datum_t d0 = f->call(env->env, d, LITERAL_OK)->as_datum();
                 if (d0.get_type() == datum_t::R_OBJECT) {
                     switch (env->env->reql_version()) {

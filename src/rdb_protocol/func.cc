@@ -39,13 +39,13 @@ void func_t::assert_deterministic(const char *extra_msg) const {
            strprintf("Could not prove function deterministic.  %s", extra_msg));
 }
 
-reql_func_t::reql_func_t(term_storage_t *_term_storage,
+reql_func_t::reql_func_t(counted_t<term_storage_t> _term_storage,
                          backtrace_id_t backtrace,
                          const var_scope_t &_captured_scope,
                          std::vector<sym_t> _arg_names,
                          counted_t<const term_t> _body)
     : func_t(backtrace), captured_scope(_captured_scope),
-      arg_names(std::move(_arg_names)), term_storage(_term_storage),
+      arg_names(std::move(_arg_names)), term_storage(std::move(_term_storage)),
       body(std::move(_body)) { }
 
 reql_func_t::~reql_func_t() { }
@@ -219,8 +219,8 @@ scoped_ptr_t<val_t> func_term_t::term_eval(scope_env_t *env,
 }
 
 counted_t<const func_t> func_term_t::eval_to_func(const var_scope_t &env_scope,
-                                                  term_storage_t *term_storage) const {
-    return make_counted<reql_func_t>(term_storage,
+                                                  counted_t<term_storage_t> term_storage) const {
+    return make_counted<reql_func_t>(std::move(term_storage),
                                      backtrace(),
                                      env_scope.filtered_by_captures(external_captures),
                                      arg_names, body);
@@ -326,58 +326,58 @@ bool func_t::filter_call(env_t *env, datum_t arg, counted_t<const func_t> defaul
 }
 
 counted_t<const func_t> new_constant_func(datum_t obj, backtrace_id_t bt,
-                                          term_storage_t *term_storage) {
-    minidriver_t r(term_storage, bt);
+                                          counted_t<term_storage_t> term_storage) {
+    minidriver_t r(term_storage.get(), bt);
     const raw_term_t *twrap = r.fun(r.expr(obj)).raw_term();
 
-    compile_env_t empty_compile_env((var_visibility_t()), term_storage);
+    compile_env_t empty_compile_env((var_visibility_t()), term_storage.get());
     counted_t<func_term_t> func_term = make_counted<func_term_t>(&empty_compile_env,
                                                                  twrap);
-    return func_term->eval_to_func(var_scope_t(), term_storage);
+    return func_term->eval_to_func(var_scope_t(), std::move(term_storage));
 }
 
 counted_t<const func_t> new_get_field_func(datum_t key, backtrace_id_t bt,
-                                           term_storage_t *term_storage) {
-    minidriver_t r(term_storage, bt);
+                                           counted_t<term_storage_t> term_storage) {
+    minidriver_t r(term_storage.get(), bt);
     pb::dummy_var_t obj = pb::dummy_var_t::FUNC_GETFIELD;
     const raw_term_t *twrap = r.fun(obj, r.expr(obj)[key]).raw_term();
 
-    compile_env_t empty_compile_env((var_visibility_t()), term_storage);
+    compile_env_t empty_compile_env((var_visibility_t()), term_storage.get());
     counted_t<func_term_t> func_term = make_counted<func_term_t>(&empty_compile_env,
                                                                  twrap);
-    return func_term->eval_to_func(var_scope_t(), term_storage);
+    return func_term->eval_to_func(var_scope_t(), std::move(term_storage));
 }
 
 counted_t<const func_t> new_pluck_func(datum_t obj, backtrace_id_t bt,
-                                       term_storage_t *term_storage) {
-    minidriver_t r(term_storage, bt);
+                                       counted_t<term_storage_t> term_storage) {
+    minidriver_t r(term_storage.get(), bt);
     pb::dummy_var_t var = pb::dummy_var_t::FUNC_PLUCK;
     const raw_term_t *twrap = r.fun(var, r.expr(var).pluck(obj)).raw_term();
 
-    compile_env_t empty_compile_env((var_visibility_t()), term_storage);
+    compile_env_t empty_compile_env((var_visibility_t()), term_storage.get());
     counted_t<func_term_t> func_term = make_counted<func_term_t>(&empty_compile_env,
                                                                  twrap);
-    return func_term->eval_to_func(var_scope_t(), term_storage);
+    return func_term->eval_to_func(var_scope_t(), std::move(term_storage));
 }
 
 counted_t<const func_t> new_eq_comparison_func(datum_t obj, backtrace_id_t bt,
-                                               term_storage_t *term_storage) {
-    minidriver_t r(term_storage, bt);
+                                               counted_t<term_storage_t> term_storage) {
+    minidriver_t r(term_storage.get(), bt);
     pb::dummy_var_t var = pb::dummy_var_t::FUNC_EQCOMPARISON;
     const raw_term_t *twrap = r.fun(var, r.expr(var) == obj).raw_term();
 
-    compile_env_t empty_compile_env((var_visibility_t()), term_storage);
+    compile_env_t empty_compile_env((var_visibility_t()), term_storage.get());
     counted_t<func_term_t> func_term = make_counted<func_term_t>(&empty_compile_env,
                                                                  twrap);
-    return func_term->eval_to_func(var_scope_t(), term_storage);
+    return func_term->eval_to_func(var_scope_t(), std::move(term_storage));
 }
 
 counted_t<const func_t> new_page_func(datum_t method, backtrace_id_t bt,
-                                      term_storage_t *term_storage) {
+                                      counted_t<term_storage_t> term_storage) {
     if (method.get_type() != datum_t::R_NULL) {
         std::string name = method.as_str().to_std();
         if (name == "link-next") {
-            minidriver_t r(term_storage, bt);
+            minidriver_t r(term_storage.get(), bt);
             pb::dummy_var_t info = pb::dummy_var_t::FUNC_PAGE;
             const raw_term_t *twrap =
                 r.fun(info,
@@ -385,10 +385,10 @@ counted_t<const func_t> new_page_func(datum_t method, backtrace_id_t bt,
                         .default_(r.null()))
                 .raw_term();
 
-            compile_env_t empty_compile_env((var_visibility_t()), term_storage);
+            compile_env_t empty_compile_env((var_visibility_t()), term_storage.get());
             counted_t<func_term_t> func_term =
                 make_counted<func_term_t>(&empty_compile_env, twrap);
-            return func_term->eval_to_func(var_scope_t(), term_storage);
+            return func_term->eval_to_func(var_scope_t(), std::move(term_storage));
         } else {
             std::string msg = strprintf("`page` method '%s' not recognized, "
                                         "only 'link-next' is available.", name.c_str());

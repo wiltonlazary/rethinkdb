@@ -6,6 +6,7 @@
 
 #include "rapidjson/rapidjson.h"
 
+#include "containers/counted.hpp"
 #include "containers/intrusive_list.hpp"
 #include "containers/segmented_vector.hpp"
 
@@ -13,7 +14,6 @@
 #include "rdb_protocol/datum.hpp"
 #include "rdb_protocol/error.hpp"
 #include "rdb_protocol/ql2.pb.h"
-#include "rdb_protocol/wire_func.hpp"
 
 namespace ql {
 
@@ -68,6 +68,7 @@ public:
     const raw_term_t *next();
 private:
     friend class raw_term_t;
+    friend class term_storage_t;
     explicit raw_term_iterator_t(const intrusive_list_t<raw_term_t> *_list);
 
     const intrusive_list_t<raw_term_t> *list;
@@ -99,7 +100,7 @@ private:
     DISABLE_COPYING(raw_term_t);
 };
 
-class term_storage_t {
+class term_storage_t : public slow_atomic_countable_t<term_storage_t> {
 public:
     term_storage_t();
     term_storage_t(term_storage_t &&) = default;
@@ -114,8 +115,8 @@ public:
         return &terms[0];
     }
 
-    const std::map<std::string, wire_func_t> &global_optargs() const {
-        return global_optargs_;
+    raw_term_iterator_t global_optargs() const {
+        return raw_term_iterator_t(&global_optarg_list);
     }
 
     const backtrace_registry_t &bt_reg() const {
@@ -132,7 +133,7 @@ private:
     // We use a segmented vector so items won't be reallocated and moved, which allows us
     // to use pointers to other items in the vector.
     segmented_vector_t<raw_term_t, 100> terms;
-    std::map<std::string, wire_func_t> global_optargs_;
+    intrusive_list_t<raw_term_t> global_optarg_list;
     backtrace_registry_t backtrace_registry;
     datum_t start_time;
 

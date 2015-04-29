@@ -22,13 +22,11 @@
 #include "rdb_protocol/datum_stream.hpp"
 #include "rdb_protocol/backtrace.hpp"
 #include "rdb_protocol/error.hpp"
+#include "rdb_protocol/env.hpp"
 #include "rdb_protocol/ql2.pb.h"
 #include "rdb_protocol/query.hpp"
 #include "rdb_protocol/term.hpp"
-
-namespace ql {
-class env_t;
-}
+#include "rdb_protocol/wire_func.hpp"
 
 namespace ql {
 
@@ -95,7 +93,7 @@ private:
     class entry_t {
     public:
         entry_t(const query_params_t &params,
-                term_storage_t &&_term_storage,
+                counted_t<term_storage_t> &&_term_storage,
                 counted_t<const term_t> _root_term);
         ~entry_t();
 
@@ -104,7 +102,8 @@ private:
         const uuid_u job_id;
         const bool noreply;
         const profile_bool_t profile;
-        const term_storage_t term_storage;
+        const counted_t<term_storage_t> term_storage;
+        const global_optargs_t global_optargs;
         const microtime_t start_time;
 
         cond_t persistent_interruptor;

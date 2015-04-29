@@ -20,13 +20,13 @@ wire_func_t::wire_func_t(const counted_t<const func_t> &f) : func(f) {
 }
 
 wire_func_t::wire_func_t(const raw_term_t *body,
-                         term_storage_t *term_storage,
+                         counted_t<term_storage_t> term_storage,
                          std::vector<sym_t> arg_names,
                          backtrace_id_t bt) {
     compile_env_t env(var_visibility_t().with_func_arg_name_list(arg_names),
-                      term_storage);
-    func = make_counted<reql_func_t>(term_storage, bt, var_scope_t(), arg_names,
-                                     compile_term(&env, body));
+                      term_storage.get());
+    func = make_counted<reql_func_t>(std::move(term_storage), bt, var_scope_t(),
+                                     arg_names, compile_term(&env, body));
 }
 
 wire_func_t::wire_func_t(const wire_func_t &copyee)
@@ -109,9 +109,9 @@ archive_result_t deserialize(read_stream_t *s, wire_func_t *wf) {
         res = deserialize<W>(s, &arg_names);
         if (bad(res)) { return res; }
 
-        term_storage_t term_storage;
+        counted_t<term_storage_t> term_storage = make_counted<term_storage_t>();
         raw_term_t *body;
-        res = term_storage.deserialize_term_tree<W>(s, &body);
+        res = term_storage->deserialize_term_tree<W>(s, &body);
         if (bad(res)) { return res; }
 
         backtrace_id_t bt;
@@ -119,7 +119,7 @@ archive_result_t deserialize(read_stream_t *s, wire_func_t *wf) {
         if (bad(res)) { return res; }
 
         compile_env_t env(scope.compute_visibility().with_func_arg_name_list(arg_names),
-                          &term_storage);
+                          term_storage.get());
         wf->func = make_counted<reql_func_t>(
             std::move(term_storage), bt, scope, arg_names, compile_term(&env, body));
         return res;

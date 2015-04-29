@@ -3,69 +3,9 @@
 
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/minidriver.hpp"
+#include "rdb_protocol/optargs.hpp"
 #include "rdb_protocol/pseudo_time.hpp"
 #include "rdb_protocol/query_cache.hpp"
-
-static const std::set<std::string> acceptable_optargs = {
-    "_EVAL_FLAGS_",
-    "_NO_RECURSE_",
-    "_SHORTCUT_",
-    "array_limit",
-    "attempts",
-    "auth",
-    "base",
-    "binary_format",
-    "conflict",
-    "data",
-    "db",
-    "default",
-    "default_timezone",
-    "dry_run",
-    "durability",
-    "fill",
-    "first_batch_scaledown_factor",
-    "float",
-    "geo",
-    "geo_system",
-    "group_format",
-    "header",
-    "identifier_format",
-    "include_states",
-    "index",
-    "left_bound",
-    "max_batch_bytes",
-    "max_batch_rows",
-    "max_batch_seconds",
-    "max_dist",
-    "max_results",
-    "method",
-    "min_batch_rows",
-    "multi",
-    "non_atomic",
-    "noreply",
-    "num_vertices",
-    "overwrite",
-    "page",
-    "page_limit",
-    "params",
-    "primary_key",
-    "primary_replica_tag",
-    "profile",
-    "redirects",
-    "replicas",
-    "result_format",
-    "return_changes",
-    "return_vals",
-    "right_bound",
-    "shards",
-    "squash",
-    "time_format",
-    "timeout",
-    "unit",
-    "use_outdated",
-    "verify",
-    "wait_for",
-};
 
 namespace ql {
 
@@ -241,10 +181,7 @@ const raw_term_t *raw_term_iterator_t::next() {
 }
 
 void raw_term_t::set_optarg_name(const std::string &name) {
-    auto const &it = acceptable_optargs.find(name);
-    rcheck_src(bt, it == acceptable_optargs.end(), base_exc_t::GENERIC,
-               strprintf("Unrecognized optional argument `%s`.", name.c_str()));
-    optarg_name_ = it->c_str();
+    optarg_name_ = global_optargs_t::validate_optarg(name);
 }
 
 datum_t term_storage_t::get_time() {
@@ -261,36 +198,29 @@ raw_term_t *term_storage_t::new_term(Term::TermType type, backtrace_id_t bt) {
     return &res;
 }
 
-void term_storage_t::add_global_optarg_internal(const char *key,
-                                                const raw_term_t *term) {
-    compile_env_t env((var_visibility_t()), this);
-    counted_t<const func_t> func =
-        make_counted<func_term_t>(&env, term)->eval_to_func(var_scope_t(), this);
-    global_optargs_[key] = wire_func_t(func);
-}
-
 void term_storage_t::add_global_optargs(const rapidjson::Value &optargs) {
     check_type(optargs, rapidjson::kObjectType, backtrace_id_t::empty());
+    bool has_db_optarg = false;
     for (auto it = optargs.MemberBegin(); it != optargs.MemberEnd(); ++it) {
-        add_global_optarg(it->name.GetString(), it->value);
+        if (strcmp(it->name.GetString(), "db") == 0) {
+            has_db_optarg = true;
+        }
+        rcheck_toplevel(acceptable_optargs.count(key) != 0, base_exc_t::GENERIC,
+                        strprintf("Unrecognized optional argument `%s`.", key));
+
+        minidriver_t r(this, backtrace_id_t::empty());
+        const raw_term_t *term = parse_internal(v, nullptr, backtrace_id_t::empty());
+        global_optarg_list.push_back(r.fun(r.expr(term)).raw_term());
     }
 
     // Add a default 'test' database optarg if none was specified
-    if (global_optargs_.count("db") == 0) {
+    if (!has_db_optarg) {
         minidriver_t r(this, backtrace_id_t::empty());
-        add_global_optarg_internal("db", r.fun(r.db("test")).raw_term());
+        global_optarg_list.push_back(r.fun(r.db("test")).raw_term());
     }
 }
 
 void term_storage_t::add_global_optarg(const char *key, const rapidjson::Value &v) {
-    rcheck_toplevel(acceptable_optargs.count(key) != 0, base_exc_t::GENERIC,
-                    strprintf("Unrecognized optional argument `%s`.", key));
-    rcheck_toplevel(global_optargs_.count(key) == 0, base_exc_t::GENERIC,
-                    strprintf("Duplicate global optional argument: `%s`.", key));
-    const raw_term_t *term = parse_internal(v, nullptr, backtrace_id_t::empty());
-
-    minidriver_t r(this, backtrace_id_t::empty());
-    add_global_optarg_internal(key, r.fun(r.expr(term)).raw_term());
 }
 
 raw_term_t *term_storage_t::parse_internal(const rapidjson::Value &v,
@@ -387,19 +317,23 @@ archive_result_t term_storage_t::deserialize_term_tree(read_stream_t *s,
         deserialize<W>(s, &term->value);
     } else {
         size_t num_args;
-        res = deserialize<W>(s, &num_args);
+        res = deserialize<W>(s, &num_args)
         if (bad(res)) { return res; }
         for (size_t i = 0; i < num_args; ++i) {
             res = deserialize_term_tree<W>(s, term_out);
             if (bad(res)) { return res; }
             term->args_.push_back(*term_out);
         }
+        std::string optarg_name;
         size_t num_optargs;
         res = deserialize<W>(s, &num_optargs);
         if (bad(res)) { return res; }
         for (size_t i = 0; i < num_optargs; ++i) {
+            res = deserialize<W>(s, &optarg_name);
+            if (bad(res)) { return res; }
             res = deserialize_term_tree<W>(s, term_out);
             if (bad(res)) { return res; }
+            term_out->set_optarg_name(optarg_name);
             term->optargs_.push_back(*term_out);
         }
     }
@@ -423,11 +357,14 @@ void serialize_term_tree(write_message_t *wm, const raw_term_t *term) {
             serialize_term_tree<W>(wm, t);
             --num_args;
         }
+        std::string optarg_name;
         size_t num_optargs = term->num_optargs();
         serialize<W>(wm, num_optargs);
         auto optarg_it = term->optargs();
         for (const raw_term_t *t = optarg_it.next();
              t != nullptr; t = optarg_it.next()) {
+            optarg_name.assign(t->name);
+            serialize<W>(wm, optarg_name);
             serialize_term_tree<W>(wm, t);
             --num_optargs;
         }

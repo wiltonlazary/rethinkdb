@@ -26,6 +26,7 @@
 #include "rdb_protocol/erase_range.hpp"
 #include "rdb_protocol/geo/ellipsoid.hpp"
 #include "rdb_protocol/geo/lon_lat_types.hpp"
+#include "rdb_protocol/optargs.hpp"
 #include "rdb_protocol/shards.hpp"
 #include "region/region.hpp"
 #include "repli_timestamp.hpp"
@@ -87,7 +88,6 @@ private:
 
 namespace ql {
 class datum_t;
-class env_t;
 class primary_readgen_t;
 class readgen_t;
 class sindex_readgen_t;
@@ -333,7 +333,7 @@ public:
     rget_read_t() : batchspec(ql::batchspec_t::empty()) { }
 
     rget_read_t(const region_t &_region,
-                const std::map<std::string, ql::wire_func_t> &_optargs,
+                const global_optargs_t &_optargs,
                 const std::string &_table_name,
                 const ql::batchspec_t &_batchspec,
                 const std::vector<ql::transform_variant_t> &_transforms,
@@ -350,7 +350,7 @@ public:
           sorting(_sorting) { }
 
     region_t region; // We need this even for sindex reads due to sharding.
-    std::map<std::string, ql::wire_func_t> optargs;
+    global_optargs_t optargs;
     std::string table_name;
     ql::batchspec_t batchspec; // used to size batches
 
@@ -373,7 +373,7 @@ public:
 
     intersecting_geo_read_t(
             const region_t &_region,
-            const std::map<std::string, ql::wire_func_t> &_optargs,
+            const global_optargs_t &_optargs,
             const std::string &_table_name,
             const ql::batchspec_t &_batchspec,
             const std::vector<ql::transform_variant_t> &_transforms,
@@ -390,7 +390,7 @@ public:
           query_geometry(_query_geometry) { }
 
     region_t region; // Primary key range. We need this because of sharding.
-    std::map<std::string, ql::wire_func_t> optargs;
+    global_optargs_t optargs;
     std::string table_name;
     ql::batchspec_t batchspec; // used to size batches
 
@@ -413,13 +413,13 @@ public:
             lon_lat_point_t _center, double _max_dist, uint64_t _max_results,
             const ellipsoid_spec_t &_geo_system, const std::string &_table_name,
             const std::string &_sindex_id,
-            const std::map<std::string, ql::wire_func_t> &_optargs)
+            const global_optargs_t &_optargs)
         : optargs(_optargs), center(_center), max_dist(_max_dist),
           max_results(_max_results), geo_system(_geo_system),
           region(_region), table_name(_table_name),
           sindex_id(_sindex_id) { }
 
-    std::map<std::string, ql::wire_func_t> optargs;
+    global_optargs_t optargs;
 
     lon_lat_point_t center;
     double max_dist;
@@ -480,7 +480,7 @@ struct changefeed_limit_subscribe_t {
         uuid_u _uuid,
         ql::changefeed::keyspec_t::limit_t _spec,
         std::string _table,
-        std::map<std::string, ql::wire_func_t> _optargs,
+        global_optargs_t _optargs,
         region_t pkey_region)
         : addr(std::move(_addr)),
           uuid(std::move(_uuid)),
@@ -492,7 +492,7 @@ struct changefeed_limit_subscribe_t {
     uuid_u uuid;
     ql::changefeed::keyspec_t::limit_t spec;
     std::string table;
-    std::map<std::string, ql::wire_func_t> optargs;
+    global_optargs_t optargs;
     region_t region;
 };
 RDB_DECLARE_SERIALIZABLE(changefeed_limit_subscribe_t);
@@ -635,7 +635,7 @@ struct batched_replace_t {
             std::vector<store_key_t> &&_keys,
             const std::string &_pkey,
             const counted_t<const ql::func_t> &func,
-            const std::map<std::string, ql::wire_func_t > &_optargs,
+            const global_optargs_t &_optargs,
             return_changes_t _return_changes)
         : keys(std::move(_keys)), pkey(_pkey), f(func), optargs(_optargs),
           return_changes(_return_changes) {
@@ -644,7 +644,7 @@ struct batched_replace_t {
     std::vector<store_key_t> keys;
     std::string pkey;
     ql::wire_func_t f;
-    std::map<std::string, ql::wire_func_t > optargs;
+    global_optargs_t optargs;
     return_changes_t return_changes;
 };
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(batched_replace_t);
