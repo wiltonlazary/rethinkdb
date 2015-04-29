@@ -477,7 +477,7 @@ void query_server_t::handle(const http_req_t &req,
     }
 
     // Parse the token out from the start of the request
-    scoped_array_t<char> data(req.body.size() + 1); // RSI (grey): avoid this copy?
+    scoped_array_t<char> data(req.body.size() + 1);
     memcpy(data.data(), req.body.c_str(), req.body.size() + 1);
     token = *reinterpret_cast<const int64_t *>(data.data());
 

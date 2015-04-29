@@ -34,9 +34,7 @@ public:
 class backtrace_registry_t {
 public:
     backtrace_registry_t();
-    backtrace_registry_t(backtrace_registry_t &&other) :
-        frames(std::move(other.frames)) { }
-    virtual ~backtrace_registry_t() { }
+    backtrace_registry_t(backtrace_registry_t &&) = default;
 
     backtrace_id_t new_frame(backtrace_id_t parent_bt,
                              const datum_t &val);

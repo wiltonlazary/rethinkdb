@@ -43,6 +43,8 @@ private:
     std::vector<Response::ResponseNote> notes_;
     boost::optional<ql::datum_t> backtrace_;
     boost::optional<ql::datum_t> profile_;
+
+    DISABLE_COPYING(response_t);
 };
 
 } // namespace ql

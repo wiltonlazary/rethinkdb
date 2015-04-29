@@ -56,6 +56,8 @@ public:
     const rapidjson::Value *global_optargs_json;
 private:
     bool static_optarg_as_bool(const std::string &key, bool default_value);
+
+    DISABLE_COPYING(query_params_t);
 };
 
 class raw_term_t;
@@ -72,6 +74,7 @@ private:
 };
 
 struct raw_term_t : public intrusive_list_node_t<raw_term_t> {
+    raw_term_t() { }
     size_t num_args() const { return args_.size(); }
     size_t num_optargs() const { return optargs_.size(); }
 
@@ -90,10 +93,14 @@ struct raw_term_t : public intrusive_list_node_t<raw_term_t> {
 
 private:
     const char *optarg_name_; // Only used when an optarg
+    DISABLE_COPYING(raw_term_t);
 };
 
 class term_storage_t {
 public:
+    term_storage_t();
+    term_storage_t(term_storage_t &&) = default;
+
     // Parse a query from a rapidjson value and attach backtraces
     const raw_term_t *add_term_tree(const rapidjson::Value &v);
     void add_global_optargs(const rapidjson::Value &v);
@@ -140,6 +147,8 @@ private:
 
     void add_global_optarg_internal(const char *key,
                                     const raw_term_t *term);
+
+    DISABLE_COPYING(term_storage_t);
 };
 
 } // namespace ql
