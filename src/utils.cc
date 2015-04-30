@@ -18,6 +18,8 @@
 #include <sys/resource.h>
 #include <unistd.h>
 
+#include <google/protobuf/stubs/common.h>
+
 #include "errors.hpp"
 #include <boost/date_time.hpp>
 
@@ -77,6 +79,7 @@ startup_shutdown_t::startup_shutdown_t() {
 }
 
 startup_shutdown_t::~startup_shutdown_t() {
+    google::protobuf::ShutdownProtobufLibrary();
 }
 
 

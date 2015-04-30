@@ -106,7 +106,7 @@ public:
     term_storage_t(term_storage_t &&) = default;
 
     // Parse a query from a rapidjson value and attach backtraces
-    const raw_term_t *add_term_tree(const rapidjson::Value &v);
+    void add_root_term(const rapidjson::Value &v);
     void add_global_optargs(const rapidjson::Value &v);
 
     const raw_term_t *root_term() const {
@@ -158,7 +158,8 @@ private:
 };
 
 template <cluster_version_t W>
-void serialize_term_tree(write_message_t *wm, const raw_term_t *root_term);
+void serialize_term_tree(write_message_t *wm,
+                         const raw_term_t *root_term);
 
 } // namespace ql
 

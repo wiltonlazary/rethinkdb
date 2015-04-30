@@ -27,7 +27,7 @@
 #define MESSAGE_HANDLER_MAX_BATCH_SIZE           16
 
 // The cluster communication protocol version.
-static_assert(cluster_version_t::CLUSTER == cluster_version_t::v2_0_is_latest,
+static_assert(cluster_version_t::CLUSTER == cluster_version_t::v2_1_is_latest,
               "We need to update CLUSTER_VERSION_STRING when we add a new cluster "
               "version.");
 #define CLUSTER_VERSION_STRING "2.0.0"

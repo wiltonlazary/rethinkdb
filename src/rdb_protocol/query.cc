@@ -184,18 +184,10 @@ void raw_term_t::set_optarg_name(const std::string &name) {
     optarg_name_ = global_optargs_t::validate_optarg(name, bt);
 }
 
-datum_t term_storage_t::get_time() {
-    if (!start_time.has()) {
-        start_time = pseudo::time_now();
-    }
-    return start_time;
-}
+term_storage_t::term_storage_t() { }
 
-raw_term_t *term_storage_t::new_term(Term::TermType type, backtrace_id_t bt) {
-    raw_term_t &res = terms.push_back();
-    res.type = type;
-    res.bt = bt;
-    return &res;
+void term_storage_t::add_root_term(const rapidjson::Value &v) {
+    parse_internal(v, &backtrace_registry, backtrace_id_t::empty());
 }
 
 void term_storage_t::add_global_optargs(const rapidjson::Value &optargs) {
@@ -222,6 +214,20 @@ void term_storage_t::add_global_optargs(const rapidjson::Value &optargs) {
         const raw_term_t *func_term = r.fun(r.db("test")).raw_term();
         global_optarg_list.push_back(const_cast<raw_term_t *>(func_term));
     }
+}
+
+datum_t term_storage_t::get_time() {
+    if (!start_time.has()) {
+        start_time = pseudo::time_now();
+    }
+    return start_time;
+}
+
+raw_term_t *term_storage_t::new_term(Term::TermType type, backtrace_id_t bt) {
+    raw_term_t &res = terms.push_back();
+    res.type = type;
+    res.bt = bt;
+    return &res;
 }
 
 raw_term_t *term_storage_t::parse_internal(const rapidjson::Value &v,
@@ -302,8 +308,68 @@ void term_storage_t::add_optargs(const rapidjson::Value &optargs,
 }
 
 template <cluster_version_t W>
-archive_result_t term_storage_t::deserialize_term_tree(read_stream_t *s,
-                                                       raw_term_t **term_out) {
+archive_result_t term_storage_t::deserialize_term_tree(
+        read_stream_t *s, raw_term_t **term_out) {
+    CT_ASSERT(sizeof(int) == sizeof(int32_t));
+    int32_t size;
+    archive_result_t res = deserialize_universal(s, &size);
+    if (bad(res)) { return res; }
+    if (size < 0) { return archive_result_t::RANGE_ERROR; }
+    scoped_array_t<char> data(size);
+    int64_t read_res = force_read(s, data.data(), data.size());
+    if (read_res != size) { return archive_result_t::SOCK_ERROR; }
+    Term t;
+    t.ParseFromArray(data.data(), data.size());
+    parse_internal(t);
+    return archive_result_t::SUCCESS;
+}
+
+raw_term_t *term_storage_t::parse_internal(const Term &term) {
+    r_sanity_check(term.has_type());
+    raw_term_t *raw_term = new_term(term.get_type(), backtrace_id_t::empty());
+
+    if (term.type() == Term::DATUM) {
+        raw_term->value = parse_internal(term.datum());
+    } else {
+        for (int i = 0; i < term.args_size(); ++i) {
+            raw_term.args_.push_back(parse_internal(term.args(i)));
+        }
+        for (int i = 0; i < term.optargs_size(); ++i) {
+            Term_AssocPair &optarg_term = term.optargs(i);
+            raw_term_t *optarg = parse_internal(optarg_term.val());
+            optarg->set_optarg_name(optarg_term.key());
+        }
+    }
+}
+
+datum_t term_storage_t:parse_internal(const Datum &datum) {
+
+}
+
+template
+archive_result_t term_storage_t::deserialize_term_tree<cluster_version_t::v1_13>(
+        read_stream_t *s, raw_term_t **term_out);
+template
+archive_result_t term_storage_t::deserialize_term_tree<cluster_version_t::v1_13_2>(
+        read_stream_t *s, raw_term_t **term_out);
+template
+archive_result_t term_storage_t::deserialize_term_tree<cluster_version_t::v1_14>(
+        read_stream_t *s, raw_term_t **term_out);
+template
+archive_result_t term_storage_t::deserialize_term_tree<cluster_version_t::v1_15>(
+        read_stream_t *s, raw_term_t **term_out);
+template
+archive_result_t term_storage_t::deserialize_term_tree<cluster_version_t::v1_16>(
+        read_stream_t *s, raw_term_t **term_out);
+template
+archive_result_t term_storage_t::deserialize_term_tree<cluster_version_t::v2_0>(
+        read_stream_t *s, raw_term_t **term_out);
+
+template <>
+archive_result_t
+term_storage_t::deserialize_term_tree<cluster_version_t::v2_1_is_latest>(
+        read_stream_t *s, raw_term_t **term_out) {
+    const cluster_version_t W = cluster_version_t::v2_1_is_latest;
     archive_result_t res;
 
     int32_t type;
@@ -338,13 +404,13 @@ archive_result_t term_storage_t::deserialize_term_tree(read_stream_t *s,
             term->optargs_.push_back(*term_out);
         }
     }
-
     *term_out = term;
     return res;
 }
 
 template <cluster_version_t W>
-void serialize_term_tree(write_message_t *wm, const raw_term_t *term) {
+void serialize_term_tree(write_message_t *wm,
+                         const raw_term_t *term) {
     serialize<W>(wm, static_cast<int32_t>(term->type));
     serialize<W>(wm, term->bt);
     if (term->type == Term::DATUM) {
@@ -373,10 +439,6 @@ void serialize_term_tree(write_message_t *wm, const raw_term_t *term) {
         guarantee(num_optargs == 0);
     }
 }
-
-template
-archive_result_t term_storage_t::deserialize_term_tree<cluster_version_t::CLUSTER>(
-    read_stream_t *s, raw_term_t **term_out);
 
 template
 void serialize_term_tree<cluster_version_t::CLUSTER>(

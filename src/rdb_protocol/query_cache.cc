@@ -51,7 +51,7 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(
     counted_t<const term_t> root_term;
     counted_t<term_storage_t> term_storage = make_counted<term_storage_t>();
     try {
-        term_storage->add_term_tree(*query_params.root_term_json);
+        term_storage->add_root_term(*query_params.root_term_json);
         if (query_params.global_optargs_json != nullptr) {
             term_storage->add_global_optargs(*query_params.global_optargs_json);
         }
