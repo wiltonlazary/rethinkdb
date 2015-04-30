@@ -1301,7 +1301,9 @@ void deserialize_sindex_info(const std::vector<char> &data,
         unreachable();
     }
 
-    success = deserialize_for_version(cluster_version, &read_stream, &info_out->mapping);
+    success = deserialize_for_version_with_reql_version(cluster_version,
+        info_out->mapping_version_info.original_reql_version,
+        &read_stream, &info_out->mapping);
     throw_if_bad_deserialization(success, "sindex description");
 
     success = deserialize_for_version(cluster_version, &read_stream, &info_out->multi);

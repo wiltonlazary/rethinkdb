@@ -93,7 +93,8 @@ void serialize(write_message_t *wm, const wire_func_t &wf) {
 }
 
 template <cluster_version_t W>
-archive_result_t deserialize(read_stream_t *s, wire_func_t *wf) {
+archive_result_t deserialize(read_stream_t *s, wire_func_t *wf,
+                             reql_version_t reql_version) {
     archive_result_t res;
 
     wire_func_type_t type;
@@ -111,7 +112,7 @@ archive_result_t deserialize(read_stream_t *s, wire_func_t *wf) {
 
         counted_t<term_storage_t> term_storage = make_counted<term_storage_t>();
         raw_term_t *body;
-        res = term_storage->deserialize_term_tree<W>(s, &body);
+        res = term_storage->deserialize_term_tree<W>(s, &body, reql_version);
         if (bad(res)) { return res; }
 
         backtrace_id_t bt;
@@ -145,8 +146,20 @@ archive_result_t deserialize(read_stream_t *s, wire_func_t *wf) {
     }
 }
 
-INSTANTIATE_SERIALIZABLE_SINCE_v1_13(wire_func_t);
-
+template archive_result_t deserialize<cluster_version_t::v1_13>(
+    read_stream_t *, wire_func_t *, reql_version_t);
+template archive_result_t deserialize<cluster_version_t::v1_13_2>(
+        read_stream_t *, wire_func_t *, reql_version_t);
+template archive_result_t deserialize<cluster_version_t::v1_14>(
+    read_stream_t *, wire_func_t *, reql_version_t);
+template archive_result_t deserialize<cluster_version_t::v1_15>(
+    read_stream_t *, wire_func_t *, reql_version_t);
+template archive_result_t deserialize<cluster_version_t::v1_16>(
+    read_stream_t *, wire_func_t *, reql_version_t);
+template archive_result_t deserialize<cluster_version_t::v2_0>(
+    read_stream_t *, wire_func_t *, reql_version_t);
+template archive_result_t deserialize<cluster_version_t::v2_1_is_latest>(
+    read_stream_t *, wire_func_t *, reql_version_t);
 
 template <cluster_version_t W>
 void serialize(write_message_t *wm, const maybe_wire_func_t &mwf) {

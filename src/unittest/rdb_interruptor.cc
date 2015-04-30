@@ -78,8 +78,9 @@ void count_evals(test_rdb_env_t *test_env,
     ql::compile_env_t compile_env((ql::var_visibility_t()), term_storage.get());
     counted_t<const ql::term_t> compiled_term = ql::compile_term(&compile_env, term);
 
-    // RSI (grey): put term storage in the env
     ql::scope_env_t scope_env(env_instance->get_env(), ql::var_scope_t());
+    ql::scoped_term_storage_t scoped_term_storage(term_storage,
+                                                  env_instance->get_env());
     UNUSED scoped_ptr_t<ql::val_t> result = compiled_term->eval(&scope_env);
     guarantee(*count_out > 0);
     guarantee(verify_callback->verify(env_instance.get()));
@@ -98,9 +99,10 @@ void interrupt_test(test_rdb_env_t *test_env,
     ql::compile_env_t compile_env((ql::var_visibility_t()), term_storage.get());
     counted_t<const ql::term_t> compiled_term = ql::compile_term(&compile_env, term);
 
-    // RSI (grey): put term storage in the env
     try {
         ql::scope_env_t scope_env(env_instance->get_env(), ql::var_scope_t());
+        ql::scoped_term_storage_t scoped_term_storage(term_storage,
+                                                      env_instance->get_env());
         UNUSED scoped_ptr_t<ql::val_t> result = compiled_term->eval(&scope_env);
         guarantee(false);
     } catch (const interrupted_exc_t &ex) {

@@ -77,6 +77,31 @@ archive_result_t deserialize_for_version(cluster_version_t version,
     }
 }
 
+// Deserializes a value, assuming it's serialized for a given version.  (This doesn't
+// deserialize any version numbers.)
+template <class T>
+archive_result_t deserialize_for_version_with_reql_version(
+        cluster_version_t version, reql_version_t reql_version,
+        read_stream_t *s, T *thing) {
+    switch (version) {
+    case cluster_version_t::v1_13:
+        return deserialize<cluster_version_t::v1_13>(s, thing, reql_version);
+    case cluster_version_t::v1_13_2:
+        return deserialize<cluster_version_t::v1_13_2>(s, thing, reql_version);
+    case cluster_version_t::v1_14:
+        return deserialize<cluster_version_t::v1_14>(s, thing, reql_version);
+    case cluster_version_t::v1_15:
+        return deserialize<cluster_version_t::v1_15>(s, thing, reql_version);
+    case cluster_version_t::v1_16:
+        return deserialize<cluster_version_t::v1_16>(s, thing, reql_version);
+    case cluster_version_t::v2_0:
+        return deserialize<cluster_version_t::v2_0>(s, thing, reql_version);
+    case cluster_version_t::v2_1_is_latest:
+        return deserialize<cluster_version_t::v2_1_is_latest>(s, thing, reql_version);
+    default:
+        unreachable();
+    }
+}
 
 // Some serialized_size needs to be visible, apparently, so that
 // serialized_size_for_version will actually parse.

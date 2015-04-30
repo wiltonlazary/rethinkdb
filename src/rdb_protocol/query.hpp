@@ -9,11 +9,11 @@
 #include "containers/counted.hpp"
 #include "containers/intrusive_list.hpp"
 #include "containers/segmented_vector.hpp"
-
 #include "rdb_protocol/backtrace.hpp"
 #include "rdb_protocol/datum.hpp"
 #include "rdb_protocol/error.hpp"
 #include "rdb_protocol/ql2.pb.h"
+#include "version.hpp"
 
 namespace ql {
 
@@ -126,7 +126,8 @@ public:
     // the root term of the deserialized tree through the root_term_out parameter.
     template <cluster_version_t W>
     archive_result_t deserialize_term_tree(read_stream_t *s,
-                                           raw_term_t **root_term_out);
+                                           raw_term_t **root_term_out,
+                                           reql_version_t reql_version);
 
 private:
     // We use a segmented vector so items won't be reallocated and moved, which allows us
@@ -153,6 +154,9 @@ private:
     raw_term_t *parse_internal(const rapidjson::Value &v,
                                backtrace_registry_t *bt_reg,
                                backtrace_id_t bt);
+
+    raw_term_t *parse_internal(const Term &term,
+                               reql_version_t reql_version);
 
     DISABLE_COPYING(term_storage_t);
 };

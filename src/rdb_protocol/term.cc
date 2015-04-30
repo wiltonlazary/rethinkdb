@@ -271,7 +271,7 @@ const raw_term_t *term_t::get_src() const {
 }
 
 scoped_ptr_t<val_t> runtime_term_t::eval(scope_env_t *env, eval_flags_t eval_flags) const {
-    // guarantee(env->env->term_storage != nullptr); // RSI (grey): better solution for eval-time term_storage
+    guarantee(env->env->term_storage.has());
     // This is basically a hook for unit tests to change things mid-query
     profile::starter_t starter(strprintf("Evaluating %s.", name()), env->env->trace);
     env->env->do_eval_callback();

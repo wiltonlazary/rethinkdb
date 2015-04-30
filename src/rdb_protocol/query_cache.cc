@@ -186,6 +186,8 @@ void query_cache_t::ref_t::fill_response(response_t *res) {
                   entry->global_optargs,
                   trace.get_or_null());
 
+        scoped_term_storage_t scoped_term_storage(entry->term_storage, &env);
+
         if (entry->state == entry_t::state_t::START) {
             run(&env, res);
             entry->root_term.reset();

@@ -309,7 +309,7 @@ void term_storage_t::add_optargs(const rapidjson::Value &optargs,
 
 template <cluster_version_t W>
 archive_result_t term_storage_t::deserialize_term_tree(
-        read_stream_t *s, raw_term_t **term_out) {
+        read_stream_t *s, raw_term_t **term_out, reql_version_t reql_version) {
     CT_ASSERT(sizeof(int) == sizeof(int32_t));
     int32_t size;
     archive_result_t res = deserialize_universal(s, &size);
@@ -320,55 +320,55 @@ archive_result_t term_storage_t::deserialize_term_tree(
     if (read_res != size) { return archive_result_t::SOCK_ERROR; }
     Term t;
     t.ParseFromArray(data.data(), data.size());
-    parse_internal(t);
+    *term_out = parse_internal(t, reql_version);
     return archive_result_t::SUCCESS;
 }
 
-raw_term_t *term_storage_t::parse_internal(const Term &term) {
+raw_term_t *term_storage_t::parse_internal(const Term &term,
+                                           reql_version_t reql_version) {
     r_sanity_check(term.has_type());
-    raw_term_t *raw_term = new_term(term.get_type(), backtrace_id_t::empty());
+    raw_term_t *raw_term = new_term(term.type(), backtrace_id_t::empty());
 
     if (term.type() == Term::DATUM) {
-        raw_term->value = parse_internal(term.datum());
+        raw_term->value =
+            to_datum(&term.datum(), configured_limits_t::unlimited, reql_version);
     } else {
         for (int i = 0; i < term.args_size(); ++i) {
-            raw_term.args_.push_back(parse_internal(term.args(i)));
+            raw_term->args_.push_back(parse_internal(term.args(i), reql_version));
         }
         for (int i = 0; i < term.optargs_size(); ++i) {
-            Term_AssocPair &optarg_term = term.optargs(i);
-            raw_term_t *optarg = parse_internal(optarg_term.val());
+            const Term_AssocPair &optarg_term = term.optargs(i);
+            raw_term_t *optarg = parse_internal(optarg_term.val(), reql_version);
             optarg->set_optarg_name(optarg_term.key());
+            raw_term->optargs_.push_back(optarg);
         }
     }
-}
-
-datum_t term_storage_t:parse_internal(const Datum &datum) {
-
+    return raw_term;
 }
 
 template
 archive_result_t term_storage_t::deserialize_term_tree<cluster_version_t::v1_13>(
-        read_stream_t *s, raw_term_t **term_out);
+        read_stream_t *s, raw_term_t **term_out, reql_version_t reql_version);
 template
 archive_result_t term_storage_t::deserialize_term_tree<cluster_version_t::v1_13_2>(
-        read_stream_t *s, raw_term_t **term_out);
+        read_stream_t *s, raw_term_t **term_out, reql_version_t reql_version);
 template
 archive_result_t term_storage_t::deserialize_term_tree<cluster_version_t::v1_14>(
-        read_stream_t *s, raw_term_t **term_out);
+        read_stream_t *s, raw_term_t **term_out, reql_version_t reql_version);
 template
 archive_result_t term_storage_t::deserialize_term_tree<cluster_version_t::v1_15>(
-        read_stream_t *s, raw_term_t **term_out);
+        read_stream_t *s, raw_term_t **term_out, reql_version_t reql_version);
 template
 archive_result_t term_storage_t::deserialize_term_tree<cluster_version_t::v1_16>(
-        read_stream_t *s, raw_term_t **term_out);
+        read_stream_t *s, raw_term_t **term_out, reql_version_t reql_version);
 template
 archive_result_t term_storage_t::deserialize_term_tree<cluster_version_t::v2_0>(
-        read_stream_t *s, raw_term_t **term_out);
+        read_stream_t *s, raw_term_t **term_out, reql_version_t reql_version);
 
 template <>
 archive_result_t
 term_storage_t::deserialize_term_tree<cluster_version_t::v2_1_is_latest>(
-        read_stream_t *s, raw_term_t **term_out) {
+        read_stream_t *s, raw_term_t **term_out, reql_version_t reql_version) {
     const cluster_version_t W = cluster_version_t::v2_1_is_latest;
     archive_result_t res;
 
@@ -387,7 +387,7 @@ term_storage_t::deserialize_term_tree<cluster_version_t::v2_1_is_latest>(
         res = deserialize<W>(s, &num_args);
         if (bad(res)) { return res; }
         for (size_t i = 0; i < num_args; ++i) {
-            res = deserialize_term_tree<W>(s, term_out);
+            res = deserialize_term_tree<W>(s, term_out, reql_version);
             if (bad(res)) { return res; }
             term->args_.push_back(*term_out);
         }
@@ -398,7 +398,7 @@ term_storage_t::deserialize_term_tree<cluster_version_t::v2_1_is_latest>(
         for (size_t i = 0; i < num_optargs; ++i) {
             res = deserialize<W>(s, &optarg_name);
             if (bad(res)) { return res; }
-            res = deserialize_term_tree<W>(s, term_out);
+            res = deserialize_term_tree<W>(s, term_out, reql_version);
             if (bad(res)) { return res; }
             (*term_out)->set_optarg_name(optarg_name);
             term->optargs_.push_back(*term_out);

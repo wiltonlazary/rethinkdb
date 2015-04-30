@@ -53,7 +53,6 @@ reql_func_t::~reql_func_t() { }
 scoped_ptr_t<val_t> reql_func_t::call(env_t *env,
                                       const std::vector<datum_t> &args,
                                       eval_flags_t eval_flags) const {
-    // RSI (grey) - insert own term_storage_t into the env, remove when done
     try {
         // We allow arg_names.size() == 0 to specifically permit users (Ruby users
         // especially) to use zero-arity functions without the drivers to know anything
@@ -71,6 +70,7 @@ scoped_ptr_t<val_t> reql_func_t::call(env_t *env,
             : captured_scope.with_func_arg_list(arg_names, args);
 
         scope_env_t scope_env(env, std::move(new_scope));
+        scoped_term_storage_t scoped_term_storage(term_storage, env);
         return body->eval(&scope_env, eval_flags);
     } catch (const datum_exc_t &e) {
         rfail(e.get_type(), "%s", e.what());

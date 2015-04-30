@@ -134,8 +134,7 @@ size_t args_t::num_args() const {
     return argv.size();
 }
 
-scoped_ptr_t<val_t> args_t::arg(scope_env_t *env, size_t i,
-                             eval_flags_t flags) {
+scoped_ptr_t<val_t> args_t::arg(scope_env_t *env, size_t i, eval_flags_t flags) {
     if (i == 0 && arg0.has()) {
         scoped_ptr_t<val_t> v = std::move(arg0);
         arg0.reset();

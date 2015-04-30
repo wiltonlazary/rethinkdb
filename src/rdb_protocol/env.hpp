@@ -139,6 +139,21 @@ private:
     DISABLE_COPYING(env_t);
 };
 
+// Places a given term_storage_t in the env_t for the duration of this object's lifetime
+class scoped_term_storage_t {
+public:
+    scoped_term_storage_t(counted_t<term_storage_t> _term_storage, env_t *_env) :
+            term_storage(std::move(_term_storage)), env(_env) {
+        term_storage.swap(env->term_storage);
+    }
+    ~scoped_term_storage_t() {
+        term_storage.swap(env->term_storage);
+    }
+private:
+    counted_t<term_storage_t> term_storage;
+    env_t *env;
+};
+
 // An environment in which expressions are compiled.  Since compilation doesn't
 // evaluate anything, it doesn't need an env_t *.
 class compile_env_t {
