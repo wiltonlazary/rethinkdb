@@ -10,7 +10,7 @@ namespace ql {
 
 class datum_term_t : public term_t {
 public:
-    datum_term_t(const raw_term_t *term)
+    explicit datum_term_t(const raw_term_t *term)
             : term_t(term) {
         r_sanity_check(term->value.has());
     }
