@@ -30,8 +30,6 @@
 
 namespace ql {
 
-class query_cache_t;
-
 class query_cache_t : public home_thread_mixin_t {
     struct entry_t;
 public:

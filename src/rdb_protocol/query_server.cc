@@ -9,6 +9,7 @@
 #include "rdb_protocol/profile.hpp"
 #include "rdb_protocol/query.hpp"
 #include "rdb_protocol/query_cache.hpp"
+#include "rdb_protocol/response.hpp"
 #include "rpc/semilattice/view/field.hpp"
 
 rdb_query_server_t::rdb_query_server_t(const std::set<ip_address_t> &local_addresses,
