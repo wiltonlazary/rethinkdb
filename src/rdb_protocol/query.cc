@@ -151,7 +151,7 @@ query_params_t::query_params_t(int64_t _token,
 }
 
 bool query_params_t::static_optarg_as_bool(const std::string &key, bool default_value) {
-    guarantee(global_optargs_json != nullptr);
+    r_sanity_check(global_optargs_json != nullptr);
     auto it = global_optargs_json->FindMember(key.c_str());
     if (it == global_optargs_json->MemberEnd() ||
         !it->value.IsArray() || it->value.Size() != 2 ||
@@ -415,6 +415,8 @@ void serialize_term_tree(write_message_t *wm,
     serialize<W>(wm, term->bt);
     if (term->type == Term::DATUM) {
         serialize<W>(wm, term->value);
+        r_sanity_check(term->num_args() == 0);
+        r_sanity_check(term->num_optargs() == 0);
     } else {
         size_t num_args = term->num_args();
         serialize<W>(wm, num_args);
@@ -435,8 +437,8 @@ void serialize_term_tree(write_message_t *wm,
             serialize_term_tree<W>(wm, t);
             --num_optargs;
         }
-        guarantee(num_args == 0);
-        guarantee(num_optargs == 0);
+        r_sanity_check(num_args == 0);
+        r_sanity_check(num_optargs == 0);
     }
 }
 

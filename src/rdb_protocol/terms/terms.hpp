@@ -79,8 +79,7 @@ counted_t<term_t> make_funcall_term(
 
 // datum_terms.cc
 counted_t<term_t> make_datum_term(
-    const raw_term_t *term,
-    const configured_limits_t &limits, reql_version_t reql_version);
+    const raw_term_t *term);
 counted_t<term_t> make_constant_term(
     compile_env_t *env, const raw_term_t *term,
     double constant, const char *name);

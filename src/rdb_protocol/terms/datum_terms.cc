@@ -10,10 +10,10 @@ namespace ql {
 
 class datum_term_t : public term_t {
 public:
-    // RSI (grey): make sure it is ok to ignore limits and version
-    datum_term_t(const raw_term_t *term, const configured_limits_t &,
-                 reql_version_t)
-        : term_t(term) { }
+    datum_term_t(const raw_term_t *term)
+            : term_t(term) {
+        r_sanity_check(term->value.has());
+    }
 private:
     virtual void accumulate_captures(var_captures_t *) const { /* do nothing */ }
     virtual bool is_deterministic() const { return true; }
@@ -127,9 +127,8 @@ private:
 };
 
 counted_t<term_t> make_datum_term(
-        const raw_term_t *term, const configured_limits_t &limits,
-        reql_version_t reql_version) {
-    return make_counted<datum_term_t>(term, limits, reql_version);
+        const raw_term_t *term) {
+    return make_counted<datum_term_t>(term);
 }
 counted_t<term_t> make_constant_term(
         compile_env_t *env, const raw_term_t *term,

@@ -19,7 +19,6 @@ namespace ql {
 
 class query_cache_t;
 
-// TODO: change guarantees to sanity checks
 // TODO: split term_storage_t out into its own file
 struct query_params_t {
 public:
