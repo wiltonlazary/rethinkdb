@@ -19,6 +19,7 @@
 #include "containers/auth_key.hpp"
 #include "perfmon/perfmon.hpp"
 #include "protob/json_shim.hpp"
+#include "rapidjson/stringbuffer.h"
 #include "rdb_protocol/backtrace.hpp"
 #include "rdb_protocol/env.hpp"
 #include "rpc/semilattice/view.hpp"
@@ -469,37 +470,40 @@ void query_server_t::handle(const http_req_t &req,
     }
 
     int64_t token;
-
     if (req.body.size() < sizeof(token)) {
         *result = http_res_t(http_status_code_t::BAD_REQUEST, "application/text",
                              "Client is buggy (request too small).");
         return;
     }
 
-    // Parse the token out from the start of the request
-    scoped_array_t<char> data(req.body.size() + 1);
-    memcpy(data.data(), req.body.c_str(), req.body.size() + 1);
-    token = *reinterpret_cast<const int64_t *>(data.data());
-
-    rapidjson::Document query_json;
-    query_json.ParseInsitu(data.data() + sizeof(token));
-
     ql::response_t response;
-    if (query_json.HasParseError()) {
+    counted_t<http_conn_cache_t::http_conn_t> conn = http_conn_cache.find(conn_id);
+    if (!conn.has()) {
         response.fill_error(Response::CLIENT_ERROR,
-                            wire_protocol_t::unparseable_query_message,
+                            "This HTTP connection is not open.",
                             ql::backtrace_registry_t::EMPTY_BACKTRACE);
     } else {
-        counted_t<http_conn_cache_t::http_conn_t> conn = http_conn_cache.find(conn_id);
-        if (!conn.has()) {
+        // Copy the body into a mutable buffer so we can move it into parse_json_pb.
+        std::vector<char> body_buf(req.body.size() + 1);
+        memcpy(body_buf.data(), req.body.data(), req.body.size());
+        body_buf[req.body.size()] = '\0';
+
+        // Parse the token out from the start of the request
+        char *data = body_buf.data();
+        token = *reinterpret_cast<const int64_t *>(data);
+        data += sizeof(token);
+
+        scoped_ptr_t<ql::query_params_t> q = json_protocol_t::parse_query_from_buffer(
+            data, conn->get_query_cache(), token);
+
+        if (!q.has()) {
             response.fill_error(Response::CLIENT_ERROR,
-                                "This HTTP connection is not open.",
+                                wire_protocol_t::unparseable_query_message,
                                 ql::backtrace_registry_t::EMPTY_BACKTRACE);
         } else {
-            ql::query_params_t q(token, conn->get_query_cache(), std::move(query_json));
             // Check for noreply, which we don't support here, as it causes
             // problems with interruption
-            if (q.noreply) {
+            if (q->noreply) {
                 *result = http_res_t(http_status_code_t::BAD_REQUEST,
                                      "application/text",
                                      "noreply queries are not supported over HTTP\n");
@@ -508,8 +512,9 @@ void query_server_t::handle(const http_req_t &req,
 
             wait_any_t true_interruptor(interruptor, conn->get_interruptor(),
                                         drainer.get_drain_signal());
+
             try {
-                handler->run_query(q, &response, &true_interruptor);
+                handler->run_query(*q, &response, &true_interruptor);
             } catch (const interrupted_exc_t &ex) {
                 if (http_conn_cache.is_expired(*conn)) {
                     response.fill_error(Response::RUNTIME_ERROR,

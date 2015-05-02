@@ -37,7 +37,7 @@ void check_type(const rapidjson::Value &v,
 void check_term_size(const rapidjson::Value &v, backtrace_id_t bt) {
     if (v.Size() == 0 || v.Size() > 3) {
         throw exc_t(base_exc_t::GENERIC,
-            strprintf("Expected an array of 1, 2, or 3 elements, but found %zu.",
+            strprintf("Expected an array of 1, 2, or 3 elements, but found %d.",
                       v.Size()), bt);
     }
 }
@@ -101,7 +101,7 @@ query_params_t::query_params_t(int64_t _token,
     }
     if (doc.Size() == 0 || doc.Size() > 3) {
         throw bt_exc_t(Response::CLIENT_ERROR,
-            strprintf("Expected 0 to 3 elements in the top-level query, but found %zu.",
+            strprintf("Expected 0 to 3 elements in the top-level query, but found %d.",
                       doc.Size()),
             backtrace_registry_t::EMPTY_BACKTRACE);
     }

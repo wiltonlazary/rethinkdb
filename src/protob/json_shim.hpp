@@ -6,13 +6,14 @@
 
 #include "arch/types.hpp"
 #include "containers/scoped.hpp"
-#include "rdb_protocol/query.hpp"
+#include "rapidjson/stringbuffer.h"
 
 class signal_t;
 
 namespace ql {
 class response_t;
 class query_cache_t;
+class query_params_t;
 }
 
 // Contains common declarations used by all wire protocols, this is a class rather than
@@ -31,6 +32,11 @@ public:
 // the protocol type.
 class json_protocol_t {
 public:
+    static scoped_ptr_t<ql::query_params_t> parse_query_from_buffer(
+            char *mutable_buffer,
+            ql::query_cache_t *query_cache,
+            int64_t token);
+
     static scoped_ptr_t<ql::query_params_t> parse_query(tcp_conn_t *conn,
                                                         signal_t *interruptor,
                                                         ql::query_cache_t *query_cache);

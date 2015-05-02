@@ -24,6 +24,24 @@ store_key_t key_max(sorting_t sorting) {
     return !reversed(sorting) ? store_key_t::max() : store_key_t::min();
 }
 
+#define RDB_IMPL_PROTOB_DESERIALIZABLE(pb_t)                            \
+    MUST_USE archive_result_t deserialize_protobuf(read_stream_t *s, pb_t *p) { \
+        CT_ASSERT(sizeof(int) == sizeof(int32_t));                      \
+        int32_t size;                                                   \
+        archive_result_t res = deserialize_universal(s, &size);         \
+        if (bad(res)) { return res; }                                   \
+        if (size < 0) { return archive_result_t::RANGE_ERROR; }         \
+        scoped_array_t<char> data(size);                                \
+        int64_t read_res = force_read(s, data.data(), data.size());     \
+        if (read_res != size) { return archive_result_t::SOCK_ERROR; }  \
+        p->ParseFromArray(data.data(), data.size());                    \
+        return archive_result_t::SUCCESS;                               \
+    }
+
+RDB_IMPL_PROTOB_DESERIALIZABLE(Term);
+RDB_IMPL_PROTOB_DESERIALIZABLE(Datum);
+RDB_IMPL_PROTOB_DESERIALIZABLE(Backtrace);
+
 RDB_IMPL_SERIALIZABLE_3_SINCE_v1_13(backfill_atom_t, key, value, recency);
 
 namespace rdb_protocol {

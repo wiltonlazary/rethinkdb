@@ -3,6 +3,8 @@
 
 #include "arch/io/network.hpp"
 #include "rapidjson/rapidjson.h"
+#include "rdb_protocol/backtrace.hpp"
+#include "rdb_protocol/query.hpp"
 #include "rdb_protocol/response.hpp"
 
 const uint32_t wire_protocol_t::TOO_LARGE_QUERY_SIZE = 64 * MEGABYTE;
@@ -20,6 +22,24 @@ std::string wire_protocol_t::too_large_query_message(uint32_t size) {
 std::string wire_protocol_t::too_large_response_message(size_t size) {
     return strprintf("Response size (%zu) greater than maximum (%" PRIu32 ").",
                      size, TOO_LARGE_RESPONSE_SIZE - 1);
+}
+
+scoped_ptr_t<ql::query_params_t> json_protocol_t::parse_query_from_buffer(
+        char *mutable_buffer,
+        ql::query_cache_t *query_cache,
+        int64_t token) {
+    rapidjson::Document doc;
+    doc.ParseInsitu(mutable_buffer);
+
+    scoped_ptr_t<ql::query_params_t> res;
+    if (!doc.HasParseError()) {
+        try {
+            res = make_scoped<ql::query_params_t>(token, query_cache, std::move(doc));
+        } catch (const ql::bt_exc_t &ex) {
+            // Parse error, let the caller handle the response
+        }
+    }
+    return res;
 }
 
 scoped_ptr_t<ql::query_params_t> json_protocol_t::parse_query(
@@ -43,19 +63,17 @@ scoped_ptr_t<ql::query_params_t> json_protocol_t::parse_query(
     scoped_array_t<char> data(size + 1);
     conn->read(data.data(), size, interruptor);
     data[size] = 0; // Null terminate the string, which the json parser requires
-    rapidjson::Document doc;
-    doc.ParseInsitu(data.data());
 
-    if (doc.HasParseError()) {
+    scoped_ptr_t<ql::query_params_t> res =
+        parse_query_from_buffer(data.data(), query_cache, token);
+    if (!res.has()) {
         ql::response_t error;
         error.fill_error(Response::CLIENT_ERROR,
                          wire_protocol_t::unparseable_query_message,
                          ql::backtrace_registry_t::EMPTY_BACKTRACE);
         send_response(&error, token, conn, interruptor);
-        return scoped_ptr_t<ql::query_params_t>();
     }
-
-    return make_scoped<ql::query_params_t>(token, query_cache, std::move(doc));
+    return res;
 }
 
 void write_response_internal(ql::response_t *response,
@@ -131,7 +149,7 @@ void json_protocol_t::send_response(ql::response_t *response,
 
     if (payload_size >= wire_protocol_t::TOO_LARGE_RESPONSE_SIZE) {
         response->fill_error(Response::RUNTIME_ERROR,
-            wire_protocol_t::too_large_response_message(buffer.GetSize() - prefix_size),
+            wire_protocol_t::too_large_response_message(payload_size),
             ql::backtrace_registry_t::EMPTY_BACKTRACE);
         send_response(response, token, conn, interruptor);
         return;

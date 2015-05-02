@@ -75,6 +75,13 @@ ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(
         sindex_rename_result_t, int8_t,
         sindex_rename_result_t::OLD_NAME_DOESNT_EXIST, sindex_rename_result_t::SUCCESS);
 
+#define RDB_DECLARE_PROTOB_DESERIALIZABLE(pb_t) \
+    MUST_USE archive_result_t deserialize_protobuf(read_stream_t *s, pb_t *p)
+
+RDB_DECLARE_PROTOB_DESERIALIZABLE(Term);
+RDB_DECLARE_PROTOB_DESERIALIZABLE(Datum);
+RDB_DECLARE_PROTOB_DESERIALIZABLE(Backtrace);
+
 class key_le_t {
 public:
     explicit key_le_t(sorting_t _sorting) : sorting(_sorting) { }
