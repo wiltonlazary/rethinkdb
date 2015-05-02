@@ -4,6 +4,9 @@
 
 #include <map>
 
+#include "errors.hpp"
+#include <boost/variant.hpp>
+
 #include "rapidjson/rapidjson.h"
 
 #include "containers/counted.hpp"
@@ -77,24 +80,41 @@ private:
 };
 
 struct raw_term_t : public intrusive_list_node_t<raw_term_t> {
-    raw_term_t() { }
-    size_t num_args() const { return args_.size(); }
-    size_t num_optargs() const { return optargs_.size(); }
+    raw_term_t();
 
-    raw_term_iterator_t args() const { return raw_term_iterator_t(&args_); }
-    raw_term_iterator_t optargs() const { return raw_term_iterator_t(&optargs_); }
+    size_t num_args() const;
+    size_t num_optargs() const;
 
-    const char *optarg_name() const { return optarg_name_; }
+    raw_term_iterator_t args() const;
+    raw_term_iterator_t optargs() const;
+
+    const datum_t &datum() const;
+
+    const char *optarg_name() const;
     void set_optarg_name(const std::string &name);
 
     Term::TermType type;
-    backtrace_id_t bt;
-    datum_t value; // Only used for datum type
-
-    intrusive_list_t<raw_term_t> args_; // Not used for datum type
-    intrusive_list_t<raw_term_t> optargs_; // Not used for datum type
+    backtrace_id_t bt; // TODO: this isn't needed if we're a reference
 
 private:
+    static const Term::TermType REFERENCE;
+
+    friend class raw_term_iterator_t;
+    friend class term_storage_t;
+    friend class minidriver_t;
+
+    void reset(Term::TermType type);
+
+    datum_t &mutable_datum();
+    const raw_term_t *&mutable_ref();
+    intrusive_list_t<raw_term_t> &mutable_args();
+    intrusive_list_t<raw_term_t> &mutable_optargs();
+
+    intrusive_list_t<raw_term_t> args_; // Used for almost all Term types
+    intrusive_list_t<raw_term_t> optargs_; // Used for almost all Term types
+    datum_t value; // Used for DATUM terms
+    const raw_term_t *ref; // Used for REF terms
+
     const char *optarg_name_; // Only used when an optarg
     DISABLE_COPYING(raw_term_t);
 };
@@ -138,7 +158,9 @@ private:
 
     datum_t get_time();
 
+    friend class minidriver_t;
     raw_term_t *new_term(Term::TermType type, backtrace_id_t bt);
+    raw_term_t *new_ref(const raw_term_t *src);
 
     void add_args(const rapidjson::Value &args,
                   intrusive_list_t<raw_term_t> *args_out,

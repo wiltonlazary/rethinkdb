@@ -26,7 +26,7 @@ protected:
         counted_t<const document_t> doc;
         switch (static_cast<int>(t->type)) {
         case Term::DATUM:
-            doc = to_lisp_datum(t->value);
+            doc = to_lisp_datum(t->datum());
             break;
         case Term::BRACKET:
             doc = string_gets_together(t);
@@ -41,7 +41,7 @@ protected:
             guarantee(t->num_args() == 1);
             const ql::raw_term_t *arg0 = t->args().next();
             guarantee(arg0->type == Term::DATUM);
-            doc = var_name(arg0->value);
+            doc = var_name(arg0->datum());
             break;
         }
         default: {
@@ -248,18 +248,20 @@ private:
                 if (i != 0) args.push_back(cond_linebreak);
                 const ql::raw_term_t *arg_term = arg_arg_it.next();
                 guarantee(arg_term->type == Term::DATUM);
-                guarantee(arg_term->value.get_type() == ql::datum_t::type_t::R_NUM);
-                args.push_back(var_name(arg_term->value));
+                ql::datum_t d = arg_term->datum();
+                guarantee(d.get_type() == ql::datum_t::type_t::R_NUM);
+                args.push_back(var_name(d));
             }
             nest.push_back(make_concat({lparen,
                                         make_nest(make_concat(std::move(args))),
                                         rparen}));
         } else if (arg0->type == Term::DATUM &&
-                   arg0->value.get_type() == ql::datum_t::type_t::R_ARRAY) {
+                   arg0->datum().get_type() == ql::datum_t::type_t::R_ARRAY) {
+            ql::datum_t d = arg0->datum();
             std::vector<counted_t<const document_t> > args;
-            for (size_t i = 0; i < arg0->value.arr_size(); ++i) {
+            for (size_t i = 0; i < d.arr_size(); ++i) {
                 if (i != 0) args.push_back(cond_linebreak);
-                args.push_back(var_name(arg0->value.get(i)));
+                args.push_back(var_name(d.get(i)));
             }
             nest.push_back(make_concat({lparen,
                                         make_nest(make_concat(std::move(args))),

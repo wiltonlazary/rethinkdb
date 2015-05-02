@@ -30,7 +30,7 @@ protected:
         counted_t<const document_t> doc;
         switch (static_cast<int>(t->type)) {
         case Term::DATUM:
-            doc = to_js_datum(t->value);
+            doc = to_js_datum(t->datum());
             if (!in_r_expr) {
                 doc = prepend_r_expr(doc);
             }
@@ -66,7 +66,7 @@ protected:
             guarantee(t->num_args() == 1);
             const ql::raw_term_t *arg0 = t->args().next();
             guarantee(arg0->type == Term::DATUM);
-            doc = var_name(arg0->value);
+            doc = var_name(arg0->datum());
         } break;
         case Term::IMPLICIT_VAR:
             doc = prepend_r_dot(row);
@@ -287,7 +287,7 @@ private:
         }
         case Term::DATUM:
             in_r_expr = true;
-            stack->push_back(prepend_r_expr(to_js_datum(var->value)));
+            stack->push_back(prepend_r_expr(to_js_datum(var->datum())));
             in_r_expr = old_r_expr;
             *next_out = nullptr;
             *last_is_dot = false;
@@ -305,7 +305,7 @@ private:
             guarantee(var->num_args() == 1);
             const ql::raw_term_t *arg = var->args().next();
             guarantee(arg->type == Term::DATUM);
-            stack->push_back(var_name(arg->value));
+            stack->push_back(var_name(arg->datum()));
             *next_out = nullptr;
             *last_is_dot = false;
             *last_should_r_wrap = false;
@@ -655,19 +655,21 @@ private:
                 }
                 const ql::raw_term_t *arg = arg_arg_it.next();
                 guarantee(arg->type == Term::DATUM);
-                guarantee(arg->value.get_type() == ql::datum_t::type_t::R_NUM);
-                args.push_back(var_name(arg->value));
+                ql::datum_t d = arg->datum();
+                guarantee(d.get_type() == ql::datum_t::type_t::R_NUM);
+                args.push_back(var_name(d));
             }
             arglist = make_c(lparen, make_nest(make_concat(std::move(args))), rparen);
         } else if (arg0->type == Term::DATUM &&
-                   arg0->value.get_type() == ql::datum_t::type_t::R_ARRAY) {
+                   arg0->datum().get_type() == ql::datum_t::type_t::R_ARRAY) {
+            ql::datum_t d = arg0->datum();
             std::vector<counted_t<const document_t> > args;
-            for (size_t i = 0; i < arg0->value.arr_size(); ++i) {
+            for (size_t i = 0; i < d.arr_size(); ++i) {
                 if (i != 0) {
                     args.push_back(comma);
                     args.push_back(cond_linebreak);
                 }
-                args.push_back(var_name(arg0->value.get(i)));
+                args.push_back(var_name(d.get(i)));
             }
             arglist = make_c(lparen, make_nest(make_concat(std::move(args))), rparen);
         } else {

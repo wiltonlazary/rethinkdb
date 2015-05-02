@@ -12,13 +12,13 @@ class datum_term_t : public term_t {
 public:
     explicit datum_term_t(const raw_term_t *term)
             : term_t(term) {
-        r_sanity_check(term->value.has());
+        r_sanity_check(term->datum().has());
     }
 private:
     virtual void accumulate_captures(var_captures_t *) const { /* do nothing */ }
     virtual bool is_deterministic() const { return true; }
     virtual scoped_ptr_t<val_t> term_eval(scope_env_t *, eval_flags_t) const {
-        return new_val(get_src()->value);
+        return new_val(get_src()->datum());
     }
     virtual const char *name() const { return "datum"; }
 };

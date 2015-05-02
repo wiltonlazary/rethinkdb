@@ -3,6 +3,17 @@
 
 namespace ql {
 
+minidriver_t::minidriver_t(term_storage_t *_term_storage, backtrace_id_t _bt) :
+        term_storage(_term_storage), bt(_bt) { }
+
+raw_term_t *minidriver_t::new_term(Term::TermType type) {
+    return term_storage->new_term(type, bt);
+}
+
+raw_term_t *minidriver_t::new_ref(const raw_term_t *src) {
+    return term_storage->new_ref(src);
+}
+
 minidriver_t::reql_t &minidriver_t::reql_t::operator=(const minidriver_t::reql_t &other) {
     r = other.r;
     raw_term_ = other.raw_term_;
@@ -10,38 +21,40 @@ minidriver_t::reql_t &minidriver_t::reql_t::operator=(const minidriver_t::reql_t
 }
 
 minidriver_t::reql_t::reql_t(const reql_t &other) :
-    r(other.r), raw_term_(other.raw_term_) { }
+        r(other.r), raw_term_(other.raw_term_) { }
 
 minidriver_t::reql_t::reql_t(minidriver_t *_r, const raw_term_t *term) :
-    r(_r), raw_term_(r->new_ref(term)) { }
+        r(_r), raw_term_(r->new_ref(term)) { }
 
 minidriver_t::reql_t::reql_t(minidriver_t *_r, const reql_t &other) :
-    r(_r), raw_term_(r->new_ref(other.raw_term_)) { }
+        r(_r), raw_term_(r->new_ref(other.raw_term_)) { }
 
 minidriver_t::reql_t::reql_t(minidriver_t *_r, double val) :
-    r(_r), raw_term_(r->new_term(Term::DATUM))
-{
-    raw_term_->value = datum_t(val);
+        r(_r), raw_term_(r->new_term(Term::DATUM)) {
+    raw_term_->mutable_datum() = datum_t(val);
 }
 
 minidriver_t::reql_t::reql_t(minidriver_t *_r, const std::string &val) :
-    r(_r), raw_term_(r->new_term(Term::DATUM))
-{
-    raw_term_->value = datum_t(val.c_str());
+        r(_r), raw_term_(r->new_term(Term::DATUM)) {
+    raw_term_->mutable_datum() = datum_t(val.c_str());
 }
 
 minidriver_t::reql_t::reql_t(minidriver_t *_r, const datum_t &d) :
-    r(_r), raw_term_(r->new_term(Term::DATUM))
-{
-    raw_term_->value = d;
+        r(_r), raw_term_(r->new_term(Term::DATUM)) {
+    raw_term_->mutable_datum() = d;
 }
 
 minidriver_t::reql_t::reql_t(minidriver_t *_r, std::vector<reql_t> &&val) :
-    r(_r), raw_term_(r->new_term(Term::MAKE_ARRAY))
-{
+        r(_r), raw_term_(r->new_term(Term::MAKE_ARRAY)) {
     for (auto i = val.begin(); i != val.end(); i++) {
         add_arg(std::move(*i));
     }
+}
+
+minidriver_t::reql_t::reql_t(minidriver_t *_r, pb::dummy_var_t var) :
+        r(_r), raw_term_(r->new_term(Term::VAR)) {
+    raw_term_->mutable_datum() =
+        datum_t(static_cast<double>(dummy_var_to_sym(var).value));
 }
 
 minidriver_t::reql_t minidriver_t::boolean(bool b) {

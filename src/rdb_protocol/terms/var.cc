@@ -18,10 +18,10 @@ public:
         const raw_term_t *arg0 = term->args().next();
         rcheck(arg0->type == Term::DATUM, base_exc_t::GENERIC,
                "A variable term has a non-numeric argument.");
-        rcheck(arg0->value.get_type() == datum_t::type_t::R_NUM, base_exc_t::GENERIC,
+        rcheck(arg0->datum().get_type() == datum_t::type_t::R_NUM, base_exc_t::GENERIC,
                "A variable term has a non-numeric variable name argument.");
 
-        varname = sym_t(arg0->value.as_int());
+        varname = sym_t(arg0->datum().as_int());
         rcheck(env->visibility.contains_var(varname), base_exc_t::GENERIC,
                "Variable name not found.");
     }

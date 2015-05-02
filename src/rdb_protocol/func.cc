@@ -161,11 +161,12 @@ func_term_t::func_term_t(compile_env_t *env, const raw_term_t *t)
 
     std::vector<sym_t> args;
     if (vars->type == Term::DATUM) {
-        rcheck(vars->value.get_type() == datum_t::type_t::R_ARRAY,
+        datum_t d = vars->datum();
+        rcheck(d.get_type() == datum_t::type_t::R_ARRAY,
                base_exc_t::GENERIC,
                "CLIENT ERROR: FUNC variables must be a literal *array* of numbers.");
-        for (size_t i = 0; i < vars->value.arr_size(); ++i) {
-            datum_t dnum = vars->value.get(i);
+        for (size_t i = 0; i < d.arr_size(); ++i) {
+            datum_t dnum = d.get(i);
             rcheck(dnum.get_type() == datum_t::type_t::R_NUM,
                    base_exc_t::GENERIC,
                    "CLIENT ERROR: FUNC variables must be a literal array of *numbers*.");
@@ -177,10 +178,11 @@ func_term_t::func_term_t(compile_env_t *env, const raw_term_t *t)
             rcheck(v->type == Term::DATUM,
                    base_exc_t::GENERIC,
                    "CLIENT ERROR: FUNC variables must be a *literal* array of numbers.");
-            rcheck(v->value.get_type() == datum_t::type_t::R_NUM,
+            datum_t d = v->datum();
+            rcheck(d.get_type() == datum_t::type_t::R_NUM,
                    base_exc_t::GENERIC,
                    "CLIENT ERROR: FUNC variables must be a literal array of *numbers*.");
-            args.push_back(sym_t(v->value.as_num()));
+            args.push_back(sym_t(d.as_num()));
         }
     } else {
         rfail(base_exc_t::GENERIC,

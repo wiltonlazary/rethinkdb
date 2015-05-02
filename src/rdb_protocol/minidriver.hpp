@@ -87,7 +87,7 @@ public:
         template <class T>
         void add_arg(T &&a) {
             reql_t new_term(r, std::forward<T>(a));
-            raw_term_->args_.push_back(new_term.raw_term_);
+            raw_term_->mutable_args().push_back(new_term.raw_term_);
         }
 
     private:
@@ -111,9 +111,7 @@ public:
         raw_term_t *raw_term_;
     };
 
-    minidriver_t(term_storage_t *_term_storage,
-                 backtrace_id_t bt) :
-        term_storage(_term_storage), default_backtrace(bt) { }
+    minidriver_t(term_storage_t *_term_storage, backtrace_id_t bt);
 
     template <class T>
     reql_t expr(T &&d) {
@@ -172,7 +170,7 @@ private:
     raw_term_t *new_ref(const raw_term_t *source);
 
     term_storage_t *term_storage;
-    backtrace_id_t default_backtrace;
+    backtrace_id_t bt;
 };
 
 
@@ -182,12 +180,12 @@ inline void minidriver_t::reql_t::add_arg(
         std::pair<std::string, minidriver_t::reql_t> &&optarg) {
     raw_term_t *optarg_term = r->new_ref(optarg.second.raw_term_);
     optarg_term->set_optarg_name(optarg.first);
-    raw_term_->optargs_.push_back(optarg_term);
+    raw_term_->mutable_optargs().push_back(optarg_term);
 }
 
 template <>
 inline void minidriver_t::reql_t::add_arg(minidriver_t::reql_t &&arg) {
-    raw_term_->args_.push_back(r->new_ref(arg.raw_term_));
+    raw_term_->mutable_args().push_back(r->new_ref(arg.raw_term_));
 }
 
 }  // namespace ql

@@ -180,8 +180,62 @@ const raw_term_t *raw_term_iterator_t::next() {
     return res;
 }
 
+const Term::TermType raw_term_t::REFERENCE = static_cast<Term::TermType>(-1);
+
+raw_term_t::raw_term_t() :
+    ref(nullptr) { }
+
+size_t raw_term_t::num_args() const {
+    rassert(type != Term::DATUM && type != REFERENCE);
+    return args_.size();
+}
+
+size_t raw_term_t::num_optargs() const {
+    rassert(type != Term::DATUM && type != REFERENCE);
+    return optargs_.size();
+}
+
+raw_term_iterator_t raw_term_t::args() const {
+    rassert(type != Term::DATUM && type != REFERENCE);
+    return raw_term_iterator_t(&args_);
+}
+
+raw_term_iterator_t raw_term_t::optargs() const {
+    rassert(type != Term::DATUM && type != REFERENCE);
+    return raw_term_iterator_t(&optargs_);
+}
+
+const datum_t &raw_term_t::datum() const {
+    rassert(type == Term::DATUM);
+    return value;
+}
+
+const char *raw_term_t::optarg_name() const {
+    return optarg_name_;
+}
+
 void raw_term_t::set_optarg_name(const std::string &name) {
     optarg_name_ = global_optargs_t::validate_optarg(name, bt);
+}
+
+datum_t &raw_term_t::mutable_datum() {
+    rassert(type == Term::DATUM);
+    return value;
+}
+
+const raw_term_t *&raw_term_t::mutable_ref() {
+    rassert(type == REFERENCE);
+    return ref;
+}
+
+intrusive_list_t<raw_term_t> &raw_term_t::mutable_args() {
+    rassert(type != Term::DATUM && type != REFERENCE);
+    return args_;
+}
+
+intrusive_list_t<raw_term_t> &raw_term_t::mutable_optargs() {
+    rassert(type != Term::DATUM && type != REFERENCE);
+    return optargs_;
 }
 
 term_storage_t::term_storage_t() { }
@@ -230,6 +284,14 @@ raw_term_t *term_storage_t::new_term(Term::TermType type, backtrace_id_t bt) {
     return &res;
 }
 
+raw_term_t *term_storage_t::new_ref(const raw_term_t *src) {
+    raw_term_t &res = terms.push_back();
+    res.type = raw_term_t::REFERENCE;
+    res.bt = src->bt;
+    res.mutable_ref() = src;
+    return &res;
+}
+
 raw_term_t *term_storage_t::parse_internal(const rapidjson::Value &v,
                                            backtrace_registry_t *bt_reg,
                                            backtrace_id_t bt) {
@@ -237,7 +299,8 @@ raw_term_t *term_storage_t::parse_internal(const rapidjson::Value &v,
     if (!v.IsArray()) {
         // This is a literal datum term
         raw_term_t *t = new_term(Term::DATUM, bt);
-        t->value = to_datum(v, configured_limits_t::unlimited, reql_version_t::LATEST);
+        t->mutable_datum() = to_datum(v, configured_limits_t::unlimited,
+                                      reql_version_t::LATEST);
         return t;
     }
     check_term_size(v, bt);
@@ -247,10 +310,10 @@ raw_term_t *term_storage_t::parse_internal(const rapidjson::Value &v,
 
     if (v.Size() >= 2) {
         if (v[1].IsArray()) {
-            add_args(v[1], &t->args_, bt_reg, bt);
+            add_args(v[1], &t->mutable_args(), bt_reg, bt);
         } else if (v[1].IsObject()) {
             got_optargs = true;
-            add_optargs(v[1], &t->optargs_, bt_reg, bt);
+            add_optargs(v[1], &t->mutable_optargs(), bt_reg, bt);
         } else {
             throw exc_t(base_exc_t::GENERIC,
                 strprintf("Expected an ARRAY or arguments or an OBJECT of optional "
@@ -265,13 +328,13 @@ raw_term_t *term_storage_t::parse_internal(const rapidjson::Value &v,
                         "Found two sets of optional arguments.", bt);
         }
         check_type(v, rapidjson::kObjectType, bt);
-        add_optargs(v[2], &t->optargs_, bt_reg, bt);
+        add_optargs(v[2], &t->mutable_optargs(), bt_reg, bt);
     }
 
     // Convert NOW terms into a literal datum - so they all have the same value
     if (t->type == Term::NOW && t->num_args() == 0 && t->num_optargs() == 0) {
         t->type = Term::DATUM;
-        t->value = get_time();
+        t->mutable_datum() = get_time();
     }
     return t;
 }
@@ -330,17 +393,18 @@ raw_term_t *term_storage_t::parse_internal(const Term &term,
     raw_term_t *raw_term = new_term(term.type(), backtrace_id_t::empty());
 
     if (term.type() == Term::DATUM) {
-        raw_term->value =
+        raw_term->mutable_datum() =
             to_datum(&term.datum(), configured_limits_t::unlimited, reql_version);
     } else {
         for (int i = 0; i < term.args_size(); ++i) {
-            raw_term->args_.push_back(parse_internal(term.args(i), reql_version));
+            raw_term->mutable_args().push_back(parse_internal(term.args(i),
+                                                              reql_version));
         }
         for (int i = 0; i < term.optargs_size(); ++i) {
             const Term_AssocPair &optarg_term = term.optargs(i);
             raw_term_t *optarg = parse_internal(optarg_term.val(), reql_version);
             optarg->set_optarg_name(optarg_term.key());
-            raw_term->optargs_.push_back(optarg);
+            raw_term->mutable_optargs().push_back(optarg);
         }
     }
     return raw_term;
@@ -381,7 +445,7 @@ term_storage_t::deserialize_term_tree<cluster_version_t::v2_1_is_latest>(
     raw_term_t *term = new_term(static_cast<Term::TermType>(type), bt);
 
     if (term->type == Term::DATUM) {
-        deserialize<W>(s, &term->value);
+        deserialize<W>(s, &term->mutable_datum());
     } else {
         size_t num_args;
         res = deserialize<W>(s, &num_args);
@@ -389,7 +453,7 @@ term_storage_t::deserialize_term_tree<cluster_version_t::v2_1_is_latest>(
         for (size_t i = 0; i < num_args; ++i) {
             res = deserialize_term_tree<W>(s, term_out, reql_version);
             if (bad(res)) { return res; }
-            term->args_.push_back(*term_out);
+            term->mutable_args().push_back(*term_out);
         }
         std::string optarg_name;
         size_t num_optargs;
@@ -401,7 +465,7 @@ term_storage_t::deserialize_term_tree<cluster_version_t::v2_1_is_latest>(
             res = deserialize_term_tree<W>(s, term_out, reql_version);
             if (bad(res)) { return res; }
             (*term_out)->set_optarg_name(optarg_name);
-            term->optargs_.push_back(*term_out);
+            term->mutable_optargs().push_back(*term_out);
         }
     }
     *term_out = term;
@@ -414,7 +478,7 @@ void serialize_term_tree(write_message_t *wm,
     serialize<W>(wm, static_cast<int32_t>(term->type));
     serialize<W>(wm, term->bt);
     if (term->type == Term::DATUM) {
-        serialize<W>(wm, term->value);
+        serialize<W>(wm, term->datum());
         r_sanity_check(term->num_args() == 0);
         r_sanity_check(term->num_optargs() == 0);
     } else {
