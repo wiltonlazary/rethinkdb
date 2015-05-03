@@ -347,7 +347,7 @@ private:
                 *next_out = arg_it.next();
                 std::vector<counted_t<const document_t> > args;
                 for (const ql::raw_term_t *arg = arg_it.next();
-                     arg != nullptr; arg = arg_it.next()) {
+                     !arg_it.empty(); arg = arg_it.next()) {
                     if (first) {
                         first = false;
                     } else {

@@ -36,8 +36,12 @@ public:
         parent_list->remove(this);
     }
 
-    // TODO: we should make these checks for minidriver term trees
+    // RSI (grey): we should make these checks for minidriver term trees
     void walk() {
+        if (term->type == Term::DATUM) {
+            return;
+        }
+
         if (term->type == Term::ASC || term->type == Term::DESC) {
             rcheck_src(term->bt,
                 prev_frame == nullptr || prev_frame->term->type != Term::ORDER_BY,

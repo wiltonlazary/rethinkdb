@@ -105,6 +105,7 @@ query_params_t::query_params_t(int64_t _token,
                       doc.Size()),
             backtrace_registry_t::EMPTY_BACKTRACE);
     }
+
     if (!doc[0].IsNumber()) {
         throw bt_exc_t(Response::CLIENT_ERROR,
             strprintf("Expected a query type as a number, but found %s.",
@@ -113,27 +114,18 @@ query_params_t::query_params_t(int64_t _token,
     }
     type = static_cast<Query::QueryType>(doc[0].GetInt());
 
-    for (size_t i = 1; i < doc.Size(); ++i) {
-        if (doc[i].IsArray()) {
-            if (root_term_json != nullptr) {
-                throw bt_exc_t(Response::CLIENT_ERROR,
-                    "Two term trees found in the top-level query.",
-                    backtrace_registry_t::EMPTY_BACKTRACE);
-            }
-            root_term_json = &doc[i];
-        } else if (doc[i].IsObject()) {
-            if (global_optargs_json != nullptr) {
-                throw bt_exc_t(Response::CLIENT_ERROR,
-                    "Two sets of global optargs found in the top-level query.",
-                    backtrace_registry_t::EMPTY_BACKTRACE);
-            }
-            global_optargs_json = &doc[i];
-        } else {
+    if (doc.Size() >= 2) {
+        root_term_json = &doc[1];
+    }
+
+    if (doc.Size() >= 3) {
+        if (!doc[2].IsObject()) {
             throw bt_exc_t(Response::CLIENT_ERROR,
-                strprintf("Expected an argument tree or global optargs, but found %s.",
-                          rapidjson_typestr(doc[i].GetType())),
+                strprintf("Expected global optargs as an object, but found %s.",
+                          rapidjson_typestr(doc[2].GetType())),
                 backtrace_registry_t::EMPTY_BACKTRACE);
         }
+        global_optargs_json = &doc[2];
     }
 
     // Parse out optargs that are needed before query evaluation
@@ -173,35 +165,59 @@ bool query_params_t::static_optarg_as_bool(const std::string &key, bool default_
 raw_term_iterator_t::raw_term_iterator_t(const intrusive_list_t<raw_term_t> *_list) :
     list(_list), item(list->head()) { }
 
+bool raw_term_iterator_t::empty() const {
+    return item == nullptr;
+}
+
 const raw_term_t *raw_term_iterator_t::next() {
     const raw_term_t *res = item;
     r_sanity_check(res != nullptr, "Tried to read too many args or optargs from a term.");
     item = list->next(item);
+    if (res->type == raw_term_t::REFERENCE) {
+        rassert(res->src->type != raw_term_t::REFERENCE);
+        res = res->src;
+    }
     return res;
 }
 
 const Term::TermType raw_term_t::REFERENCE = static_cast<Term::TermType>(-1);
 
 raw_term_t::raw_term_t() :
-    ref(nullptr) { }
+    src(nullptr) { }
 
 size_t raw_term_t::num_args() const {
-    rassert(type != Term::DATUM && type != REFERENCE);
+    rassert(type != Term::DATUM);
+    if (type == REFERENCE) {
+        rassert(src != nullptr && src->type != REFERENCE);
+        return src->args_.size();
+    }
     return args_.size();
 }
 
 size_t raw_term_t::num_optargs() const {
-    rassert(type != Term::DATUM && type != REFERENCE);
+    rassert(type != Term::DATUM);
+    if (type == REFERENCE) {
+        rassert(src != nullptr && src->type != REFERENCE);
+        return src->optargs_.size();
+    }
     return optargs_.size();
 }
 
 raw_term_iterator_t raw_term_t::args() const {
-    rassert(type != Term::DATUM && type != REFERENCE);
+    rassert(type != Term::DATUM);
+    if (type == REFERENCE) {
+        rassert(src != nullptr && src->type != REFERENCE);
+        return raw_term_iterator_t(&src->args_);
+    }
     return raw_term_iterator_t(&args_);
 }
 
 raw_term_iterator_t raw_term_t::optargs() const {
-    rassert(type != Term::DATUM && type != REFERENCE);
+    rassert(type != Term::DATUM);
+    if (type == REFERENCE) {
+        rassert(src != nullptr && src->type != REFERENCE);
+        return raw_term_iterator_t(&src->optargs_);
+    }
     return raw_term_iterator_t(&optargs_);
 }
 
@@ -225,7 +241,7 @@ datum_t &raw_term_t::mutable_datum() {
 
 const raw_term_t *&raw_term_t::mutable_ref() {
     rassert(type == REFERENCE);
-    return ref;
+    return src;
 }
 
 intrusive_list_t<raw_term_t> &raw_term_t::mutable_args() {
@@ -252,7 +268,6 @@ void term_storage_t::add_global_optargs(const rapidjson::Value &optargs) {
         if (key == "db") {
             has_db_optarg = true;
         }
-        global_optargs_t::validate_optarg(key, backtrace_id_t::empty());
 
         minidriver_t r(this, backtrace_id_t::empty());
         raw_term_t *term = parse_internal(it->value, nullptr, backtrace_id_t::empty());
@@ -260,6 +275,7 @@ void term_storage_t::add_global_optargs(const rapidjson::Value &optargs) {
         // Don't do this at home
         const raw_term_t *func_term = r.fun(r.expr(term)).raw_term();
         global_optarg_list.push_back(const_cast<raw_term_t *>(func_term));
+        global_optarg_list.tail()->set_optarg_name(key);
     }
 
     // Add a default 'test' database optarg if none was specified
@@ -267,6 +283,7 @@ void term_storage_t::add_global_optargs(const rapidjson::Value &optargs) {
         minidriver_t r(this, backtrace_id_t::empty());
         const raw_term_t *func_term = r.fun(r.db("test")).raw_term();
         global_optarg_list.push_back(const_cast<raw_term_t *>(func_term));
+        global_optarg_list.tail()->set_optarg_name(std::string("db"));
     }
 }
 

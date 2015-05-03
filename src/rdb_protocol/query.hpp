@@ -67,6 +67,7 @@ class raw_term_t;
 class raw_term_iterator_t {
 public:
     raw_term_iterator_t(raw_term_iterator_t &&) = default;
+    bool empty() const;
     const raw_term_t *next();
 private:
     friend class raw_term_t;
@@ -113,7 +114,7 @@ private:
     intrusive_list_t<raw_term_t> args_; // Used for almost all Term types
     intrusive_list_t<raw_term_t> optargs_; // Used for almost all Term types
     datum_t value; // Used for DATUM terms
-    const raw_term_t *ref; // Used for REF terms
+    const raw_term_t *src; // Used for REF terms
 
     const char *optarg_name_; // Only used when an optarg
     DISABLE_COPYING(raw_term_t);

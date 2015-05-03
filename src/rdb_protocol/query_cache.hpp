@@ -100,7 +100,7 @@ private:
         const uuid_u job_id;
         const bool noreply;
         const profile_bool_t profile;
-        const counted_t<term_storage_t> term_storage;
+        counted_t<term_storage_t> term_storage;
         const global_optargs_t global_optargs;
         const microtime_t start_time;
 
