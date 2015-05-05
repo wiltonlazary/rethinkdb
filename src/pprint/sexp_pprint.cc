@@ -53,19 +53,18 @@ protected:
                 std::vector<counted_t<const document_t> > args;
                 auto arg_it = t->args();
                 auto optarg_it = t->optargs();
-                for (size_t i = 0; i < t->num_args(); ++i) {
+                while (const ql::raw_term_t *item = arg_it.next()) {
                     // don't insert redundant space
                     if (args.size() != 0) args.push_back(cond_linebreak);
-                    args.push_back(visit_generic(arg_it.next()));
+                    args.push_back(visit_generic(item));
                 }
-                for (size_t i = 0; i < t->num_optargs(); ++i) {
+                while (const ql::raw_term_t *item = optarg_it.next()) {
                     // don't insert redundant space
                     if (args.size() != 0) args.push_back(cond_linebreak);
-                    const ql::raw_term_t *optarg = optarg_it.next();
                     args.push_back(make_text(
-                        strprintf(":%s", to_lisp_name(optarg->optarg_name()).c_str())));
+                        strprintf(":%s", to_lisp_name(item->optarg_name()).c_str())));
                     args.push_back(cond_linebreak);
-                    args.push_back(visit_generic(optarg));
+                    args.push_back(visit_generic(item));
                 }
                 term.push_back(make_nest(make_concat(std::move(args))));
             }
@@ -244,11 +243,10 @@ private:
         if (arg0->type == Term::MAKE_ARRAY) {
             auto arg_arg_it = arg0->args();
             std::vector<counted_t<const document_t> > args;
-            for (size_t i = 0; i < arg0->num_args(); ++i) {
-                if (i != 0) args.push_back(cond_linebreak);
-                const ql::raw_term_t *arg_term = arg_arg_it.next();
-                guarantee(arg_term->type == Term::DATUM);
-                ql::datum_t d = arg_term->datum();
+            while (const ql::raw_term_t *item = arg_arg_it.next()) {
+                if (!args.empty()) args.push_back(cond_linebreak);
+                guarantee(item->type == Term::DATUM);
+                ql::datum_t d = item->datum();
                 guarantee(d.get_type() == ql::datum_t::type_t::R_NUM);
                 args.push_back(var_name(d));
             }
@@ -269,9 +267,9 @@ private:
         } else {
             nest.push_back(visit_generic(arg0));
         }
-        for (size_t i = 1; i < t->num_args(); ++i) {
+        while (const ql::raw_term_t *item = arg_it.next()) {
             nest.push_back(cond_linebreak);
-            nest.push_back(visit_generic(arg_it.next()));
+            nest.push_back(visit_generic(item));
         }
         return make_concat({lparen, lambda, sp, make_nest(make_concat(std::move(nest))),
                             rparen});

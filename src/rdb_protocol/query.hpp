@@ -67,7 +67,6 @@ class raw_term_t;
 class raw_term_iterator_t {
 public:
     raw_term_iterator_t(raw_term_iterator_t &&) = default;
-    bool empty() const;
     const raw_term_t *next();
 private:
     friend class raw_term_t;
@@ -124,6 +123,7 @@ class term_storage_t : public slow_atomic_countable_t<term_storage_t> {
 public:
     term_storage_t();
     term_storage_t(term_storage_t &&) = default;
+    ~term_storage_t();
 
     // Parse a query from a rapidjson value and attach backtraces
     void add_root_term(const rapidjson::Value &v);

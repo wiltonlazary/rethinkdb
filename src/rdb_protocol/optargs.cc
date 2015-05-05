@@ -102,7 +102,7 @@ static const std::set<std::string> acceptable_optargs({
 const char *global_optargs_t::validate_optarg(const std::string &key,
                                               backtrace_id_t bt) {
     auto const &it = acceptable_optargs.find(key);
-    rcheck_src(bt, it == acceptable_optargs.end(), base_exc_t::GENERIC,
+    rcheck_src(bt, it != acceptable_optargs.end(), base_exc_t::GENERIC,
                strprintf("Unrecognized optional argument `%s`.", key.c_str()));
     return it->c_str();
 }

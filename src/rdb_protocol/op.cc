@@ -162,14 +162,14 @@ op_term_t::op_term_t(compile_env_t *env, const raw_term_t *term,
     std::vector<counted_t<const term_t> > original_args;
     original_args.reserve(term->num_args());
     auto arg_it = term->args();
-    for (const raw_term_t *arg = arg_it.next(); !arg_it.empty(); arg = arg_it.next()) {
+    while (const raw_term_t *arg = arg_it.next()) {
         counted_t<const term_t> t = compile_term(env, arg);
         original_args.push_back(t);
     }
     arg_terms.init(new arg_terms_t(term, std::move(argspec), std::move(original_args)));
 
     auto opt_it = term->optargs();
-    for (const raw_term_t *opt = opt_it.next(); !opt_it.empty(); opt = opt_it.next()) {
+    while (const raw_term_t *opt = opt_it.next()) {
         rcheck_src(opt->bt, optargspec.contains(opt->optarg_name()), base_exc_t::GENERIC,
             strprintf("Unrecognized optional argument `%s`.", opt->optarg_name()));
         counted_t<const term_t> t = compile_term(env, opt);

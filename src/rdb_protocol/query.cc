@@ -165,13 +165,9 @@ bool query_params_t::static_optarg_as_bool(const std::string &key, bool default_
 raw_term_iterator_t::raw_term_iterator_t(const intrusive_list_t<raw_term_t> *_list) :
     list(_list), item(list->head()) { }
 
-bool raw_term_iterator_t::empty() const {
-    return item == nullptr;
-}
-
 const raw_term_t *raw_term_iterator_t::next() {
     const raw_term_t *res = item;
-    r_sanity_check(res != nullptr, "Tried to read too many args or optargs from a term.");
+    if (res == nullptr) { return res; }
     item = list->next(item);
     if (res->type == raw_term_t::REFERENCE) {
         rassert(res->src->type != raw_term_t::REFERENCE);
@@ -256,6 +252,22 @@ intrusive_list_t<raw_term_t> &raw_term_t::mutable_optargs() {
 
 term_storage_t::term_storage_t() { }
 
+void clear_list(intrusive_list_t<raw_term_t> *list) {
+    while (!list->empty()) {
+        list->pop_front();
+    }
+}
+
+// Because intrusive lists cannot be destroyed unless empty, we need to unwind all
+// extant raw_term_ts.
+term_storage_t::~term_storage_t() {
+    clear_list(&global_optarg_list);
+    for (size_t i = 0; i < terms.size(); ++i) {
+        clear_list(&terms[i].args_);
+        clear_list(&terms[i].optargs_);
+    }
+}
+
 void term_storage_t::add_root_term(const rapidjson::Value &v) {
     parse_internal(v, &backtrace_registry, backtrace_id_t::empty());
 }
@@ -312,7 +324,6 @@ raw_term_t *term_storage_t::new_ref(const raw_term_t *src) {
 raw_term_t *term_storage_t::parse_internal(const rapidjson::Value &v,
                                            backtrace_registry_t *bt_reg,
                                            backtrace_id_t bt) {
-    bool got_optargs = false;
     if (!v.IsArray()) {
         // This is a literal datum term
         raw_term_t *t = new_term(Term::DATUM, bt);
@@ -321,30 +332,18 @@ raw_term_t *term_storage_t::parse_internal(const rapidjson::Value &v,
         return t;
     }
     check_term_size(v, bt);
-    check_type(v, rapidjson::kNumberType, bt);
-
+    check_type(v[0], rapidjson::kNumberType, bt);
     raw_term_t *t = new_term(static_cast<Term::TermType>(v[0].GetInt()), bt);
 
-    if (v.Size() >= 2) {
-        if (v[1].IsArray()) {
-            add_args(v[1], &t->mutable_args(), bt_reg, bt);
-        } else if (v[1].IsObject()) {
-            got_optargs = true;
-            add_optargs(v[1], &t->mutable_optargs(), bt_reg, bt);
-        } else {
-            throw exc_t(base_exc_t::GENERIC,
-                strprintf("Expected an ARRAY or arguments or an OBJECT of optional "
-                          "arguments, but found a %s.",
-                          rapidjson_typestr(v[1].GetType())), bt);
-        }
-    }
-
-    if (v.Size() >= 3) {
-        if (got_optargs) {
-            throw exc_t(base_exc_t::GENERIC,
-                        "Found two sets of optional arguments.", bt);
-        }
-        check_type(v, rapidjson::kObjectType, bt);
+    if (t->type == Term::DATUM) {
+        rcheck_src(bt, v.Size() == 2, base_exc_t::GENERIC,
+                   strprintf("Expected 2 items in array, but found %d", v.Size()));
+        t->mutable_datum() = to_datum(v[1], configured_limits_t::unlimited,
+                                      reql_version_t::LATEST);
+    } else if (v.Size() == 2) {
+        add_args(v[1], &t->mutable_args(), bt_reg, bt);
+    } else if (v.Size() == 3) {
+        add_args(v[1], &t->mutable_args(), bt_reg, bt);
         add_optargs(v[2], &t->mutable_optargs(), bt_reg, bt);
     }
 

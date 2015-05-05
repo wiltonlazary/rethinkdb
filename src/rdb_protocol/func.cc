@@ -174,7 +174,7 @@ func_term_t::func_term_t(compile_env_t *env, const raw_term_t *t)
         }
     } else if (vars->type == Term::MAKE_ARRAY) {
         auto vars_it = vars->args();
-        for (const raw_term_t *v = vars_it.next(); v != nullptr; v = vars_it.next()) {
+        while (const raw_term_t *v = vars_it.next()) {
             rcheck(v->type == Term::DATUM,
                    base_exc_t::GENERIC,
                    "CLIENT ERROR: FUNC variables must be a *literal* array of numbers.");
