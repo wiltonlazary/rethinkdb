@@ -318,7 +318,12 @@ raw_term_t *term_storage_t::new_ref(const raw_term_t *src) {
     raw_term_t &res = terms.push_back();
     res.type = raw_term_t::REFERENCE;
     res.bt = src->bt;
-    res.mutable_ref() = src;
+    if (src->type == raw_term_t::REFERENCE) {
+        guarantee(src->src->type != raw_term_t::REFERENCE);
+        res.mutable_ref() = src->src;
+    } else {
+        res.mutable_ref() = src;
+    }
     return &res;
 }
 

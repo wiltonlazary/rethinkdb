@@ -53,8 +53,10 @@ minidriver_t::reql_t::reql_t(minidriver_t *_r, std::vector<reql_t> &&val) :
 
 minidriver_t::reql_t::reql_t(minidriver_t *_r, pb::dummy_var_t var) :
         r(_r), raw_term_(r->new_term(Term::VAR)) {
-    raw_term_->mutable_datum() =
+    raw_term_t *arg_term = r->new_term(Term::DATUM);
+    arg_term->mutable_datum() =
         datum_t(static_cast<double>(dummy_var_to_sym(var).value));
+    raw_term_->mutable_args().push_back(arg_term);
 }
 
 minidriver_t::reql_t minidriver_t::boolean(bool b) {
