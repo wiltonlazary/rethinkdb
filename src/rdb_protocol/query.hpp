@@ -68,19 +68,30 @@ private:
 
 class raw_term_t;
 
-class raw_term_iterator_t {
+class arg_iterator_t {
 public:
-    raw_term_iterator_t(raw_term_iterator_t &&) = default;
+    virtual ~arg_iterator_t();
+    arg_iterator_t(arg_iterator_t &&) = default;
     const raw_term_t *next();
+protected:
+    friend class raw_term_t;
+    explicit arg_iterator_t(const intrusive_list_t<raw_term_t> *_list);
+    const raw_term_t *last_item;
+
+private:
+    const intrusive_list_t<raw_term_t> *list;
+    DISABLE_COPYING(arg_iterator_t);
+};
+
+class optarg_iterator_t : public arg_iterator_t {
+public:
+    virtual ~optarg_iterator_t();
+    optarg_iterator_t(optarg_iterator_t &&) = default;
+    const std::string &optarg_name() const;
 private:
     friend class raw_term_t;
     friend class term_storage_t;
-    explicit raw_term_iterator_t(const intrusive_list_t<raw_term_t> *_list);
-
-    const intrusive_list_t<raw_term_t> *list;
-    const raw_term_t *item;
-
-    DISABLE_COPYING(raw_term_iterator_t);
+    explicit optarg_iterator_t(const intrusive_list_t<raw_term_t> *_list);
 };
 
 struct raw_term_t : public intrusive_list_node_t<raw_term_t> {
@@ -89,21 +100,19 @@ struct raw_term_t : public intrusive_list_node_t<raw_term_t> {
     size_t num_args() const;
     size_t num_optargs() const;
 
-    raw_term_iterator_t args() const;
-    raw_term_iterator_t optargs() const;
+    arg_iterator_t args() const;
+    optarg_iterator_t optargs() const;
 
     const datum_t &datum() const;
 
-    const char *optarg_name() const;
-    void set_optarg_name(const std::string &name);
-
     Term::TermType type;
-    backtrace_id_t bt; // TODO: this isn't needed if we're a reference
+    backtrace_id_t bt;
 
 private:
     static const Term::TermType REFERENCE;
 
-    friend class raw_term_iterator_t;
+    friend class arg_iterator_t;
+    friend class optarg_iterator_t;
     friend class term_storage_t;
     friend class minidriver_t;
 
@@ -119,7 +128,7 @@ private:
     datum_t value; // Used for DATUM terms
     const raw_term_t *src; // Used for REF terms
 
-    const char *optarg_name_; // Only used when an optarg
+    std::string optarg_name; // Only used when an optarg
     DISABLE_COPYING(raw_term_t);
 };
 
@@ -138,8 +147,8 @@ public:
         return &terms[0];
     }
 
-    raw_term_iterator_t global_optargs() const {
-        return raw_term_iterator_t(&global_optarg_list);
+    optarg_iterator_t global_optargs() const {
+        return optarg_iterator_t(&global_optarg_list);
     }
 
     const backtrace_registry_t &bt_reg() const {

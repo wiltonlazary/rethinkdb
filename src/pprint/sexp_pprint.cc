@@ -61,8 +61,8 @@ protected:
                 while (const ql::raw_term_t *item = optarg_it.next()) {
                     // don't insert redundant space
                     if (args.size() != 0) args.push_back(cond_linebreak);
-                    args.push_back(make_text(
-                        strprintf(":%s", to_lisp_name(item->optarg_name()).c_str())));
+                    args.push_back(make_text(strprintf(
+                        ":%s", to_lisp_name(optarg_it.optarg_name()).c_str())));
                     args.push_back(cond_linebreak);
                     args.push_back(visit_generic(item));
                 }

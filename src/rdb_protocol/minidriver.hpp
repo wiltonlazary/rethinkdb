@@ -179,7 +179,7 @@ template <>
 inline void minidriver_t::reql_t::add_arg(
         std::pair<std::string, minidriver_t::reql_t> &&optarg) {
     raw_term_t *optarg_term = r->new_ref(optarg.second.raw_term_);
-    optarg_term->set_optarg_name(optarg.first);
+    optarg_term->optarg_name = optarg.first;
     raw_term_->mutable_optargs().push_back(optarg_term);
 }
 

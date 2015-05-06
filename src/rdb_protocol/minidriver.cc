@@ -64,9 +64,9 @@ minidriver_t::reql_t minidriver_t::boolean(bool b) {
 }
 
 void minidriver_t::reql_t::copy_optargs_from_term(const raw_term_t *from) {
-    auto arg_it = from->optargs();
-    for (const raw_term_t *t = arg_it.next(); t != nullptr; t = arg_it.next()) {
-        add_arg(r->optarg(t->optarg_name(), t));
+    auto optarg_it = from->optargs();
+    while (const raw_term_t *optarg = optarg_it.next()) {
+        add_arg(r->optarg(optarg_it.optarg_name(), optarg));
     }
 }
 
@@ -76,7 +76,7 @@ void minidriver_t::reql_t::copy_args_from_term(const raw_term_t *from,
     for (size_t i = 0; i < start_index; ++i) {
         arg_it.next();
     }
-    for (const raw_term_t *arg = arg_it.next(); arg != nullptr; arg = arg_it.next()) {
+    while (const raw_term_t *arg = arg_it.next()) {
         add_arg(arg);
     }
 }

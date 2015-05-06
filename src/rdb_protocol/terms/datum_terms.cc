@@ -66,12 +66,14 @@ public:
                base_exc_t::GENERIC,
                "MAKE_OBJ term must not have any args.");
 
-        auto it = term->optargs();
-        for (const raw_term_t *o = it.next(); o != nullptr; o = it.next()) {
+        auto optarg_it = term->optargs();
+        while (const raw_term_t *o = optarg_it.next()) {
             counted_t<const term_t> t = compile_term(env, o);
-            auto res = optargs.insert(std::make_pair(o->optarg_name(), std::move(t)));
+            auto res = optargs.insert(std::make_pair(optarg_it.optarg_name(),
+                                                     std::move(t)));
             rcheck(res.second, base_exc_t::GENERIC,
-                   strprintf("Duplicate object key: %s", o->optarg_name()));
+                   strprintf("Duplicate object key: %s",
+                             optarg_it.optarg_name().c_str()));
         }
     }
 

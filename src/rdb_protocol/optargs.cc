@@ -13,16 +13,17 @@ global_optargs_t::global_optargs_t() { }
 
 global_optargs_t::global_optargs_t(counted_t<term_storage_t> term_storage) {
     auto optarg_it = term_storage->global_optargs();
-    for (const raw_term_t *t = optarg_it.next(); t != nullptr; t = optarg_it.next()) {
+    while (const raw_term_t *optarg = optarg_it.next()) {
         compile_env_t env((var_visibility_t()), term_storage.get());
-        counted_t<func_term_t> func_term = make_counted<func_term_t>(&env, t);
+        counted_t<func_term_t> func_term = make_counted<func_term_t>(&env, optarg);
         counted_t<const func_t> func =
             func_term->eval_to_func(var_scope_t(), term_storage);
 
-        auto res = optargs.insert(std::make_pair(std::string(t->optarg_name()),
+        auto res = optargs.insert(std::make_pair(std::string(optarg_it.optarg_name()),
                                                  wire_func_t(func)));
-        rcheck_toplevel(res.second, base_exc_t::GENERIC,
-            strprintf("Duplicate global optional argument: `%s`.", t->optarg_name()));
+        rcheck_toplevel(res.second, base_exc_t::GENERIC, strprintf(
+            "Duplicate global optional argument: `%s`.",
+            optarg_it.optarg_name().c_str()));
     }
 }
 
@@ -99,12 +100,10 @@ static const std::set<std::string> acceptable_optargs({
     "wait_for",
 });
 
-const char *global_optargs_t::validate_optarg(const std::string &key,
-                                              backtrace_id_t bt) {
-    auto const &it = acceptable_optargs.find(key);
-    rcheck_src(bt, it != acceptable_optargs.end(), base_exc_t::GENERIC,
+void global_optargs_t::validate_optarg(const std::string &key,
+                                       backtrace_id_t bt) {
+    rcheck_src(bt, acceptable_optargs.count(key) != 0, base_exc_t::GENERIC,
                strprintf("Unrecognized optional argument `%s`.", key.c_str()));
-    return it->c_str();
 }
 
 RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(global_optargs_t, optargs);

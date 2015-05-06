@@ -63,8 +63,10 @@ public:
         }
 
         auto optarg_it = term->optargs();
-        for (const raw_term_t *optarg = optarg_it.next();
-             optarg != nullptr; optarg = optarg_it.next()) {
+        while (const raw_term_t *optarg = optarg_it.next()) {
+            if (term->type != Term::MAKE_OBJ) {
+                global_optargs_t::validate_optarg(optarg_it.optarg_name(), optarg->bt);
+            }
             walker_frame_t child_frame(parent_list, false, optarg, this);
             child_frame.walk();
         }

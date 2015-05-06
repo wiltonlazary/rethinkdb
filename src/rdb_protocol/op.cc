@@ -170,12 +170,14 @@ op_term_t::op_term_t(compile_env_t *env, const raw_term_t *term,
 
     auto opt_it = term->optargs();
     while (const raw_term_t *opt = opt_it.next()) {
-        rcheck_src(opt->bt, optargspec.contains(opt->optarg_name()), base_exc_t::GENERIC,
-            strprintf("Unrecognized optional argument `%s`.", opt->optarg_name()));
+        rcheck_src(opt->bt, optargspec.contains(opt_it.optarg_name()),
+                   base_exc_t::GENERIC,
+                   strprintf("Unrecognized optional argument `%s`.",
+                             opt_it.optarg_name().c_str()));
         counted_t<const term_t> t = compile_term(env, opt);
-        auto res = optargs.insert(std::make_pair(opt->optarg_name(), std::move(t)));
+        auto res = optargs.insert(std::make_pair(opt_it.optarg_name(), std::move(t)));
         rcheck_src(opt->bt, res.second, base_exc_t::GENERIC,
-            strprintf("Duplicate optional argument: %s", opt->optarg_name()));
+            strprintf("Duplicate optional argument: %s", opt_it.optarg_name().c_str()));
     }
 }
 op_term_t::~op_term_t() { }

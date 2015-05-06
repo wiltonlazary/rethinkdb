@@ -113,10 +113,10 @@ private:
     eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
         std::vector<std::pair<order_direction_t, counted_t<const func_t> > > comparisons;
         r_sanity_check(get_src()->num_args() == args->num_args());
-        // TODO: get this working with r.args
+        // RSI (grey): get this working with r.args
         auto arg_it = get_src()->args();
         arg_it.next(); // Skip arg0
-        for (size_t i = 0; i < get_src()->num_args(); ++i) {
+        for (size_t i = 1; i < get_src()->num_args(); ++i) {
             const raw_term_t *t = arg_it.next();
             if (t->type == Term::DESC) {
                 comparisons.push_back(
@@ -158,9 +158,8 @@ private:
                    "Indexed order_by can only be performed on a TABLE or TABLE_SLICE.");
             sorting_t sorting = sorting_t::UNORDERED;
             auto optarg_it = get_src()->optargs();
-            for (const raw_term_t *t = optarg_it.next();
-                 t != nullptr; t = optarg_it.next()) {
-                if (strcmp(t->optarg_name(), "index") == 0) {
+            while (const raw_term_t *t = optarg_it.next()) {
+                if (optarg_it.optarg_name() == "index") {
                     sorting = t->type == Term::DESC ?
                         sorting_t::DESCENDING : sorting_t::ASCENDING;
                 }

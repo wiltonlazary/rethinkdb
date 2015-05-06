@@ -91,8 +91,8 @@ private:
         return to_js_name(Term::TermType_Name(t->type));
     }
 
-    std::string to_js_name(std::string s) {
-        std::string result = "";
+    std::string to_js_name(const std::string &s) {
+        std::string result;
         for (auto it = s.begin(); it != s.end(); ++it) {
             if (*it == '_') {
                 ++it;
@@ -132,9 +132,10 @@ private:
         auto optarg_it = t->optargs();
         while (const ql::raw_term_t *item = optarg_it.next()) {
             if (!term.empty()) { term.push_back(comma_linebreak); }
-            term.push_back(make_nc(make_text(strprintf("\"%s\":", item->optarg_name())),
-                                   cond_linebreak,
-                                   visit_generic(item)));
+            term.push_back(make_nc(
+                make_text(strprintf("\"%s\":", optarg_it.optarg_name().c_str())),
+                cond_linebreak,
+                visit_generic(item)));
         }
         return make_c(lbrace, make_nest(make_concat(std::move(term))), rbrace);
     }
@@ -144,7 +145,8 @@ private:
         auto optarg_it = t->optargs();
         while (const ql::raw_term_t *item = optarg_it.next()) {
             if (!term.empty()) { term.push_back(comma_linebreak); }
-            term.push_back(make_text(strprintf("\"%s\"", item->optarg_name())));
+            term.push_back(make_text(
+                strprintf("\"%s\"", optarg_it.optarg_name().c_str())));
             term.push_back(comma_linebreak);
             term.push_back(visit_generic(item));
         }
@@ -209,10 +211,10 @@ private:
         auto optarg_it = t->optargs();
         while (const ql::raw_term_t *item = optarg_it.next()) {
             if (!optargs.empty()) { optargs.push_back(comma_linebreak); }
-            counted_t<const document_t> inner =
-                make_c(make_text("\"" + to_js_name(item->optarg_name()) + "\":"),
-                       cond_linebreak,
-                       visit_generic(item));
+            counted_t<const document_t> inner = make_c(make_text(
+                    strprintf("\"%s\":", to_js_name(optarg_it.optarg_name()).c_str())),
+                cond_linebreak,
+                visit_generic(item));
             optargs.push_back(make_nest(std::move(inner)));
         }
         return make_c(lbrace, make_nest(make_concat(std::move(optargs))), rbrace);
