@@ -21,7 +21,6 @@ void response_t::fill_error(Response::ResponseType _type,
 }
 
 void response_t::set_type(Response::ResponseType _type) {
-    guarantee(type_ == -1);
     type_ = _type;
 }
 

@@ -27,7 +27,8 @@ struct query_params_t {
 public:
     query_params_t(int64_t _token,
                    ql::query_cache_t *_query_cache,
-                   rapidjson::Document &&query_json);
+                   scoped_array_t<char> &&_original_data,
+                   rapidjson::Document &&_query_json);
 
     // A query id is allocated when each query is received from the client
     // in order, so order can be checked for in queries that require it
@@ -46,7 +47,7 @@ public:
     };
 
     query_cache_t *query_cache;
-    rapidjson::Document doc;
+    rapidjson::Document query_json;
     int64_t token;
     query_id_t id;
 
@@ -58,6 +59,9 @@ public:
     const rapidjson::Value *global_optargs_json;
 private:
     bool static_optarg_as_bool(const std::string &key, bool default_value);
+
+    // We hold onto this for the lifetime of 'doc' because we use in-situ parsing
+    scoped_array_t<char> original_data;
 
     DISABLE_COPYING(query_params_t);
 };

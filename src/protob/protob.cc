@@ -484,7 +484,7 @@ void query_server_t::handle(const http_req_t &req,
                             ql::backtrace_registry_t::EMPTY_BACKTRACE);
     } else {
         // Copy the body into a mutable buffer so we can move it into parse_json_pb.
-        std::vector<char> body_buf(req.body.size() + 1);
+        scoped_array_t<char> body_buf(req.body.size() + 1);
         memcpy(body_buf.data(), req.body.data(), req.body.size());
         body_buf[req.body.size()] = '\0';
 
@@ -494,7 +494,7 @@ void query_server_t::handle(const http_req_t &req,
         data += sizeof(token);
 
         scoped_ptr_t<ql::query_params_t> q = json_protocol_t::parse_query_from_buffer(
-            data, conn->get_query_cache(), token);
+            std::move(body_buf), sizeof(token), conn->get_query_cache(), token);
 
         if (!q.has()) {
             response.fill_error(Response::CLIENT_ERROR,

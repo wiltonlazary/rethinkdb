@@ -89,43 +89,44 @@ uint64_t query_params_t::query_id_t::value() const {
 
 query_params_t::query_params_t(int64_t _token,
                                ql::query_cache_t *_query_cache,
-                               rapidjson::Document &&query_json) :
-        query_cache(_query_cache), doc(std::move(query_json)), token(_token),
-        id(query_cache), noreply(false), profile(false),
-        root_term_json(nullptr), global_optargs_json(nullptr) {
-    if (!doc.IsArray()) {
+                               scoped_array_t<char> &&_original_data,
+                               rapidjson::Document &&_query_json) :
+        query_cache(_query_cache), query_json(std::move(_query_json)), token(_token),
+        id(query_cache), noreply(false), profile(false), root_term_json(nullptr),
+        global_optargs_json(nullptr), original_data(std::move(_original_data)) {
+    if (!query_json.IsArray()) {
         throw bt_exc_t(Response::CLIENT_ERROR,
             strprintf("Expected a query to be an array, but found %s.",
-                      rapidjson_typestr(doc.GetType())),
+                      rapidjson_typestr(query_json.GetType())),
             backtrace_registry_t::EMPTY_BACKTRACE);
     }
-    if (doc.Size() == 0 || doc.Size() > 3) {
+    if (query_json.Size() == 0 || query_json.Size() > 3) {
         throw bt_exc_t(Response::CLIENT_ERROR,
             strprintf("Expected 0 to 3 elements in the top-level query, but found %d.",
-                      doc.Size()),
+                      query_json.Size()),
             backtrace_registry_t::EMPTY_BACKTRACE);
     }
 
-    if (!doc[0].IsNumber()) {
+    if (!query_json[0].IsNumber()) {
         throw bt_exc_t(Response::CLIENT_ERROR,
             strprintf("Expected a query type as a number, but found %s.",
-                      rapidjson_typestr(doc[0].GetType())),
+                      rapidjson_typestr(query_json[0].GetType())),
             backtrace_registry_t::EMPTY_BACKTRACE);
     }
-    type = static_cast<Query::QueryType>(doc[0].GetInt());
+    type = static_cast<Query::QueryType>(query_json[0].GetInt());
 
-    if (doc.Size() >= 2) {
-        root_term_json = &doc[1];
+    if (query_json.Size() >= 2) {
+        root_term_json = &query_json[1];
     }
 
-    if (doc.Size() >= 3) {
-        if (!doc[2].IsObject()) {
+    if (query_json.Size() >= 3) {
+        if (!query_json[2].IsObject()) {
             throw bt_exc_t(Response::CLIENT_ERROR,
                 strprintf("Expected global optargs as an object, but found %s.",
-                          rapidjson_typestr(doc[2].GetType())),
+                          rapidjson_typestr(query_json[2].GetType())),
                 backtrace_registry_t::EMPTY_BACKTRACE);
         }
-        global_optargs_json = &doc[2];
+        global_optargs_json = &query_json[2];
     }
 
     // Parse out optargs that are needed before query evaluation
@@ -324,13 +325,18 @@ raw_term_t *term_storage_t::new_ref(const raw_term_t *src) {
 raw_term_t *term_storage_t::parse_internal(const rapidjson::Value &v,
                                            backtrace_registry_t *bt_reg,
                                            backtrace_id_t bt) {
+    rapidjson::StringBuffer debug_str;
+    rapidjson::Writer<rapidjson::StringBuffer> debug_writer(debug_str);
+    v.Accept(debug_writer);
     if (!v.IsArray()) {
         // This is a literal datum term
         raw_term_t *t = new_term(Term::DATUM, bt);
+        debugf("converting json to datum: %s\n", debug_str.GetString());
         t->mutable_datum() = to_datum(v, configured_limits_t::unlimited,
                                       reql_version_t::LATEST);
         return t;
     }
+    debugf("processing term: %s\n", debug_str.GetString());
     check_term_size(v, bt);
     check_type(v[0], rapidjson::kNumberType, bt);
     raw_term_t *t = new_term(static_cast<Term::TermType>(v[0].GetInt()), bt);
@@ -495,14 +501,11 @@ void serialize_term_tree(write_message_t *wm,
     serialize<W>(wm, term->bt);
     if (term->type == Term::DATUM) {
         serialize<W>(wm, term->datum());
-        r_sanity_check(term->num_args() == 0);
-        r_sanity_check(term->num_optargs() == 0);
     } else {
         size_t num_args = term->num_args();
         serialize<W>(wm, num_args);
         auto arg_it = term->args();
-        for (const raw_term_t *t = arg_it.next();
-             t != nullptr; t = arg_it.next()) {
+        while (const raw_term_t *t = arg_it.next()) {
             serialize_term_tree<W>(wm, t);
             --num_args;
         }
@@ -510,8 +513,7 @@ void serialize_term_tree(write_message_t *wm,
         size_t num_optargs = term->num_optargs();
         serialize<W>(wm, num_optargs);
         auto optarg_it = term->optargs();
-        for (const raw_term_t *t = optarg_it.next();
-             t != nullptr; t = optarg_it.next()) {
+        while (const raw_term_t *t = optarg_it.next()) {
             optarg_name.assign(t->optarg_name());
             serialize<W>(wm, optarg_name);
             serialize_term_tree<W>(wm, t);

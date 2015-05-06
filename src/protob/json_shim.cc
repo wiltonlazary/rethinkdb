@@ -25,16 +25,16 @@ std::string wire_protocol_t::too_large_response_message(size_t size) {
 }
 
 scoped_ptr_t<ql::query_params_t> json_protocol_t::parse_query_from_buffer(
-        char *mutable_buffer,
-        ql::query_cache_t *query_cache,
-        int64_t token) {
+        scoped_array_t<char> &&buffer, size_t offset,
+        ql::query_cache_t *query_cache, int64_t token) {
     rapidjson::Document doc;
-    doc.ParseInsitu(mutable_buffer);
+    doc.ParseInsitu(buffer.data() + offset);
 
     scoped_ptr_t<ql::query_params_t> res;
     if (!doc.HasParseError()) {
         try {
-            res = make_scoped<ql::query_params_t>(token, query_cache, std::move(doc));
+            res = make_scoped<ql::query_params_t>(token, query_cache,
+                                                  std::move(buffer), std::move(doc));
         } catch (const ql::bt_exc_t &ex) {
             // Parse error, let the caller handle the response
         }
@@ -65,7 +65,7 @@ scoped_ptr_t<ql::query_params_t> json_protocol_t::parse_query(
     data[size] = 0; // Null terminate the string, which the json parser requires
 
     scoped_ptr_t<ql::query_params_t> res =
-        parse_query_from_buffer(data.data(), query_cache, token);
+        parse_query_from_buffer(std::move(data), 0, query_cache, token);
     if (!res.has()) {
         ql::response_t error;
         error.fill_error(Response::CLIENT_ERROR,
