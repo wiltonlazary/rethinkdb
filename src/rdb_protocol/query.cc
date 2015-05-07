@@ -446,12 +446,6 @@ raw_term_t *term_storage_t::parse_internal(const Term &term,
 }
 
 template
-archive_result_t term_storage_t::deserialize_term_tree<cluster_version_t::v1_13>(
-        read_stream_t *s, raw_term_t **term_out, reql_version_t reql_version);
-template
-archive_result_t term_storage_t::deserialize_term_tree<cluster_version_t::v1_13_2>(
-        read_stream_t *s, raw_term_t **term_out, reql_version_t reql_version);
-template
 archive_result_t term_storage_t::deserialize_term_tree<cluster_version_t::v1_14>(
         read_stream_t *s, raw_term_t **term_out, reql_version_t reql_version);
 template

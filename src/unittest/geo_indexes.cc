@@ -313,7 +313,8 @@ std::vector<datum_t> perform_get_intersecting(
 
     std::string table_name = "test_table"; // This is just used to print error messages
     std::string idx_name = "geo";
-    read_t read(intersecting_geo_read_t(region_t::universe(),
+    read_t read(intersecting_geo_read_t(boost::optional<changefeed_stamp_t>(),
+                                        region_t::universe(),
                                         ql::global_optargs_t(),
                                         table_name, ql::batchspec_t::all(),
                                         std::vector<ql::transform_variant_t>(),
