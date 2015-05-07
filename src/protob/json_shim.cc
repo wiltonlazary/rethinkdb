@@ -120,6 +120,8 @@ void write_response_internal(ql::response_t *response,
             ql::backtrace_registry_t::EMPTY_BACKTRACE);
         write_response_internal(response, buffer_out, true);
     }
+
+    debugf("Writing response: %s\n", buffer_out->GetString() + start_offset);
 }
 
 // Small wrapper - in debug mode we would rather crash than send the error back
