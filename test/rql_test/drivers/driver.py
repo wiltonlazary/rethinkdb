@@ -295,9 +295,6 @@ class Number:
 # -- Curried output test functions --
 
 def eq(exp, **kwargs):
-    if exp == ():
-        return lambda x: True
-
     if isinstance(exp, list):
         exp = Lst(exp, **kwargs)
     elif isinstance(exp, dict):
@@ -357,11 +354,10 @@ class PyTestDriver:
         try:
             result = eval(src, self.scope)
             
-            # - collect the contents of a cursor
+            # - collect the contents of a cursor when checking expected value
             
             if isinstance(result, r.Cursor):
-                print_debug('Evaluating cursor: %s %r' % (src, runopts))
-                result = list(result)
+                pass
             
             # - run as a query if it is one
             
@@ -405,8 +401,12 @@ class PyTestDriver:
                 print_test_failure(name, src, "Error running test on server not equal to expected err:\n\tERROR: %s\n\tEXPECTED: %s" % (str(result), str(exp_val)))
             else:
                 passed_count += 1
-        elif not eq(exp_val, **compOptions)(result):
-            print_test_failure(name, src, "Result is not equal to expected result:\n\tVALUE: %s\n\tEXPECTED: %s" % (str(result), str(exp_val)))
+        elif exp_val != ():
+            if isinstance(result, r.Cursor):
+                print_debug('Evaluating cursor: %s %r' % (src, runopts))
+                result = list(result)
+            if not eq(exp_val, **compOptions)(result):
+                print_test_failure(name, src, "Result is not equal to expected result:\n\tVALUE: %s\n\tEXPECTED: %s" % (str(result), str(exp_val)))
         else:
             passed_count += 1
 
