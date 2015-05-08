@@ -141,8 +141,8 @@ public:
     ~term_storage_t();
 
     // Parse a query from a rapidjson value and attach backtraces
-    void add_root_term(const rapidjson::Value &v);
-    void add_global_optargs(const rapidjson::Value &v);
+    void add_root_term(const rapidjson::Value *v);
+    void add_global_optargs(const rapidjson::Value *v);
 
     const raw_term_t *root_term() const {
         r_sanity_check(terms.size() > 0, "No root term has been created.");

@@ -274,28 +274,31 @@ term_storage_t::~term_storage_t() {
     }
 }
 
-void term_storage_t::add_root_term(const rapidjson::Value &v) {
-    parse_internal(v, &backtrace_registry, backtrace_id_t::empty());
+void term_storage_t::add_root_term(const rapidjson::Value *v) {
+    r_sanity_check(v != nullptr, "No root term found in START query.");
+    parse_internal(*v, &backtrace_registry, backtrace_id_t::empty());
 }
 
-void term_storage_t::add_global_optargs(const rapidjson::Value &optargs) {
-    check_type(optargs, rapidjson::kObjectType, backtrace_id_t::empty());
+void term_storage_t::add_global_optargs(const rapidjson::Value *optargs) {
     bool has_db_optarg = false;
-    for (auto it = optargs.MemberBegin(); it != optargs.MemberEnd(); ++it) {
-        std::string key(it->name.GetString());
-        if (key == "db") {
-            has_db_optarg = true;
+    if (optargs != nullptr) {
+        check_type(*optargs, rapidjson::kObjectType, backtrace_id_t::empty());
+        for (auto it = optargs->MemberBegin(); it != optargs->MemberEnd(); ++it) {
+            std::string key(it->name.GetString());
+            if (key == "db") {
+                has_db_optarg = true;
+            }
+            rcheck_toplevel(global_optargs_t::optarg_is_valid(key), base_exc_t::GENERIC,
+                strprintf("Unrecognized global optional argument `%s`.", key.c_str()));
+
+            minidriver_t r(this, backtrace_id_t::empty());
+            raw_term_t *term = parse_internal(it->value, nullptr,
+                                              backtrace_id_t::empty());
+
+            const raw_term_t *func_term = r.fun(r.expr(term)).raw_term();
+            global_optarg_list.push_back(const_cast<raw_term_t *>(func_term));
+            global_optarg_list.tail()->optarg_name = std::move(key);
         }
-        rcheck_toplevel(global_optargs_t::optarg_is_valid(key), base_exc_t::GENERIC,
-            strprintf("Unrecognized global optional argument `%s`.", key.c_str()));
-
-        minidriver_t r(this, backtrace_id_t::empty());
-        raw_term_t *term = parse_internal(it->value, nullptr, backtrace_id_t::empty());
-
-        // Don't do this at home
-        const raw_term_t *func_term = r.fun(r.expr(term)).raw_term();
-        global_optarg_list.push_back(const_cast<raw_term_t *>(func_term));
-        global_optarg_list.tail()->optarg_name = key;
     }
 
     // Add a default 'test' database optarg if none was specified

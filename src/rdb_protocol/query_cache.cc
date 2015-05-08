@@ -42,19 +42,12 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(query_params_t *query_p
             strprintf("ERROR: duplicate token %" PRIi64, query_params->token),
             backtrace_registry_t::EMPTY_BACKTRACE);
     }
-    if (query_params->root_term_json == nullptr) {
-        throw bt_exc_t(Response::CLIENT_ERROR,
-            "ERROR: no root term found in START query.",
-            backtrace_registry_t::EMPTY_BACKTRACE);
-    }
 
     counted_t<const term_t> root_term;
     counted_t<term_storage_t> term_storage = make_counted<term_storage_t>();
     try {
-        term_storage->add_root_term(*query_params->root_term_json);
-        if (query_params->global_optargs_json != nullptr) {
-            term_storage->add_global_optargs(*query_params->global_optargs_json);
-        }
+        term_storage->add_root_term(query_params->root_term_json);
+        term_storage->add_global_optargs(query_params->global_optargs_json);
         validate_term_tree(term_storage->root_term());
 
         compile_env_t compile_env((var_visibility_t()), term_storage.get());
