@@ -347,7 +347,7 @@ private:
         bool last_is_dot = false;
         bool last_should_r_wrap = false;
         while (var != nullptr && should_continue_string(var)) {
-            visit_stringing(t, &stack, &var, &last_is_dot, &last_should_r_wrap);
+            visit_stringing(var, &stack, &var, &last_is_dot, &last_should_r_wrap);
         }
         guarantee(var != t);
         if (var == nullptr) {

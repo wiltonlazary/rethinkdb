@@ -75,10 +75,10 @@ public:
     ip_and_port_t get_client_addr_port() const { return client_addr_port; }
 
     // Methods to obtain a unique reference to a given entry in the cache
-    scoped_ptr_t<ref_t> create(const query_params_t &query_params,
+    scoped_ptr_t<ref_t> create(query_params_t *query_params,
                                signal_t *interruptor);
 
-    scoped_ptr_t<ref_t> get(const query_params_t &query_params,
+    scoped_ptr_t<ref_t> get(query_params_t *query_params,
                             signal_t *interruptor);
 
     void noreply_wait(const query_params_t &query_params,

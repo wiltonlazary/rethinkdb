@@ -53,6 +53,7 @@ query_params_t::query_id_t::query_id_t(query_params_t::query_id_t &&other) :
 query_params_t::query_id_t::query_id_t(query_cache_t *_parent) :
         parent(_parent),
         value_(parent->next_query_id++) {
+    debugf("query id constructed: %" PRIu64 "\n", value_);
     // Guarantee correct ordering.
     query_id_t *last_newest = parent->outstanding_query_ids.tail();
     guarantee(last_newest == nullptr || last_newest->value() < value_);
@@ -63,6 +64,7 @@ query_params_t::query_id_t::query_id_t(query_cache_t *_parent) :
 
 query_params_t::query_id_t::~query_id_t() {
     if (parent != nullptr) {
+        debugf("query id destroyed: %" PRIu64 "\n", value_);
         parent->assert_thread();
     } else {
         rassert(!in_a_list());
@@ -85,6 +87,14 @@ query_params_t::query_id_t::~query_id_t() {
 uint64_t query_params_t::query_id_t::value() const {
     guarantee(in_a_list());
     return value_;
+}
+
+// If the query wants a reply, we can release the query id, which is only used for
+// tracking the ordering of noreply queries for the purpose of noreply_wait.
+void query_params_t::maybe_release_query_id() {
+    if (!noreply) {
+        query_id_t destroyer(std::move(id));
+    }
 }
 
 query_params_t::query_params_t(int64_t _token,
@@ -133,13 +143,6 @@ query_params_t::query_params_t(int64_t _token,
     if (global_optargs_json != nullptr) {
         noreply = static_optarg_as_bool("noreply", noreply);
         profile = static_optarg_as_bool("profile", profile);
-    }
-
-    // If the query wants a reply, we can release the query id, which is
-    // only used for tracking the ordering of noreply queries for the
-    // purpose of noreply_wait.
-    if (!noreply) {
-        query_id_t destroyer(std::move(id));
     }
 }
 

@@ -33,16 +33,16 @@ query_cache_t::const_iterator query_cache_t::end() const {
     return queries.end();
 }
 
-scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(
-        const query_params_t &query_params,
-        signal_t *interruptor) {
-    guarantee(this == query_params.query_cache);
-    if (queries.find(query_params.token) != queries.end()) {
+scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(query_params_t *query_params,
+                                                         signal_t *interruptor) {
+    guarantee(this == query_params->query_cache);
+    query_params->maybe_release_query_id();
+    if (queries.find(query_params->token) != queries.end()) {
         throw bt_exc_t(Response::CLIENT_ERROR,
-            strprintf("ERROR: duplicate token %" PRIi64, query_params.token),
+            strprintf("ERROR: duplicate token %" PRIi64, query_params->token),
             backtrace_registry_t::EMPTY_BACKTRACE);
     }
-    if (query_params.root_term_json == nullptr) {
+    if (query_params->root_term_json == nullptr) {
         throw bt_exc_t(Response::CLIENT_ERROR,
             "ERROR: no root term found in START query.",
             backtrace_registry_t::EMPTY_BACKTRACE);
@@ -51,9 +51,9 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(
     counted_t<const term_t> root_term;
     counted_t<term_storage_t> term_storage = make_counted<term_storage_t>();
     try {
-        term_storage->add_root_term(*query_params.root_term_json);
-        if (query_params.global_optargs_json != nullptr) {
-            term_storage->add_global_optargs(*query_params.global_optargs_json);
+        term_storage->add_root_term(*query_params->root_term_json);
+        if (query_params->global_optargs_json != nullptr) {
+            term_storage->add_global_optargs(*query_params->global_optargs_json);
         }
         validate_term_tree(term_storage->root_term());
 
@@ -67,31 +67,31 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(
                        backtrace_registry_t::EMPTY_BACKTRACE);
     }
 
-    scoped_ptr_t<entry_t> entry(new entry_t(query_params,
+    scoped_ptr_t<entry_t> entry(new entry_t(*query_params,
                                             std::move(term_storage),
                                             std::move(root_term)));
     scoped_ptr_t<ref_t> ref(new ref_t(this,
-                                      query_params.token,
+                                      query_params->token,
                                       entry.get(),
                                       interruptor));
-    auto insert_res = queries.insert(std::make_pair(query_params.token, std::move(entry)));
+    auto insert_res = queries.insert(std::make_pair(query_params->token, std::move(entry)));
     guarantee(insert_res.second);
     return ref;
 }
 
-scoped_ptr_t<query_cache_t::ref_t> query_cache_t::get(
-        const query_params_t &query_params,
-        signal_t *interruptor) {
-    guarantee(this == query_params.query_cache);
-    auto it = queries.find(query_params.token);
+scoped_ptr_t<query_cache_t::ref_t> query_cache_t::get(query_params_t *query_params,
+                                                      signal_t *interruptor) {
+    guarantee(this == query_params->query_cache);
+    query_params->maybe_release_query_id();
+    auto it = queries.find(query_params->token);
     if (it == queries.end()) {
         throw bt_exc_t(Response::CLIENT_ERROR,
-            strprintf("Token %" PRIi64 " not in stream cache.", query_params.token),
+            strprintf("Token %" PRIi64 " not in stream cache.", query_params->token),
             backtrace_registry_t::EMPTY_BACKTRACE);
     }
 
     return scoped_ptr_t<ref_t>(new ref_t(this,
-                                         query_params.token,
+                                         query_params->token,
                                          it->second.get(),
                                          interruptor));
 }

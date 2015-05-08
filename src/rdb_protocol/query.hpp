@@ -46,6 +46,8 @@ public:
         DISABLE_COPYING(query_id_t);
     };
 
+    void maybe_release_query_id();
+
     query_cache_t *query_cache;
     rapidjson::Document query_json;
     int64_t token;

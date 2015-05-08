@@ -29,12 +29,12 @@ int rdb_query_server_t::get_port() const {
 
 // Predeclaration for run, only used here
 namespace ql {
-    void run(const query_params_t &query_params,
+    void run(query_params_t *query_params,
              response_t *response_out,
              signal_t *interruptor);
 }
 
-void rdb_query_server_t::run_query(const ql::query_params_t &query_params,
+void rdb_query_server_t::run_query(ql::query_params_t *query_params,
                                    ql::response_t *response_out,
                                    signal_t *interruptor) {
     guarantee(interruptor != nullptr);

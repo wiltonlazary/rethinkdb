@@ -271,17 +271,17 @@ class query_hanger_t : public query_handler_t, public home_thread_mixin_t {
 public:
     static const std::string stop_query_message;
 
-    void run_query(const ql::query_params_t &query_params,
+    void run_query(ql::query_params_t *query_params,
                    ql::response_t *res_out,
                    signal_t *interruptor) {
         assert_thread();
 
-        if (query_params.type != Query::STOP) {
+        if (query_params->type != Query::STOP) {
             cond_t dummy_cond;
             cond_t local_interruptor;
             wait_any_t final_interruptor(&local_interruptor, interruptor);
             map_insertion_sentry_t<int64_t, cond_t *> sentry(&interruptors,
-                                                             query_params.token,
+                                                             query_params->token,
                                                              &local_interruptor);
 
             try {
@@ -292,7 +292,7 @@ public:
                 }
             }
         } else {
-            auto interruptor_it = interruptors.find(query_params.token);
+            auto interruptor_it = interruptors.find(query_params->token);
             guarantee(interruptor_it != interruptors.end());
             interruptor_it->second->pulse_if_not_already_pulsed();
         }

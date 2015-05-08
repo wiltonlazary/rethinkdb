@@ -203,27 +203,27 @@ counted_t<const term_t> compile_term(compile_env_t *env, const raw_term_t *t) {
     unreachable();
 }
 
-void run(const query_params_t &query_params,
+void run(query_params_t *query_params,
          response_t *response_out,
          signal_t *interruptor) {
     try {
-        switch (query_params.type) {
+        switch (query_params->type) {
         case Query_QueryType_START: {
             scoped_ptr_t<query_cache_t::ref_t> query_ref =
-                query_params.query_cache->create(query_params, interruptor);
+                query_params->query_cache->create(query_params, interruptor);
             query_ref->fill_response(response_out);
         } break;
         case Query_QueryType_CONTINUE: {
             scoped_ptr_t<query_cache_t::ref_t> query_ref =
-                query_params.query_cache->get(query_params, interruptor);
+                query_params->query_cache->get(query_params, interruptor);
             query_ref->fill_response(response_out);
         } break;
         case Query_QueryType_STOP: {
-            query_params.query_cache->terminate_query(query_params);
+            query_params->query_cache->terminate_query(*query_params);
             response_out->set_type(Response::SUCCESS_SEQUENCE);
         } break;
         case Query_QueryType_NOREPLY_WAIT: {
-            query_params.query_cache->noreply_wait(query_params, interruptor);
+            query_params->query_cache->noreply_wait(*query_params, interruptor);
             response_out->set_type(Response::WAIT_COMPLETE);
         } break;
         default: unreachable();
