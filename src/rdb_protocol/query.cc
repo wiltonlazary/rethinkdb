@@ -146,21 +146,19 @@ query_params_t::query_params_t(int64_t _token,
 bool query_params_t::static_optarg_as_bool(const std::string &key, bool default_value) {
     r_sanity_check(global_optargs_json != nullptr);
     auto it = global_optargs_json->FindMember(key.c_str());
-    if (it == global_optargs_json->MemberEnd() ||
-        !it->value.IsArray() || it->value.Size() != 2 ||
-        !it->value[0].IsNumber() ||
-        static_cast<Term::TermType>(it->value[0].GetInt()) != Term::DATUM) {
+    if (it == global_optargs_json->MemberEnd()) {
+        return default_value;
+    } else if (it->value.IsBool()) {
+        return it->value.GetBool();
+    } else if (!it->value.IsArray() ||
+               it->value.Size() != 2 ||
+               !it->value[0].IsNumber() ||
+               static_cast<Term::TermType>(it->value[0].GetInt()) != Term::DATUM) {
+        return default_value;
+    } else if (!it->value[1].IsBool()) {
         return default_value;
     }
-
-    datum_t res = to_datum(it->value[1],
-                           configured_limits_t::unlimited,
-                           reql_version_t::LATEST);
-
-    if (res.has() && res.get_type() == datum_t::type_t::R_BOOL) {
-        return res.as_bool();
-    }
-    return default_value;
+    return it->value[1].GetBool();
 }
 
 arg_iterator_t::arg_iterator_t(const intrusive_list_t<raw_term_t> *_list) :
