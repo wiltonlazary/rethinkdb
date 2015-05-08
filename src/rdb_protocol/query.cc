@@ -53,7 +53,6 @@ query_params_t::query_id_t::query_id_t(query_params_t::query_id_t &&other) :
 query_params_t::query_id_t::query_id_t(query_cache_t *_parent) :
         parent(_parent),
         value_(parent->next_query_id++) {
-    debugf("query id constructed: %" PRIu64 "\n", value_);
     // Guarantee correct ordering.
     query_id_t *last_newest = parent->outstanding_query_ids.tail();
     guarantee(last_newest == nullptr || last_newest->value() < value_);
@@ -64,7 +63,6 @@ query_params_t::query_id_t::query_id_t(query_cache_t *_parent) :
 
 query_params_t::query_id_t::~query_id_t() {
     if (parent != nullptr) {
-        debugf("query id destroyed: %" PRIu64 "\n", value_);
         parent->assert_thread();
     } else {
         rassert(!in_a_list());
@@ -345,7 +343,6 @@ raw_term_t *term_storage_t::parse_internal(const rapidjson::Value &v,
     rapidjson::Writer<rapidjson::StringBuffer> debug_writer(debug_str);
     v.Accept(debug_writer);
     if (v.IsArray()) {
-        debugf("processing term: %s\n", debug_str.GetString());
         check_term_size(v, bt);
         check_type(v[0], rapidjson::kNumberType, bt);
         res = new_term(static_cast<Term::TermType>(v[0].GetInt()), bt);
@@ -368,11 +365,9 @@ raw_term_t *term_storage_t::parse_internal(const rapidjson::Value &v,
             res->mutable_datum() = get_time();
         }
     } else if (v.IsObject()) {
-        debugf("converting object to MAKE_OBJ: %s\n", debug_str.GetString());
         res = new_term(Term::MAKE_OBJ, bt);
         add_optargs(v, &res->mutable_optargs(), bt_reg, bt);
     } else {
-        debugf("converting json to datum: %s\n", debug_str.GetString());
         res = new_term(Term::DATUM, bt);
         res->mutable_datum() = to_datum(v, configured_limits_t::unlimited,
                                         reql_version_t::LATEST);
