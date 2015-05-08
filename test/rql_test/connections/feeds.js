@@ -273,6 +273,7 @@ function done() {
 r.connect({port:port}, function(err, conn) {
     if (err) throw err;
     r.tableList().run(conn, function(err, tables) {
+        if (err) throw err;
         if (tables.indexOf(tableName) > -1) {
             test1();
         } else {

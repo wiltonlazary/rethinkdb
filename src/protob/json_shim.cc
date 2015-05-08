@@ -110,6 +110,11 @@ void write_response_internal(ql::response_t *response,
             writer.EndArray();
         }
         writer.EndObject();
+    } catch (const ql::base_exc_t &ex) {
+        buffer_out->Pop(buffer_out->GetSize() - start_offset);
+        response->fill_error(Response::RUNTIME_ERROR, ex.what(),
+                             ql::backtrace_registry_t::EMPTY_BACKTRACE);
+        write_response_internal(response, buffer_out, true);
     } catch (const std::exception &ex) {
         if (throw_errors) {
             throw;
