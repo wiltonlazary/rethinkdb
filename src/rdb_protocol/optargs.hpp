@@ -27,7 +27,7 @@ public:
     // returns NULL if no entry
     scoped_ptr_t<val_t> get_optarg(env_t *env, const std::string &key);
 
-    static void validate_optarg(const std::string &key, backtrace_id_t bt);
+    static bool optarg_is_valid(const std::string &key);
 private:
     std::map<std::string, wire_func_t> optargs;
 

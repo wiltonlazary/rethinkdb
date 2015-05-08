@@ -29,10 +29,12 @@ optargspec_t::optargspec_t(std::initializer_list<const char *> args) {
     init(args.size(), args.begin());
 }
 
-
 void optargspec_t::init(int num_args, const char *const *args) {
     for (int i = 0; i < num_args; ++i) {
-        legal_args.insert(args[i]);
+        auto res = legal_args.insert(args[i]);
+        r_sanity_check(res.second, "Duplicate optarg in optargspec_t: %s", args[i]);
+        r_sanity_check(global_optargs_t::optarg_is_valid(*res.first),
+                       "Optarg `%s` not listed in `acceptable_keys`", args[i]);
     }
 }
 

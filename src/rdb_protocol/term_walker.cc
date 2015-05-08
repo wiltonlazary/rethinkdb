@@ -44,7 +44,7 @@ public:
 
         if (term->type == Term::ASC || term->type == Term::DESC) {
             rcheck_src(term->bt,
-                prev_frame == nullptr || prev_frame->term->type != Term::ORDER_BY,
+                prev_frame == nullptr || prev_frame->term->type == Term::ORDER_BY,
                 base_exc_t::GENERIC,
                 strprintf("%s may only be used as an argument to ORDER_BY.",
                           (term->type == Term::ASC ? "ASC" : "DESC")));
@@ -64,9 +64,6 @@ public:
 
         auto optarg_it = term->optargs();
         while (const raw_term_t *optarg = optarg_it.next()) {
-            if (term->type != Term::MAKE_OBJ) {
-                global_optargs_t::validate_optarg(optarg_it.optarg_name(), optarg->bt);
-            }
             walker_frame_t child_frame(parent_list, false, optarg, this);
             child_frame.walk();
         }

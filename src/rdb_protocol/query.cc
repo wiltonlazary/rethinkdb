@@ -283,6 +283,8 @@ void term_storage_t::add_global_optargs(const rapidjson::Value &optargs) {
         if (key == "db") {
             has_db_optarg = true;
         }
+        rcheck_toplevel(global_optargs_t::optarg_is_valid(key), base_exc_t::GENERIC,
+            strprintf("Unrecognized global optional argument `%s`.", key.c_str()));
 
         minidriver_t r(this, backtrace_id_t::empty());
         raw_term_t *term = parse_internal(it->value, nullptr, backtrace_id_t::empty());

@@ -100,7 +100,8 @@ void write_response_internal(ql::response_t *response,
             writer.Key("p", 1);
             response->profile()->write_json(&writer);
         }
-        if (response->notes().size() > 0) {
+        if (response->type() == Response::SUCCESS_PARTIAL ||
+            response->type() == Response::SUCCESS_SEQUENCE) {
             writer.Key("n", 1);
             writer.StartArray();
             for (auto const &note : response->notes()) {

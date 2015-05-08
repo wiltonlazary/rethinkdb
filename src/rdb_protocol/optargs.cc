@@ -101,10 +101,8 @@ static const std::set<std::string> acceptable_optargs({
     "wait_for",
 });
 
-void global_optargs_t::validate_optarg(const std::string &key,
-                                       backtrace_id_t bt) {
-    rcheck_src(bt, acceptable_optargs.count(key) != 0, base_exc_t::GENERIC,
-               strprintf("Unrecognized optional argument `%s`.", key.c_str()));
+bool global_optargs_t::optarg_is_valid(const std::string &key) {
+    return acceptable_optargs.count(key) != 0;
 }
 
 RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(global_optargs_t, optargs);
