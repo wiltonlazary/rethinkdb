@@ -13,78 +13,120 @@ namespace ql {
 bool term_is_write_or_meta(Term::TermType type);
 bool term_forbids_writes(Term::TermType type);
 
-class walker_frame_t : public intrusive_list_node_t<walker_frame_t> {
+// Walk the raw JSON term tree, editing it along the way - adding
+// backtraces, rewriting certain terms, and verifying correct placement
+// of some terms.
+
+class term_walker_t {
 public:
-    walker_frame_t(intrusive_list_t<walker_frame_t> *_parent_list,
-                   bool is_zeroth_argument,
-                   const raw_term_t *_term,
-                   const walker_frame_t *_prev_frame) :
-        writes_legal(true),
-        term(_term),
-        parent_list(_parent_list),
-        prev_frame(_prev_frame)
-    {
-        guarantee(term != nullptr);
-        if (prev_frame != nullptr) {
-            writes_legal = prev_frame->writes_legal &&
-                (is_zeroth_argument || !term_forbids_writes(prev_frame->term->type));
-        }
-        parent_list->push_back(this);
+    term_walker_t(backtrace_registry_t *_bt_reg) :
+        bt_reg(_bt_reg) { }
+
+    void walk(rapidjson::Value *src) {
+        r_sanity_check(frames.size() == 0);
+        walker_frame_t toplevel_frame(this, src, true, nullptr);
+        toplevel_frame.walk();
     }
 
-    ~walker_frame_t() {
-        parent_list->remove(this);
-    }
-
-    // RSI (grey): we should make these checks for minidriver term trees
-    void walk() {
-        if (term->type == Term::DATUM) {
-            return;
+private:
+    class walker_frame_t : public intrusive_list_node_t<walker_frame_t> {
+    public:
+        walker_frame_t(term_walker_t *_parent,
+                       rapidjson::Value *_src,
+                       bool is_zeroth_argument,
+                       const walker_frame_t *_prev_frame,
+                       backtrace_id_t bt) :
+            parent(_parent),
+            src(_src),
+            writes_legal(true),
+            prev_frame(_prev_frame)
+        {
+            r_sanity_check(src != nullptr);
+            if (prev_frame != nullptr) {
+                writes_legal = prev_frame->writes_legal &&
+                    (is_zeroth_argument || !term_forbids_writes(prev_frame->term->type));
+            }
+            parent->frames.push_back(this);
         }
 
-        if (term->type == Term::ASC || term->type == Term::DESC) {
+        ~walker_frame_t() {
+            parent->frames.remove(this);
+        }
+
+        void rewrite(Term::TermType _type) {
+            type = _type;
+            rapidjson::Value rewritten;
+            rewritten.SetArray();
+
+        }
+
+        // RSI (grey): we should make these checks for minidriver term trees
+        void walk() {
+            if (src->IsArray()) {
+
+            } else if (src->IsObject()) {
+                rewrite(Term::MAKE_OBJ);
+            } else {
+                rewrite(Term::DATUM);
+            }
+
+            if (term->type == Term::DATUM) {
+                return;
+            }
+
+            if (term->type == Term::ASC || term->type == Term::DESC) {
+                rcheck_src(term->bt,
+                    prev_frame == nullptr || prev_frame->term->type == Term::ORDER_BY,
+                    base_exc_t::GENERIC,
+                    strprintf("%s may only be used as an argument to ORDER_BY.",
+                              (term->type == Term::ASC ? "ASC" : "DESC")));
+            }
+
             rcheck_src(term->bt,
-                prev_frame == nullptr || prev_frame->term->type == Term::ORDER_BY,
+                !term_is_write_or_meta(term->type) || writes_legal,
                 base_exc_t::GENERIC,
-                strprintf("%s may only be used as an argument to ORDER_BY.",
-                          (term->type == Term::ASC ? "ASC" : "DESC")));
+                strprintf("Cannot nest writes or meta ops in stream operations.  Use "
+                          "FOR_EACH instead."));
+
+            auto arg_it = term->args();
+            for (size_t i = 0; i < term->num_args(); ++i) {
+                walker_frame_t child_frame(parent_list, i == 0, arg_it.next(), this);
+                child_frame.walk();
+            }
+
+            auto optarg_it = term->optargs();
+            while (const raw_term_t *optarg = optarg_it.next()) {
+                walker_frame_t child_frame(parent_list, false, optarg, this);
+                child_frame.walk();
+            }
         }
 
-        rcheck_src(term->bt,
-            !term_is_write_or_meta(term->type) || writes_legal,
-            base_exc_t::GENERIC,
-            strprintf("Cannot nest writes or meta ops in stream operations.  Use "
-                      "FOR_EACH instead."));
+        // True if writes are still legal at this node.  Basically:
+        // * Once writes become illegal, they are never legal again.
+        // * Writes are legal at the root.
+        // * If the parent term forbids writes in its function arguments AND we
+        //   aren't inside the 0th argument, writes are forbidden.
+        // * Writes are legal in all other cases.
+        term_walker_t *parent;
+        rapidjson::Value *src;
+        bool writes_legal;
+        const walker_frame_t *prev_frame;
+        Term::TermType type;
+        backtrace_id_t bt;
+    };
 
-        auto arg_it = term->args();
-        for (size_t i = 0; i < term->num_args(); ++i) {
-            walker_frame_t child_frame(parent_list, i == 0, arg_it.next(), this);
-            child_frame.walk();
-        }
-
-        auto optarg_it = term->optargs();
-        while (const raw_term_t *optarg = optarg_it.next()) {
-            walker_frame_t child_frame(parent_list, false, optarg, this);
-            child_frame.walk();
-        }
+    datum_t get_time() {
+        
     }
 
-    // True if writes are still legal at this node.  Basically:
-    // * Once writes become illegal, they are never legal again.
-    // * Writes are legal at the root.
-    // * If the parent term forbids writes in its function arguments AND we
-    //   aren't inside the 0th argument, writes are forbidden.
-    // * Writes are legal in all other cases.
-    bool writes_legal;
-    const raw_term_t *term;
-    intrusive_list_t<walker_frame_t> * const parent_list;
-    const walker_frame_t *prev_frame;
+    backtrace_registry_t *bt_reg;
+    intrusive_list_t<walker_frame_t> frames;
+    datum_t start_time;
 };
 
-void validate_term_tree(const raw_term_t *root) {
-    intrusive_list_t<walker_frame_t> frames;
-    walker_frame_t toplevel_frame(&frames, true, root, nullptr);
-    toplevel_frame.walk();
+void preprocess_term_tree(rapidjson::Value *src, backtrace_registry_t *bt_reg) {
+    term_walker_t term_walker(bt_reg);
+    term_walker.walk(src);
 }
 
 // Returns true if `t` is a write or a meta op.

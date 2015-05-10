@@ -20,7 +20,7 @@ public:
     global_optargs_t();
     global_optargs_t(global_optargs_t &&) = default;
     global_optargs_t(const global_optargs_t &) = default;
-    explicit global_optargs_t(counted_t<term_storage_t> term_storage);
+    explicit global_optargs_t(rapidjson::Value &&src);
 
     bool has_optarg(const std::string &key) const;
 

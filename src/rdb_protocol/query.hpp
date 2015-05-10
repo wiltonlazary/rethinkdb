@@ -72,135 +72,84 @@ class raw_term_t;
 
 class arg_iterator_t {
 public:
-    virtual ~arg_iterator_t();
     arg_iterator_t(arg_iterator_t &&) = default;
-    const raw_term_t *next();
-protected:
-    friend class raw_term_t;
-    explicit arg_iterator_t(const intrusive_list_t<raw_term_t> *_list);
-    const raw_term_t *last_item;
-
-private:
-    const intrusive_list_t<raw_term_t> *list;
-    DISABLE_COPYING(arg_iterator_t);
-};
-
-class optarg_iterator_t : public arg_iterator_t {
-public:
-    virtual ~optarg_iterator_t();
-    optarg_iterator_t(optarg_iterator_t &&) = default;
-    const std::string &optarg_name() const;
+    raw_term_t next();
 private:
     friend class raw_term_t;
     friend class term_storage_t;
-    explicit optarg_iterator_t(const intrusive_list_t<raw_term_t> *_list);
+    explicit arg_iterator_t(rapidjson::Value *_args);
+
+    rapidjson::Value *args;
+    size_t index;
+
+    DISABLE_COPYING(arg_iterator_t);
 };
 
-struct raw_term_t : public intrusive_list_node_t<raw_term_t> {
-    raw_term_t();
+class optarg_iterator_t {
+public:
+    optarg_iterator_t(optarg_iterator_t &&) = default;
+    const char *optarg_name() const;
+    raw_term_t next();
+private:
+    friend class raw_term_t;
+    explicit optarg_iterator_t(rapidjson::Value *_optargs);
 
+    rapidjson::Value *optargs;
+    rapidjson::MemberIterator it;
+
+    DISABLE_COPYING(optarg_iterator_t);
+};
+
+class raw_term_t {
+public:
     size_t num_args() const;
     size_t num_optargs() const;
 
     arg_iterator_t args() const;
     optarg_iterator_t optargs() const;
 
-    const datum_t &datum() const;
+    // This parses the datum each time it is called - keep calls to a minimum
+    datum_t datum() const;
 
-    Term::TermType type;
-    backtrace_id_t bt;
+    const char *optarg_name() const;
+    Term::TermType type() const;
+    backtrace_id_t bt() const;
 
 private:
-    static const Term::TermType REFERENCE;
-
-    friend class arg_iterator_t;
-    friend class optarg_iterator_t;
     friend class term_storage_t;
     friend class minidriver_t;
+    raw_term_t(rapidjson::Value *src,
+               const char *_optarg_name);
 
-    void reset(Term::TermType type);
-
-    datum_t &mutable_datum();
-    const raw_term_t *&mutable_ref();
-    intrusive_list_t<raw_term_t> &mutable_args();
-    intrusive_list_t<raw_term_t> &mutable_optargs();
-
-    intrusive_list_t<raw_term_t> args_; // Used for almost all Term types
-    intrusive_list_t<raw_term_t> optargs_; // Used for almost all Term types
-    datum_t value; // Used for DATUM terms
-    const raw_term_t *src; // Used for REF terms
-
-    std::string optarg_name; // Only used when an optarg
-    DISABLE_COPYING(raw_term_t);
+    Term::TermType type_;
+    backtrace_id_t bt_;
+    rapidjson::Value *args_;
+    rapidjson::Value *optargs_;
+    rapidjson::Value *datum_;
+    const char *optarg_name_;
 };
 
 class term_storage_t : public slow_atomic_countable_t<term_storage_t> {
 public:
-    term_storage_t();
+    term_storage_t(rapidjson::Value &&root);
     term_storage_t(term_storage_t &&) = default;
-    ~term_storage_t();
 
-    // Parse a query from a rapidjson value and attach backtraces
-    void add_root_term(const rapidjson::Value *v);
-    void add_global_optargs(const rapidjson::Value *v);
-
-    const raw_term_t *root_term() const {
-        r_sanity_check(terms.size() > 0, "No root term has been created.");
-        return &terms[0];
-    }
-
-    optarg_iterator_t global_optargs() const {
-        return optarg_iterator_t(&global_optarg_list);
-    }
-
-    const backtrace_registry_t &bt_reg() const {
-        return backtrace_registry;
-    }
-
-    // Deserializes a term tree into the term storage, and provides a pointer to
-    // the root term of the deserialized tree through the root_term_out parameter.
-    template <cluster_version_t W>
-    archive_result_t deserialize_term_tree(read_stream_t *s,
-                                           raw_term_t **root_term_out,
-                                           reql_version_t reql_version);
-
+    raw_term_t root_term();
 private:
-    // We use a segmented vector so items won't be reallocated and moved, which allows us
-    // to use pointers to other items in the vector.
-    segmented_vector_t<raw_term_t, 100> terms;
-    intrusive_list_t<raw_term_t> global_optarg_list;
-    backtrace_registry_t backtrace_registry;
-    datum_t start_time;
-
-    datum_t get_time();
-
-    friend class minidriver_t;
-    raw_term_t *new_term(Term::TermType type, backtrace_id_t bt);
-    raw_term_t *new_ref(const raw_term_t *src);
-
-    void add_args(const rapidjson::Value &args,
-                  intrusive_list_t<raw_term_t> *args_out,
-                  backtrace_registry_t *bt_reg,
-                  backtrace_id_t bt);
-
-    void add_optargs(const rapidjson::Value &optargs,
-                     intrusive_list_t<raw_term_t> *optargs_out,
-                     backtrace_registry_t *bt_reg,
-                     backtrace_id_t bt);
-
-    raw_term_t *parse_internal(const rapidjson::Value &v,
-                               backtrace_registry_t *bt_reg,
-                               backtrace_id_t bt);
-
-    raw_term_t *parse_internal(const Term &term,
-                               reql_version_t reql_version);
-
+    rapidjson::Value root_term_;
     DISABLE_COPYING(term_storage_t);
 };
 
+// Deserializes a term tree into the term storage, and provides a pointer to
+// the root term of the deserialized tree through the root_term_out parameter.
+template <cluster_version_t W>
+archive_result_t deserialize_term_tree(read_stream_t *s,
+                                       rapidjson::Document *root_term_out,
+                                       reql_version_t reql_version);
+
 template <cluster_version_t W>
 void serialize_term_tree(write_message_t *wm,
-                         const raw_term_t *root_term);
+                         const raw_term_t &root_term);
 
 } // namespace ql
 

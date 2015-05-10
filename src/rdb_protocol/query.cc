@@ -162,217 +162,99 @@ bool query_params_t::static_optarg_as_bool(const std::string &key, bool default_
     return it->value[1].GetBool();
 }
 
-arg_iterator_t::arg_iterator_t(const intrusive_list_t<raw_term_t> *_list) :
-    last_item(nullptr), list(_list) { }
+arg_iterator_t::arg_iterator_t(rapidjson::Value *_args) :
+    args(_args), index(0) { }
 
-arg_iterator_t::~arg_iterator_t() { }
+raw_term_t arg_iterator_t::next() {
+    r_sanity_check(index < args->Size());
+    return (*args)[index++];
+}
 
-const raw_term_t *arg_iterator_t::next() {
-    if (last_item == nullptr) {
-        last_item = list->head();
-    } else {
-        last_item = list->next(last_item);
+bool arg_iterator_t::end() {
+    return index >= args->Size();
+}
+
+optarg_iterator_t::optarg_iterator_t(rapidjson::Value *_optargs) :
+    optargs(_optargs), it(optargs->MemberBegin()) { }
+
+raw_term_t optarg_iterator_t::next() {
+    r_sanity_check(it != optargs->MemberEnd());
+    raw_term_t res(&it->value, &it->name);
+    ++it;
+    return res;
+}
+
+bool optarg_iterator_t::end() {
+    return it == optargs->MemberEnd();
+}
+
+raw_term_t::raw_term_t(rapidjson::Value *_src,
+                       const char *_optarg_name) :
+        args_(nullptr), optargs_(nullptr), datum_(nullptr),
+        optarg_name_(_optarg_name) {
+    // We require that terms be preprocessed before a raw_term_t can be made
+    r_sanity_check(v.IsArray());
+    size_t size = src->Size();
+    r_sanity_check(size >= 2 && size <= 4);
+
+    rapidjson::Value *raw_type = src[0];
+    r_sanity_check(raw_type->IsInt());
+    type = static_cast<Term::TermType>(raw_type->AsInt());
+
+    rapidjson::Value *raw_bt = src[size - 1];
+    r_sanity_check(raw_bt->IsInt());
+    bt = raw_bt->AsInt();
+
+    if (type == Term::DATUM) {
+        rcheck_src(bt, size == 3, base_exc_t::GENERIC,
+                   strprintf("Expected 2 items in array, but found %d.", size));
+        datum_ = &src[1];
+    } else if (size == 3) {
+        args_ = &src[1];
+    } else if (size == 4) {
+        args_ = &src[1];
+        optargs_ = &rc[2];
     }
-
-    return last_item == nullptr ? last_item :
-        (last_item->type == raw_term_t::REFERENCE ?  last_item->src : last_item);
 }
-
-optarg_iterator_t::optarg_iterator_t(const intrusive_list_t<raw_term_t> *_list) :
-    arg_iterator_t(_list) { }
-
-optarg_iterator_t::~optarg_iterator_t() { }
-
-const std::string &optarg_iterator_t::optarg_name() const {
-    guarantee(last_item != nullptr);
-    return last_item->optarg_name;
-}
-
-const Term::TermType raw_term_t::REFERENCE = static_cast<Term::TermType>(-1);
-
-raw_term_t::raw_term_t() :
-    src(nullptr) { }
 
 size_t raw_term_t::num_args() const {
     rassert(type != Term::DATUM);
-    if (type == REFERENCE) {
-        rassert(src != nullptr && src->type != REFERENCE);
-        return src->args_.size();
-    }
-    return args_.size();
+    if (args_ == nullptr) { return 0; }
+    r_sanity_check(args_->IsArray());
+    return args_->Size();
 }
 
 size_t raw_term_t::num_optargs() const {
     rassert(type != Term::DATUM);
-    if (type == REFERENCE) {
-        rassert(src != nullptr && src->type != REFERENCE);
-        return src->optargs_.size();
-    }
-    return optargs_.size();
+    if (optargs_ == nullptr) { return 0; }
+    r_sanity_check(optargs_->IsObject());
+    return optargs_->MemberCount();
 }
 
 arg_iterator_t raw_term_t::args() const {
-    rassert(type != Term::DATUM);
-    if (type == REFERENCE) {
-        rassert(src != nullptr && src->type != REFERENCE);
-        return arg_iterator_t(&src->args_);
-    }
-    return arg_iterator_t(&args_);
+    r_sanity_check(type != Term::DATUM);
+    r_sanity_check(args_ != nullptr);
+    r_sanity_check(args_->IsArray());
+    return arg_iterator_t(args_);
 }
 
 optarg_iterator_t raw_term_t::optargs() const {
-    rassert(type != Term::DATUM);
-    if (type == REFERENCE) {
-        rassert(src != nullptr && src->type != REFERENCE);
-        return optarg_iterator_t(&src->optargs_);
-    }
-    return optarg_iterator_t(&optargs_);
+    r_sanity_check(type != Term::DATUM);
+    r_sanity_check(optargs_ != nullptr);
+    r_sanity_check(optargs_->IsObject());
+    return optarg_iterator_t(optargs_);
 }
 
-const datum_t &raw_term_t::datum() const {
-    rassert(type == Term::DATUM);
-    return value;
-}
+term_storage_t::term_storage_t(rapidjson::Value &&root) :
+    root_term_(std::move(root)) { }
 
-datum_t &raw_term_t::mutable_datum() {
-    rassert(type == Term::DATUM);
-    return value;
-}
-
-const raw_term_t *&raw_term_t::mutable_ref() {
-    rassert(type == REFERENCE);
-    return src;
-}
-
-intrusive_list_t<raw_term_t> &raw_term_t::mutable_args() {
-    rassert(type != Term::DATUM && type != REFERENCE);
-    return args_;
-}
-
-intrusive_list_t<raw_term_t> &raw_term_t::mutable_optargs() {
-    rassert(type != Term::DATUM && type != REFERENCE);
-    return optargs_;
-}
-
-term_storage_t::term_storage_t() { }
-
-void clear_list(intrusive_list_t<raw_term_t> *list) {
-    while (!list->empty()) {
-        list->pop_front();
-    }
-}
-
-// Because intrusive lists cannot be destroyed unless empty, we need to unwind all
-// extant raw_term_ts.
-term_storage_t::~term_storage_t() {
-    clear_list(&global_optarg_list);
-    for (size_t i = 0; i < terms.size(); ++i) {
-        clear_list(&terms[i].args_);
-        clear_list(&terms[i].optargs_);
-    }
-}
-
-void term_storage_t::add_root_term(const rapidjson::Value *v) {
-    r_sanity_check(v != nullptr, "No root term found in START query.");
-    parse_internal(*v, &backtrace_registry, backtrace_id_t::empty());
-}
-
-void term_storage_t::add_global_optargs(const rapidjson::Value *optargs) {
-    bool has_db_optarg = false;
-    if (optargs != nullptr) {
-        check_type(*optargs, rapidjson::kObjectType, backtrace_id_t::empty());
-        for (auto it = optargs->MemberBegin(); it != optargs->MemberEnd(); ++it) {
-            std::string key(it->name.GetString());
-            if (key == "db") {
-                has_db_optarg = true;
-            }
-            rcheck_toplevel(global_optargs_t::optarg_is_valid(key), base_exc_t::GENERIC,
-                strprintf("Unrecognized global optional argument `%s`.", key.c_str()));
-
-            minidriver_t r(this, backtrace_id_t::empty());
-            raw_term_t *term = parse_internal(it->value, nullptr,
-                                              backtrace_id_t::empty());
-
-            const raw_term_t *func_term = r.fun(r.expr(term)).raw_term();
-            global_optarg_list.push_back(const_cast<raw_term_t *>(func_term));
-            global_optarg_list.tail()->optarg_name = std::move(key);
-        }
-    }
-
-    // Add a default 'test' database optarg if none was specified
-    if (!has_db_optarg) {
-        minidriver_t r(this, backtrace_id_t::empty());
-        const raw_term_t *func_term = r.fun(r.db("test")).raw_term();
-        global_optarg_list.push_back(const_cast<raw_term_t *>(func_term));
-        global_optarg_list.tail()->optarg_name = std::string("db");
-    }
-}
-
-datum_t term_storage_t::get_time() {
-    if (!start_time.has()) {
-        start_time = pseudo::time_now();
-    }
-    return start_time;
-}
-
-raw_term_t *term_storage_t::new_term(Term::TermType type, backtrace_id_t bt) {
-    raw_term_t &res = terms.push_back();
-    res.type = type;
-    res.bt = bt;
-    return &res;
-}
-
-raw_term_t *term_storage_t::new_ref(const raw_term_t *src) {
-    raw_term_t &res = terms.push_back();
-    res.type = raw_term_t::REFERENCE;
-    res.bt = src->bt;
-    if (src->type == raw_term_t::REFERENCE) {
-        guarantee(src->src->type != raw_term_t::REFERENCE);
-        res.mutable_ref() = src->src;
-    } else {
-        res.mutable_ref() = src;
-    }
-    return &res;
+raw_term_t term_storage_t::root_term() {
+    return raw_term_t(&root_term_);
 }
 
 raw_term_t *term_storage_t::parse_internal(const rapidjson::Value &v,
                                            backtrace_registry_t *bt_reg,
                                            backtrace_id_t bt) {
-    raw_term_t *res;
-    rapidjson::StringBuffer debug_str;
-    rapidjson::Writer<rapidjson::StringBuffer> debug_writer(debug_str);
-    v.Accept(debug_writer);
-    if (v.IsArray()) {
-        check_term_size(v, bt);
-        check_type(v[0], rapidjson::kNumberType, bt);
-        res = new_term(static_cast<Term::TermType>(v[0].GetInt()), bt);
-
-        if (res->type == Term::DATUM) {
-            rcheck_src(bt, v.Size() == 2, base_exc_t::GENERIC,
-                       strprintf("Expected 2 items in array, but found %d", v.Size()));
-            res->mutable_datum() = to_datum(v[1], configured_limits_t::unlimited,
-                                            reql_version_t::LATEST);
-        } else if (v.Size() == 2) {
-            add_args(v[1], &res->mutable_args(), bt_reg, bt);
-        } else if (v.Size() == 3) {
-            add_args(v[1], &res->mutable_args(), bt_reg, bt);
-            add_optargs(v[2], &res->mutable_optargs(), bt_reg, bt);
-        }
-
-        // Convert NOW terms into a literal datum - so they all have the same value
-        if (res->type == Term::NOW && res->num_args() == 0 && res->num_optargs() == 0) {
-            res->type = Term::DATUM;
-            res->mutable_datum() = get_time();
-        }
-    } else if (v.IsObject()) {
-        res = new_term(Term::MAKE_OBJ, bt);
-        add_optargs(v, &res->mutable_optargs(), bt_reg, bt);
-    } else {
-        res = new_term(Term::DATUM, bt);
-        res->mutable_datum() = to_datum(v, configured_limits_t::unlimited,
-                                        reql_version_t::LATEST);
-    }
-    return res;
 }
 
 void term_storage_t::add_args(const rapidjson::Value &args,

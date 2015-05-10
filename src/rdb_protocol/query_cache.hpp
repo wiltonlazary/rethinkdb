@@ -91,7 +91,9 @@ private:
     class entry_t {
     public:
         entry_t(const query_params_t &params,
+                backtrace_registry_t &&_bt_reg,
                 counted_t<term_storage_t> &&_term_storage,
+                global_optargs_t &&_global_optargs,
                 counted_t<const term_t> _root_term);
         ~entry_t();
 
@@ -100,6 +102,7 @@ private:
         const uuid_u job_id;
         const bool noreply;
         const profile_bool_t profile;
+        backtrace_registry_t bt_reg;
         counted_t<term_storage_t> term_storage;
         const global_optargs_t global_optargs;
         const microtime_t start_time;

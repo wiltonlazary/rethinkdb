@@ -43,31 +43,38 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(query_params_t *query_p
             backtrace_registry_t::EMPTY_BACKTRACE);
     }
 
+    backtrace_registry_t bt_reg;
     counted_t<const term_t> root_term;
-    counted_t<term_storage_t> term_storage = make_counted<term_storage_t>();
+    counted_t<term_storage_t> term_storage;
+    scoped_ptr_t<global_optargs_t> global_optargs;
     try {
-        term_storage->add_root_term(query_params->root_term_json);
-        term_storage->add_global_optargs(query_params->global_optargs_json);
-        validate_term_tree(term_storage->root_term());
+        term_storage = make_counted<term_storage_t>(
+            std::move(*query_params->root_term_json))
+        global_optargs = make_scoped<global_optargs_t>(
+            std::move(*query_params->global_optargs_json));
+        preprocess_term_tree(term_storage->root_term(), &bt_reg);
 
-        compile_env_t compile_env((var_visibility_t()), term_storage.get());
+        compile_env_t compile_env((var_visibility_t()));
         root_term = compile_term(&compile_env, term_storage->root_term());
     } catch (const exc_t &e) {
         throw bt_exc_t(Response::COMPILE_ERROR, e.what(),
-                       term_storage->bt_reg().datum_backtrace(e));
+                       bt_reg.datum_backtrace(e));
     } catch (const datum_exc_t &e) {
         throw bt_exc_t(Response::COMPILE_ERROR, e.what(),
                        backtrace_registry_t::EMPTY_BACKTRACE);
     }
 
     scoped_ptr_t<entry_t> entry(new entry_t(*query_params,
+                                            std::move(bt_reg),
                                             std::move(term_storage),
+                                            std::move(global_optargs),
                                             std::move(root_term)));
     scoped_ptr_t<ref_t> ref(new ref_t(this,
                                       query_params->token,
                                       entry.get(),
                                       interruptor));
-    auto insert_res = queries.insert(std::make_pair(query_params->token, std::move(entry)));
+    auto insert_res = queries.insert(std::make_pair(query_params->token,
+                                                    std::move(entry)));
     guarantee(insert_res.second);
     return ref;
 }
@@ -210,7 +217,7 @@ void query_cache_t::ref_t::fill_response(response_t *res) {
     } catch (const exc_t &ex) {
         query_cache->terminate_internal(entry);
         throw bt_exc_t(Response::RUNTIME_ERROR, ex.what(),
-                       entry->term_storage->bt_reg().datum_backtrace(ex));
+                       entry->bt_reg.datum_backtrace(ex));
     } catch (const std::exception &ex) {
         query_cache->terminate_internal(entry);
         throw bt_exc_t(Response::RUNTIME_ERROR, ex.what(),
@@ -300,15 +307,18 @@ void query_cache_t::ref_t::serve(env_t *env, response_t *res) {
 }
 
 query_cache_t::entry_t::entry_t(const query_params_t &query_params,
+                                backtrace_registry_t &&_bt_reg,
                                 counted_t<term_storage_t> &&_term_storage,
+                                global_optargs_t &&_global_optargs,
                                 counted_t<const term_t> _root_term) :
         state(state_t::START),
         job_id(generate_uuid()),
         noreply(query_params.noreply),
         profile(query_params.profile ? profile_bool_t::PROFILE :
                                        profile_bool_t::DONT_PROFILE),
+        bt_reg(std::move(_bt_reg)),
         term_storage(std::move(_term_storage)),
-        global_optargs(term_storage),
+        global_optargs(std::move(_global_optargs)),
         start_time(current_microtime()),
         root_term(_root_term),
         has_sent_batch(false) { }

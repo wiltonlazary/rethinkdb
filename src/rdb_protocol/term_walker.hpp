@@ -6,7 +6,7 @@ namespace ql {
 
 class raw_term_t;
 
-void validate_term_tree(const raw_term_t *root);
+void preprocess_term_tree(rapidjson::Value *src, backtrace_registry_t *bt_reg);
 
 } // namespace ql
 
