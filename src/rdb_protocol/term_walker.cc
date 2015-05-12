@@ -19,29 +19,26 @@ bool term_forbids_writes(Term::TermType type);
 
 class term_walker_t {
 public:
-    term_walker_t(backtrace_registry_t *_bt_reg) :
-        bt_reg(_bt_reg) { }
+    term_walker_t(rapidjson::Document *_doc,
+                  backtrace_registry_t *_bt_reg) :
+        doc(_doc), bt_reg(_bt_reg) { }
 
     void walk(rapidjson::Value *src) {
         r_sanity_check(frames.size() == 0);
-        walker_frame_t toplevel_frame(this, src, true, nullptr);
-        toplevel_frame.walk();
+        walker_frame_t toplevel_frame(this, true, nullptr);
+        toplevel_frame.walk(src, backtrace_id_t::empty());
     }
 
 private:
     class walker_frame_t : public intrusive_list_node_t<walker_frame_t> {
     public:
         walker_frame_t(term_walker_t *_parent,
-                       rapidjson::Value *_src,
                        bool is_zeroth_argument,
-                       const walker_frame_t *_prev_frame,
-                       backtrace_id_t bt) :
+                       const walker_frame_t *_prev_frame) {
             parent(_parent),
-            src(_src),
             writes_legal(true),
             prev_frame(_prev_frame)
         {
-            r_sanity_check(src != nullptr);
             if (prev_frame != nullptr) {
                 writes_legal = prev_frame->writes_legal &&
                     (is_zeroth_argument || !term_forbids_writes(prev_frame->term->type));
@@ -53,51 +50,104 @@ private:
             parent->frames.remove(this);
         }
 
-        void rewrite(Term::TermType _type) {
+        void rewrite(rapidjson::Value *src, Term::TermType _type) {
             type = _type;
             rapidjson::Value rewritten;
             rewritten.SetArray();
-
+            rewritten.Reserve(2, parent->doc->GetAllocator());
+            rewritten.PushBack(rapidjson::Value(static_cast<int>(type)),
+                               parent->doc->GetAllocator());
+            src->Swap(rewritten);
+            src->PushBack(std::move(rewritten), parent->doc->GetAllocator());
         }
 
         // RSI (grey): we should make these checks for minidriver term trees
-        void walk() {
+        void walk(rapidjson::Value *src, backtrace_id_t bt) {
+            r_sanity_check(src != nullptr);
+            rapidjson::Value *args(nullptr);
+            rapidjson::Value *optargs(nullptr);
+
             if (src->IsArray()) {
-
+                size_t size = src->Size();
+                rcheck_src(bt, size >= 1 && size <= 3, base_exc_t::GENERIC,
+                           "Expected between 1 and 3 elements in a raw term, "
+                           "but found %zu.", size);
+                        
+                if (size >= 1) {
+                    rapidjson::Value *val = (*src)[0];
+                    rcheck_src(bt, (*src)[0].IsInt(), base_exc_t::GENERIC,
+                               "Expected a TermType as a NUMBER but found %s.",
+                               rapidjson_type_to_str((*src)[0]));
+                    type = static_cast<Term::TermType>((*src)[0].AsInt());
+                }
+                if (size >= 2) {
+                    rapidjson::Value *val = (*src)[1];
+                    if (val->IsArray()) {
+                        args = val;
+                    } else if (val->IsObject() && type != Term::DATUM) {
+                        optargs = val;
+                    } else {
+                        rcheck_str(bt, type == Term::DATUM, base_exc_t::GENEIRC,
+                                   "Second element in a non-DATUM Term is neither "
+                                   "arguments nor optional arguments.");
+                    }
+                }
+                if (size >= 3) {
+                    rapidjson::Value *val = (*src)[2];
+                    rcheck_src(bt, val->IsObject(), base_exc_t::GENERIC,
+                               "Third element in a non-DATUM Term is not "
+                               "optional arguments.");
+                    optargs = val;
+                }
             } else if (src->IsObject()) {
-                rewrite(Term::MAKE_OBJ);
+                rewrite(src, Term::MAKE_OBJ);
+                optargs = &(*src)[1];
             } else {
-                rewrite(Term::DATUM);
+                rewrite(src, Term::DATUM);
             }
 
-            if (term->type == Term::DATUM) {
-                return;
+            // Convert all 'NOW' terms to the same literal time
+            if (type == Term::NOW) {
+                rewrite(src, Term::DATUM);
+                get_time().to_json(&(*src)[1], parent->doc->GetAllocator());
             }
 
-            if (term->type == Term::ASC || term->type == Term::DESC) {
-                rcheck_src(term->bt,
-                    prev_frame == nullptr || prev_frame->term->type == Term::ORDER_BY,
+            // Append a backtrace to the term
+            src->PushBack(rapidjson::Value(bt.value()), parent->doc->GetAllocator());
+
+            if (type == Term::ASC || type == Term::DESC) {
+                rcheck_src(bt,
+                    prev_frame == nullptr || prev_frame->type == Term::ORDER_BY,
                     base_exc_t::GENERIC,
                     strprintf("%s may only be used as an argument to ORDER_BY.",
-                              (term->type == Term::ASC ? "ASC" : "DESC")));
+                              (type == Term::ASC ? "ASC" : "DESC")));
             }
 
-            rcheck_src(term->bt,
-                !term_is_write_or_meta(term->type) || writes_legal,
+            rcheck_src(bt,
+                !term_is_write_or_meta(type) || writes_legal,
                 base_exc_t::GENERIC,
                 strprintf("Cannot nest writes or meta ops in stream operations.  Use "
                           "FOR_EACH instead."));
 
-            auto arg_it = term->args();
-            for (size_t i = 0; i < term->num_args(); ++i) {
-                walker_frame_t child_frame(parent_list, i == 0, arg_it.next(), this);
-                child_frame.walk();
+            if (args != nullptr) {
+                r_sanity_check(args->IsArray());
+                for (size_t i = 0; i < args->Size(); ++i) {
+                    backtrace_id_t child_bt 
+                        = parent->bt_reg->new_frame(bt, datum_t(static_cast<double>(i)));
+                    walker_frame_t child_frame(parent, i == 0, this);
+                    child_frame.walk(&(*args)[i], child_bt);
+                }
             }
 
-            auto optarg_it = term->optargs();
-            while (const raw_term_t *optarg = optarg_it.next()) {
-                walker_frame_t child_frame(parent_list, false, optarg, this);
-                child_frame.walk();
+            if (optargs != nullptr) {
+                r_sanity_check(optargs->IsObject());
+                for (auto it = optargs->MemberBegin();
+                     it != optargs->MemberEnd(); ++it) {
+                    backtrace_id_t child_bt = parent->bt_reg->new_frame(bt,
+                        datum_t(it->key.GetString(), it->key.GetStringLength()));
+                    walker_frame_t child_frame(parent, false, this);
+                    child_frame.walk(&it->value, child_bt);
+                }
             }
         }
 
@@ -108,15 +158,16 @@ private:
         //   aren't inside the 0th argument, writes are forbidden.
         // * Writes are legal in all other cases.
         term_walker_t *parent;
-        rapidjson::Value *src;
         bool writes_legal;
         const walker_frame_t *prev_frame;
         Term::TermType type;
-        backtrace_id_t bt;
     };
 
-    datum_t get_time() {
-        
+    const datum_t &get_time() {
+        if (!start_time.has()) {
+            start_time = pseudo::time_now();
+        }
+        return start_time;
     }
 
     backtrace_registry_t *bt_reg;
@@ -124,8 +175,8 @@ private:
     datum_t start_time;
 };
 
-void preprocess_term_tree(rapidjson::Value *src, backtrace_registry_t *bt_reg) {
-    term_walker_t term_walker(bt_reg);
+void preprocess_term_tree(rapidjson::Document *src, backtrace_registry_t *bt_reg) {
+    term_walker_t term_walker(src, bt_reg);
     term_walker.walk(src);
 }
 
