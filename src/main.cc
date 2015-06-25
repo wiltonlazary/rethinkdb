@@ -46,12 +46,7 @@ int main(int argc, char *argv[]) {
         } else if (subcommand == "index-rebuild") {
             return main_rethinkdb_index_rebuild(argc, argv);
         } else if (subcommand == "--version" || subcommand == "-v") {
-            if (argc != 2) {
-		          printf("WARNING: Ignoring extra parameters after '%s'.", subcommand.c_str());
-            }
-            print_version_message();
-            return 0;
-
+            return main_rethinkdb_version(argc, argv);
         } else if (subcommand == "help" || subcommand == "-h" || subcommand == "--help") {
 
             if (argc == 2) {

@@ -50,69 +50,84 @@
 #define RETHINKDB_RESTORE_SCRIPT "rethinkdb-restore"
 #define RETHINKDB_INDEX_REBUILD_SCRIPT "rethinkdb-index-rebuild"
 
-MUST_USE bool write_num_and_close(FILE *file_handle, int number) {
-    fprintf(file_handle, "%d", number);
-    fclose(file_handle);
-    return true;
-}
-
-static std::string pid_file;
-
-void remove_pid_file() {
-    if (!pid_file.empty()) {
-        remove(pid_file.c_str());
-        pid_file.clear();
-    }
-}
-
-int check_pid_file(const std::string &pid_filepath) {
-    guarantee(pid_filepath.size() > 0);
-
-    if (access(pid_filepath.c_str(), F_OK) == 0) {
-        logERR("The pid-file specified already exists. This might mean that an instance is already running.");
-        return EXIT_FAILURE;
+class pid_file_t {
+public:
+    pid_file_t(std::string path_) : path(path_) {
+        static DEBUG_VAR bool alone = true;
+        rassert(!path.empty());
+        rassert(alone);
+        alone = false;
     }
 
-    // Make a copy of the filename since `dirname` may modify it
-    char pid_dir[PATH_MAX];
-    strncpy(pid_dir, pid_filepath.c_str(), PATH_MAX);
-    pid_dir[PATH_MAX - 1] = 0;
-    if (access(dirname(pid_dir), W_OK) == -1) {
-        logERR("Cannot access the pid-file directory.");
-        return EXIT_FAILURE;
+    void write_num_and_close(int pid) {
+        rassert(file_handle != NULL);
+
+        int n = fprintf(file_handle, "%d", pid);
+        guarantee(n >= 0, "failed to write pid to '%s'", path.c_str());
+
+        int res = fclose(file_handle);
+        guarantee(res == 0, "failed to close '%s'", path.c_str());
+
+        file_handle = NULL;
     }
 
-    return EXIT_SUCCESS;
-}
+    void remove() {
+        rassert(file_handle == NULL);
 
-int open_pid_file(const std::string &pid_filepath, FILE **pid_file_handle){
-    guarantee(pid_filepath.size() > 0);
-
-    if (!pid_file.empty()) {
-        logERR("Attempting to write pid-file twice.");
-        return EXIT_FAILURE;
+        remove(path.c_str());
     }
 
-    if (check_pid_file(pid_filepath) == EXIT_FAILURE) {
-        return EXIT_FAILURE;
+    void log_already_exists() {
+            logERR("The pid-file '%s' already exists. "
+                   "This might mean that an instance is already running.",
+                   path.c_str());
     }
 
-    pid_file = pid_filepath;
+    int check() {
+        if (access(path.c_str(), F_OK) == 0) {
+            log_already_exists();
+            return EXIT_FAILURE;
+        }
 
-    *pid_file_handle = fopen(pid_filepath.c_str(), "w");
+        // Make a copy of the filename since `dirname` may modify it
+        char pid_dir[PATH_MAX];
+        strncpy(pid_dir, path.c_str(), PATH_MAX);
+        pid_dir[PATH_MAX - 1] = 0;
+        if (access(dirname(pid_dir), W_OK) == -1) {
+            logERR("Cannot access the pid-file directory '%s'.", pid_dir);
+            return EXIT_FAILURE;
+        }
 
-    return *pid_file_handle != NULL ? EXIT_SUCCESS : EXIT_FAILURE;
-}
-
-int write_pid_file(FILE* pid_file_handle) {
-    if (!write_num_and_close(pid_file_handle, getpid())) {
-        logERR("Writing to the specified pid-file failed.");
-        return EXIT_FAILURE;
+        return EXIT_SUCCESS;
     }
 
-    atexit(remove_pid_file);
 
-    return EXIT_SUCCESS;
+    int open() {
+        file_handle = fopen(path.c_str(), "wx");
+
+        if (file_handle == NULL) {
+            return EXIT_FAILURE;
+        } else {
+            return EXIT_SUCCESS;
+        }
+    }
+
+
+    int write_pid_file(FILE* pid_file_handle) {
+        if (!write_num_and_close(pid_file_handle, getpid())) {
+            logERR("Writing to the specified pid-file failed.");
+            return EXIT_FAILURE;
+        }
+
+        atexit(remove_pid_file);
+
+        return EXIT_SUCCESS;
+    }
+
+
+private:
+    std::string path;
+    FILE *file_handle;
 }
 
 // Extracts an option that appears either zero or once.  Multiple appearances are not allowed (or
@@ -382,6 +397,14 @@ bool exists_option(const std::map<std::string, options::values_t> &opts, const s
 
 void print_version_message() {
     printf("%s\n", RETHINKDB_VERSION_STR);
+}
+
+int main_rethinkdb_version(int argc, UNUSED char *argv[]) {
+    if (argc != 2) {
+        printf("WARNING: Ignoring extra parameters");
+    }
+    print_version_message();
+    return 0;
 }
 
 bool handle_help_or_version_option(const std::map<std::string, options::values_t> &opts,
@@ -1572,7 +1595,7 @@ int main_rethinkdb_proxy(int argc, char *argv[]) {
                                 update_check_t::do_not_perform,
                                 address_ports,
                                 get_optional_option(opts, "--config-file"),
-                                std::vector<std::string>(argv, argv + argc));
+                                std::vector<std::string>(argv, argv+ argc));
 
         bool result;
         run_in_thread_pool(std::bind(&run_rethinkdb_proxy, &serve_info, &result),
@@ -1864,3 +1887,7 @@ void help_rethinkdb_index_rebuild() {
     char* args[3] = { dummy_arg, help_arg, NULL };
     run_backup_script(RETHINKDB_INDEX_REBUILD_SCRIPT, args);
 }
+
+class subcommand_t {
+    std::map <std::string, subcommand_t> ;
+};
