@@ -52,83 +52,89 @@
 
 class pid_file_t {
 public:
-    pid_file_t(std::string path_) : path(path_) {
-        static DEBUG_VAR bool alone = true;
-        rassert(!path.empty());
-        rassert(alone);
-        alone = false;
+    pid_file_t(std::string path_) {
+        rassert(!path_.empty());
+        rassert(path.empty());
+
+        path = path_;
+        file_handle = nullptr;
     }
 
-    void write_num_and_close(int pid) {
-        rassert(file_handle != NULL);
+    pid_file_t(pid_file_t &&) = default;
+    pid_file_t(const pid_file_t&) = delete;
 
-        int n = fprintf(file_handle, "%d", pid);
-        guarantee(n >= 0, "failed to write pid to '%s'", path.c_str());
-
-        int res = fclose(file_handle);
-        guarantee(res == 0, "failed to close '%s'", path.c_str());
-
-        file_handle = NULL;
-    }
-
-    void remove() {
+    MUST_USE int create_empty(uid_t user_id, gid_t group_id) {
         rassert(file_handle == NULL);
 
-        remove(path.c_str());
-    }
+        file_handle = fopen(path.c_str(), "wx");
 
-    void log_already_exists() {
-            logERR("The pid-file '%s' already exists. "
-                   "This might mean that an instance is already running.",
-                   path.c_str());
-    }
-
-    int check() {
-        if (access(path.c_str(), F_OK) == 0) {
-            log_already_exists();
+        if (file_handle == NULL) {
+            logERR("Unable to open '%s': %s", path.c_str(), errno_string(get_errno()).c_str());
             return EXIT_FAILURE;
         }
 
-        // Make a copy of the filename since `dirname` may modify it
-        char pid_dir[PATH_MAX];
-        strncpy(pid_dir, path.c_str(), PATH_MAX);
-        pid_dir[PATH_MAX - 1] = 0;
-        if (access(dirname(pid_dir), W_OK) == -1) {
-            logERR("Cannot access the pid-file directory '%s'.", pid_dir);
-            return EXIT_FAILURE;
+        if (user_id != INVALID_UID || group_id != INVALID_GID) {
+            if (fchown(fileno(file_handle), user_id, group_id) != 0) {
+                logERR("Failed to change ownership of pid-file: %s",
+                       errno_string(get_errno()).c_str());
+                fclose(file_handle);
+                file_handle = NULL;
+                remove();
+                return EXIT_FAILURE;
+            }
         }
 
         return EXIT_SUCCESS;
     }
 
+    MUST_USE int write() {
+        rassert(file_handle != NULL);
 
-    int open() {
-        file_handle = fopen(path.c_str(), "wx");
-
-        if (file_handle == NULL) {
+        if (write_num_and_close(getpid()) == EXIT_FAILURE) {
+            fclose(file_handle);
+            file_handle = NULL;
+            remove();
             return EXIT_FAILURE;
         } else {
+            atexit(remove);
             return EXIT_SUCCESS;
         }
     }
 
+    MUST_USE int create_and_write(uid_t user_id, gid_t group_id) {
+        if (create_empty(user_id, group_id) == EXIT_FAILURE) {
+            return EXIT_FAILURE;
+        }
+        return write();
+    }
 
-    int write_pid_file(FILE* pid_file_handle) {
-        if (!write_num_and_close(pid_file_handle, getpid())) {
-            logERR("Writing to the specified pid-file failed.");
+private:
+    MUST_USE int write_num_and_close(int pid) {
+        rassert(file_handle != NULL);
+
+        int n = fprintf(file_handle, "%d", pid);
+        if (n < 0) {
+            logERR("failed to write pid to '%s'", path.c_str());
             return EXIT_FAILURE;
         }
 
-        atexit(remove_pid_file);
+        int res = fclose(file_handle);
+        if (res != 0) {
+            logERR("failed to close '%s'", path.c_str());
+            return EXIT_FAILURE;
+        }
 
+        file_handle = NULL;
         return EXIT_SUCCESS;
     }
 
+    static void remove() {
+        ::remove(path.c_str());
+    }
 
-private:
-    std::string path;
+    static std::string path;
     FILE *file_handle;
-}
+};
 
 // Extracts an option that appears either zero or once.  Multiple appearances are not allowed (or
 // expected).
@@ -248,122 +254,67 @@ bool get_user_ids(const char *name, uid_t *user_id_out, gid_t *user_group_id_out
     return false;
 }
 
-void get_user_group(const std::map<std::string, options::values_t> &opts,
-                    gid_t *group_id_out, std::string *group_name_out,
-                    uid_t *user_id_out, std::string *user_name_out) {
-    boost::optional<std::string> rungroup = get_optional_option(opts, "--rungroup");
-    boost::optional<std::string> runuser = get_optional_option(opts, "--runuser");
-    group_name_out->clear();
-    user_name_out->clear();
-
-    if (rungroup) {
-        group_name_out->assign(*rungroup);
-        if (!get_group_id(rungroup->c_str(), group_id_out)) {
-            throw std::runtime_error(strprintf("Group '%s' not found: %s",
-                                               rungroup->c_str(),
-                                               errno_string(get_errno()).c_str()).c_str());
-        }
-    } else {
-        *group_id_out = INVALID_GID;
-    }
-
-    if (runuser) {
-        user_name_out->assign(*runuser);
-        gid_t user_group_id;
-        if (!get_user_ids(runuser->c_str(), user_id_out, &user_group_id)) {
-            throw std::runtime_error(strprintf("User '%s' not found: %s",
-                                               runuser->c_str(),
-                                               errno_string(get_errno()).c_str()).c_str());
-        }
-        if (!rungroup) {
-            // No group specified, use the user's group
-            group_name_out->assign(*runuser);
-            *group_id_out = user_group_id;
-        }
-    } else {
-        *user_id_out = INVALID_UID;
-    }
-}
-
-void set_user_group(gid_t group_id, const std::string &group_name,
-                    uid_t user_id, const std::string user_name) {
-    if (group_id != INVALID_GID) {
-        if (setgid(group_id) != 0) {
-            throw std::runtime_error(strprintf("Could not set group to '%s': %s",
-                                               group_name.c_str(),
-                                               errno_string(get_errno()).c_str()).c_str());
-        }
-    }
-
-    if (user_id != INVALID_UID) {
-        if (setuid(user_id) != 0) {
-            throw std::runtime_error(strprintf("Could not set user account to '%s': %s",
-                                               user_name.c_str(),
-                                               errno_string(get_errno()).c_str()).c_str());
-        }
-    }
-}
-
-void get_and_set_user_group(const std::map<std::string, options::values_t> &opts) {
-    std::string group_name, user_name;
-    gid_t group_id;
+class user_group_t {
+public:
+    std::string user_name;
+    std::string group_name;
     uid_t user_id;
+    gid_t group_it;
 
-    get_user_group(opts, &group_id, &group_name, &user_id, &user_name);
-    set_user_group(group_id, group_name, user_id, user_name);
-}
+    user_group_t(const std::map<std::string, options::values_t> &opts) {
+        boost::optional<std::string> rungroup = get_optional_option(opts, "--rungroup");
+        boost::optional<std::string> runuser = get_optional_option(opts, "--runuser");
 
-void get_and_set_user_group_and_directory(
-        const std::map<std::string, options::values_t> &opts,
-        directory_lock_t *directory_lock,
-        FILE *pid_file_handle) {
-    std::string group_name, user_name;
-    gid_t group_id;
-    uid_t user_id;
+        if (rungroup) {
+            group_name.assign(*rungroup);
+            if (!get_group_id(rungroup->c_str())) {
+                throw std::runtime_error(strprintf("Group '%s' not found: %s",
+                                                   rungroup->c_str(),
+                                                   errno_string(get_errno()).c_str()).c_str());
+            }
+        } else {
+            group_id = INVALID_GID;
+        }
 
-    get_user_group(opts, &group_id, &group_name, &user_id, &user_name);
-    directory_lock->change_ownership(group_id, group_name, user_id, user_name);
-    if (pid_file_handle != NULL) {
-        if (user_id != INVALID_UID || group_id != INVALID_GID) {
-            if (fchown(fileno(pid_file_handle), user_id, group_id) != 0) {
-                throw std::runtime_error(strprintf("Failed to change ownership of pid-file: %s",
-                                                   errno_string(get_errno()).c_str()));
+        if (runuser) {
+            user_name.assign(*runuser);
+            if (!get_user_ids(runuser->c_str())) {
+                throw std::runtime_error(strprintf("User '%s' not found: %s",
+                                                   runuser->c_str(),
+                                                   errno_string(get_errno()).c_str()).c_str());
+            }
+        } else {
+            user_id = INVALID_UID;
+        }
+    }
+
+    void switch_user_group() {
+        if (group_id != INVALID_GID) {
+            if (setgid(group_id) != 0) {
+                throw std::runtime_error(strprintf("Could not set group to '%s': %s",
+                                                   group_name.c_str(),
+                                                   errno_string(get_errno()).c_str()).c_str());
+            }
+        }
+
+        if (user_id != INVALID_UID) {
+            if (setuid(user_id) != 0) {
+                throw std::runtime_error(strprintf("Could not set user account to '%s': %s",
+                                                   user_name.c_str(),
+                                                   errno_string(get_errno()).c_str()).c_str());
             }
         }
     }
-    set_user_group(group_id, group_name, user_id, user_name);
 }
 
-int check_pid_file(const std::map<std::string, options::values_t> &opts) {
+// Read the --pid-file option, if it's present.
+boost::optional<pid_file_t> pid_file_path(const std::map<std::string, options::values_t> &opts) {
     boost::optional<std::string> pid_filepath = get_optional_option(opts, "--pid-file");
     if (!pid_filepath || pid_filepath->empty()) {
-        return EXIT_SUCCESS;
+        return boost::optional<pid_file_t>();
+    } else {
+        return pid_file_t(*pid_filepath);
     }
-
-    return check_pid_file(*pid_filepath);
-}
-
-// Maybe opens a pid file, using the --pid-file option, if it's present.
-int open_pid_file(const std::map<std::string, options::values_t> &opts, FILE **pid_file_handle) {
-    boost::optional<std::string> pid_filepath = get_optional_option(opts, "--pid-file");
-    if (!pid_filepath || pid_filepath->empty()) {
-        *pid_file_handle = NULL;
-        return EXIT_SUCCESS;
-    }
-
-    return open_pid_file(*pid_filepath, pid_file_handle);
-}
-
-int write_pid_file(const std::map<std::string, options::values_t> &opts) {
-    FILE *pid_file_handle;
-    if (open_pid_file(opts, &pid_file_handle) != EXIT_SUCCESS) {
-        return EXIT_FAILURE;
-    }
-
-    if (pid_file_handle != NULL && write_pid_file(pid_file_handle) != EXIT_SUCCESS) {
-        return EXIT_FAILURE;
-    }
-    return EXIT_SUCCESS;
 }
 
 // Extracts an option that must appear exactly once.  (This is often used for optional arguments
@@ -1370,7 +1321,7 @@ int main_rethinkdb_create(int argc, char *argv[]) {
             return EXIT_FAILURE;
         }
 
-        get_and_set_user_group_and_directory(opts, &data_directory_lock, NULL);
+        get_and_set_user_group_and_directory(opts, &data_directory_lock);
 
         initialize_logfile(opts, base_path);
 
@@ -1490,7 +1441,9 @@ int main_rethinkdb_serve(int argc, char *argv[]) {
 
         recreate_temporary_directory(base_path);
 
-        if (check_pid_file(opts) != EXIT_SUCCESS) {
+        boost::optional<pid_file_t> pid_file = pid_file_path(opts);
+
+        if (pid_file && pid_file->create_empty(user_id, group_id) != EXIT_SUCCESS) {
             return EXIT_FAILURE;
         }
 
@@ -1499,7 +1452,7 @@ int main_rethinkdb_serve(int argc, char *argv[]) {
             return EXIT_SUCCESS;
         }
 
-        if (write_pid_file(opts) != EXIT_SUCCESS) {
+        if (pid_file && pid_file->write() != EXIT_SUCCESS) {
             return EXIT_FAILURE;
         }
 
@@ -1574,7 +1527,9 @@ int main_rethinkdb_proxy(int argc, char *argv[]) {
         std::string web_path = get_web_path(opts);
         const int num_workers = get_cpu_count();
 
-        if (check_pid_file(opts) != EXIT_SUCCESS) {
+        boost::optional<pid_file_t> pid_file = pid_file_path(opts);
+
+        if (pid_file && pid_file->create_empty(user_id, group_id) != EXIT_SUCCESS) {
             return EXIT_FAILURE;
         }
 
@@ -1583,7 +1538,7 @@ int main_rethinkdb_proxy(int argc, char *argv[]) {
             return EXIT_SUCCESS;
         }
 
-        if (write_pid_file(opts) != EXIT_SUCCESS) {
+        if (pid_file && pid_file->write() != EXIT_SUCCESS) {
             return EXIT_FAILURE;
         }
 
@@ -1714,8 +1669,9 @@ int main_rethinkdb_porcelain(int argc, char *argv[]) {
         bool is_new_directory = false;
         directory_lock_t data_directory_lock(base_path, true, &is_new_directory);
 
-        FILE *pid_file_handle;
-        if (open_pid_file(opts, &pid_file_handle) != EXIT_SUCCESS) {
+        boost::optional<pid_file_t> pid_file = pid_file_path(opts);
+
+        if (pid_file && pid_file->create_empty(user_id, group_id) != EXIT_SUCCESS) {
             return EXIT_FAILURE;
         }
 
@@ -1723,7 +1679,7 @@ int main_rethinkdb_porcelain(int argc, char *argv[]) {
         initialize_logfile(opts, base_path);
 
         if (is_new_directory) {
-            get_and_set_user_group_and_directory(opts, &data_directory_lock, pid_file_handle);
+            get_and_set_user_group_and_directory(opts, &data_directory_lock);
         } else {
             get_and_set_user_group(opts);
         }
@@ -1751,7 +1707,7 @@ int main_rethinkdb_porcelain(int argc, char *argv[]) {
             return EXIT_SUCCESS;
         }
 
-        if (pid_file_handle != NULL && write_pid_file(pid_file_handle) != EXIT_SUCCESS) {
+        if (pid_file && pid_file->write() != EXIT_SUCCESS) {
             return EXIT_FAILURE;
         }
 
@@ -1887,7 +1843,3 @@ void help_rethinkdb_index_rebuild() {
     char* args[3] = { dummy_arg, help_arg, NULL };
     run_backup_script(RETHINKDB_INDEX_REBUILD_SCRIPT, args);
 }
-
-class subcommand_t {
-    std::map <std::string, subcommand_t> ;
-};
