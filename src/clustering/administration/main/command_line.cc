@@ -259,7 +259,7 @@ public:
     std::string user_name;
     std::string group_name;
     uid_t user_id;
-    gid_t group_it;
+    gid_t group_id;
 
     user_group_t(const std::map<std::string, options::values_t> &opts) {
         boost::optional<std::string> rungroup = get_optional_option(opts, "--rungroup");
@@ -267,7 +267,7 @@ public:
 
         if (rungroup) {
             group_name.assign(*rungroup);
-            if (!get_group_id(rungroup->c_str())) {
+            if (!get_group_id(rungroup->c_str(), &group_id)) {
                 throw std::runtime_error(strprintf("Group '%s' not found: %s",
                                                    rungroup->c_str(),
                                                    errno_string(get_errno()).c_str()).c_str());
@@ -278,17 +278,22 @@ public:
 
         if (runuser) {
             user_name.assign(*runuser);
-            if (!get_user_ids(runuser->c_str())) {
+            gid_t user_group_id;
+            if (!get_user_ids(runuser->c_str(), &user_id, &user_group_id)) {
                 throw std::runtime_error(strprintf("User '%s' not found: %s",
                                                    runuser->c_str(),
                                                    errno_string(get_errno()).c_str()).c_str());
+            }
+            if (group_id == INVALID_GID) {
+                group_name = user_name; // TODO: this is wrong. the user name is not the group name
+                group_id = user_group_id;
             }
         } else {
             user_id = INVALID_UID;
         }
     }
 
-    void switch_user_group() {
+    void switch_to() {
         if (group_id != INVALID_GID) {
             if (setgid(group_id) != 0) {
                 throw std::runtime_error(strprintf("Could not set group to '%s': %s",
@@ -305,7 +310,11 @@ public:
             }
         }
     }
-}
+
+    void change_ownership(directory_lock_t &data_directory_lock) {
+        data_directory_lock.change_ownership(group_id, group_name, user_id, user_name);
+    }
+};
 
 // Read the --pid-file option, if it's present.
 boost::optional<pid_file_t> pid_file_path(const std::map<std::string, options::values_t> &opts) {
@@ -1321,7 +1330,9 @@ int main_rethinkdb_create(int argc, char *argv[]) {
             return EXIT_FAILURE;
         }
 
-        get_and_set_user_group_and_directory(opts, &data_directory_lock);
+        user_group_t desired_user_group(opts);
+        desired_user_group.change_ownership(data_directory_lock);
+        desired_user_group.switch_to();
 
         initialize_logfile(opts, base_path);
 
@@ -1406,14 +1417,12 @@ int main_rethinkdb_serve(int argc, char *argv[]) {
 
         options::verify_option_counts(options, opts);
 
-        get_and_set_user_group(opts);
-
         base_path_t base_path(get_single_option(opts, "--directory"));
 
         std::vector<host_and_port_t> joins = parse_join_options(opts, port_defaults::peer_port);
 
         service_address_ports_t address_ports = get_service_address_ports(opts);
-
+ 
         std::string web_path = get_web_path(opts);
 
         int num_workers;
@@ -1436,16 +1445,22 @@ int main_rethinkdb_serve(int argc, char *argv[]) {
         directory_lock_t data_directory_lock(base_path, false, &is_new_directory);
         guarantee(!is_new_directory);
 
+        user_group_t desired_user_group(opts);
+        desired_user_group.switch_to();
+
+        user_group_t desired_user_group(opts);
+
+        boost::optional<pid_file_t> pid_file = pid_file_path(opts);
+        if (pid_file && pid_file->create_empty(user_id, group_id) != EXIT_SUCCESS) {
+            return EXIT_FAILURE;
+        }
+
+        desired_user_group.switch_to();
+
         base_path.make_absolute();
         initialize_logfile(opts, base_path);
 
         recreate_temporary_directory(base_path);
-
-        boost::optional<pid_file_t> pid_file = pid_file_path(opts);
-
-        if (pid_file && pid_file->create_empty(user_id, group_id) != EXIT_SUCCESS) {
-            return EXIT_FAILURE;
-        }
 
         if (!maybe_daemonize(opts)) {
             // This is the parent process of the daemon, just exit
