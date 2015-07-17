@@ -764,6 +764,7 @@ void run_rethinkdb_serve(const base_path_t &base_path,
                         heartbeat_semilattice_metadata_t(), interruptor);
                 },
                 &non_interruptor));
+            // TODO: check if this is right, users should be able to overwrite the cache size at startup
             guarantee(!static_cast<bool>(total_cache_size), "rethinkdb porcelain should "
                 "have already set up total_cache_size");
         } else {
@@ -779,7 +780,7 @@ void run_rethinkdb_serve(const base_path_t &base_path,
                 {
                     metadata_file_t::write_txn_t txn(metadata_file.get(),
                                                      &non_interruptor);
-                    migrate_v1_16::migrate_auth_file(auth_path, &txn);
+                    migrate_v1_16::migrate_auth_file(&io_backender, auth_path, &txn);
                     /* End the inner scope here so we flush the new metadata file before
                     we delete the old auth file */
                 }
