@@ -77,3 +77,11 @@ tests:
 
   - cd: r.time(2013, 1, 1, "+25:00")
     ot: err('RqlLogicError', 'Hours out of range in `+25:00`.')
+
+  - cd: r.epoch_time(1436428422.339).in_timezone('-08:00').date().to_iso8601()
+    js: r.epoch_time(1436428422.339).in_timezone('-08:00').date().toISO8601()
+    ot: ("2015-07-08T00:00:00-08:00")
+
+  - cd: r.epoch_time(1436428422.339).in_timezone('-07:00').date().to_iso8601()
+    js: r.epoch_time(1436428422.339).in_timezone('-07:00').date().toISO8601()
+    ot: ("2015-07-09T00:00:00-07:00")
