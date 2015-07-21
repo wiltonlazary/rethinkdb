@@ -146,6 +146,7 @@ public:
     // Used to open an existing metadata file
     metadata_file_t(
         io_backender_t *io_backender,
+        const base_path_t &base_path,
         const serializer_filepath_t &filename,
         perfmon_collection_t *perfmon_parent,
         signal_t *interruptor);

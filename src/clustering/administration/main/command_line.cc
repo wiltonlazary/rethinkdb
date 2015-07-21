@@ -749,6 +749,7 @@ void run_rethinkdb_serve(const base_path_t &base_path,
         if (our_server_id != nullptr && cluster_metadata != nullptr) {
             metadata_file.init(new metadata_file_t(
                 &io_backender,
+                base_path,
                 get_cluster_metadata_filename(base_path),
                 &metadata_perfmon_collection,
                 [&](metadata_file_t::write_txn_t *write_txn, signal_t *interruptor) {

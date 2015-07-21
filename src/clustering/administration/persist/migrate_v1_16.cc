@@ -1,9 +1,10 @@
 // Copyright 2010-2015 RethinkDB, all rights reserved.
 #include "clustering/administration/persist/migrate_v1_16.hpp"
-#include "clustering/administration/persist/migrate_pre_v1_16.hpp"
 
 #include "buffer_cache/alt.hpp"
 #include "buffer_cache/blob.hpp"
+#include "clustering/administration/persist/migrate_pre_v1_16.hpp"
+#include "clustering/immediate_consistency/history.hpp"
 
 namespace migrate_v1_16 {
 
@@ -178,23 +179,57 @@ void migrate_databases(const cluster_semilattice_metadata_t &metadata,
     out->write(mdkey_cluster_semilattices(), new_metadata, nullptr);
 }
 
-void migrate_tables(const cluster_semilattice_metadata_t &metadata,
+void migrate_tables(io_backender_t *io_backender,
+                    serializer_t *serializer,
+                    const base_path_t &base_path,
+                    const cluster_semilattice_metadata_t &metadata,
                     const branch_history_t &branch_history,
                     metadata_file_t::write_txn_t *out) {
-    for (auto const &pair : metadata.rdb_namespaces.namespaces) {
-        if (!pair->second.is_deleted()) {
+    dummy_cache_balancer_t balancer(GIGABYTE);
+    auto &tables = metadata.rdb_namespaces.namespaces;
+    pmap(tables.begin(), tables.end(), [&] (std::pair<namespace_id_t, namespace_semilattice_metadata_t> &info) {
+            if (!pair->second.is_deleted()) {
+                try {
+                    rdb_protocol_t::store_t(region_t::universe(),
+                                            serializer,
+                                            &balancer,
+                                            uuid_to_str(pair->first),
+                                            false,
+                                            &get_global_perfmon_collection(),
+                                            nullptr,
+                                            io_backender,
+                                            base_path,
+                                            scoped_ptr_t<outdated_index_report_t>(),
+                                            pair->first);
+                    // Read out branch ids for each region
 
-        } else {
+                    // Read out each secondary index (for each region?)
+                } catch () {
+                    // TODO: what happens when a table file isn't there?
+                }
+            } else {
 
-        }
+            }
+         });
+}
+
+void migrate_branch_ids(const branch_history_t &branch_history,
+                        const namespace_id_t &table_id,
+                        const region_map_t<version_t> &versions,
+                        metadata_file_t::write_txn_t *out) {
+    for (auto const &pair : versions) {
+        mdprefix_branch_birth_certificate().suffix(
+            uuid_to_str(table_id) + "/" + uuid_to_str(branch_id),
     }
 }
 
-void migrate_cluster_metadata (
-        txn_t *txn,
-        buf_parent_t buf_parent,
-        const void *old_superblock,
-        metadata_file_t::write_txn_t *new_output) {
+void migrate_cluster_metadata (io_backender_t *io_backender,
+                               serializer_t *serializer,
+                               const base_path_t &base_path,
+                               txn_t *txn,
+                               buf_parent_t buf_parent,
+                               const void *old_superblock,
+                               metadata_file_t::write_txn_t *new_output) {
     const cluster_metadata_superblock_t *sb =
         static_cast<const cluster_metadata_superblock_t *>(old_superblock);
     cluster_version_t v = cluster_superblock_version(sb);
@@ -247,7 +282,7 @@ void migrate_cluster_metadata (
 
     migrate_server(sb->server_id, metadata, new_output);
     migrate_databases(metadata, new_output);
-    migrate_tables(metadata, branch_history, new_output);
+    migrate_tables(io_backender, serializer, base_path, metadata, branch_history, new_output);
 }
 
 void migrate_auth_file(io_backender_t *io_backender,

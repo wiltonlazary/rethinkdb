@@ -13,6 +13,36 @@
 
 namespace migrate_v1_16 {
 
+// TODO: consider removing structures that haven't changed during migration
+//   possibly just `version_t` and `database(s)_semilattice_metadata_t`
+class version_t {
+public:
+    version_t() { }
+    branch_id_t branch;
+    state_timestamp_t timestamp;
+};
+
+RDB_DECLARE_SERIALIZABLE(version_t);
+
+/* `version_range_t` is a pair of `version_t`s. The meta-info, which is stored
+   in the superblock of the B-tree, records a `version_range_t` for each range of
+   keys. Each key's value is the value it had at some `version_t` in the recorded
+   `version_range_t`.
+
+   The reason we store `version_range_t` instead of `version_t` is that if a
+   backfill were interrupted, we wouldn't know which keys were up-to-date and
+   which were not. All that we would know is that each key's state lay at some
+   point between the version the B-tree was at before the backfill started and the
+   version that the backfiller is at. */
+
+class version_range_t {
+public:
+    version_range_t() { }
+    version_t earliest, latest;
+};
+
+RDB_DECLARE_SERIALIZABLE(version_range_t);
+
 struct branch_birth_certificate_t {
     region_t region;
     state_timestamp_t initial_timestamp;

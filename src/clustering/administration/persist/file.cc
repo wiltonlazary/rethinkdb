@@ -33,14 +33,19 @@ void init_metadata_superblock(void *sb_void, size_t block_size) {
 }
 
 
-enum class superblock_version_t { pre_1_16 = 0, from_1_16_to_2_0 = 1, post_2_1 = 2 };
+enum class superblock_version_t {
+    pre_1_14 = 0,
+    pre_1_16 = 1,
+    from_1_16_to_2_0 = 2,
+    post_2_1 = 3,
+};
 
 superblock_version_t magic_to_version(block_magic_t magic) {
     guarantee(magic.bytes[0] == metadata_sb_magic.bytes[0]);
     guarantee(magic.bytes[1] == metadata_sb_magic.bytes[1]);
     guarantee(magic.bytes[2] == metadata_sb_magic.bytes[2]);
     switch (magic.bytes[3]) {
-        case 'd': return superblock_version_t::pre_1_16;
+        case 'd': return superblock_version_t::pre_1_14;
         case 'e': return superblock_version_t::pre_1_16;
         case 'f': return superblock_version_t::pre_1_16;
         case 'g': return superblock_version_t::from_1_16_to_2_0;
@@ -305,9 +310,9 @@ metadata_file_t::metadata_file_t(
     superblock_version_t metadata_version =
         magic_to_version(*static_cast<block_magic_t *>(sb_data));
     switch (metadata_version) {
-        case superblock_version_t::pre_1_16: {
+        case superblock_version_t::pre_1_14: {
             crash("This version of RethinkDB cannot migrate in place from databases "
-                "created by versions older than RethinkDB 1.16.");
+                "created by versions older than RethinkDB 1.14.");
             break;
         }
         case superblock_version_t::from_1_16_to_2_0: {
@@ -317,6 +322,7 @@ metadata_file_t::metadata_file_t(
             sb_write.reset();
             sb_lock.reset();
             migrate_v1_16::migrate_cluster_metadata(
+                io_backender, serializer.get(),
                 &write_txn.txn, buf_parent_t(&write_txn.txn), sb_copy.get(), &write_txn);
             break;
         }
