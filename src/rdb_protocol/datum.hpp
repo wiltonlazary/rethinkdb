@@ -348,6 +348,9 @@ private:
     static std::vector<std::pair<datum_string_t, datum_t> > to_sorted_vec(
             std::map<datum_string_t, datum_t> &&map);
 
+    template <class json_writer_t>
+    void write_json_unchecked_stack(json_writer_t *writer) const;
+
     // Same as get_pair() / get(), but don't perform boundary or type checks.
     // For internal use to improve performance.
     std::pair<datum_string_t, datum_t> unchecked_get_pair(size_t index) const;

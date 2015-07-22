@@ -14,5 +14,8 @@ tests:
     ot: 1
   - js: r.range(1000).forEach(function(i) { return tbl.get(1).update(function(x) { return {obj:{a:x('obj')}} }, {durability:'soft'})})('replaced')
     ot: 1000
+  # Also test retrieving it
+  - js: tbl.get(1)
+    ot: partial({})
   - js: tbl.get(1).delete()('deleted')
     ot: 1

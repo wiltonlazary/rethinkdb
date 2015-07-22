@@ -1398,7 +1398,7 @@ datum_t datum_t::get_field(const char *key, throw_bool_t throw_bool) const {
 }
 
 template <class json_writer_t>
-void datum_t::write_json(json_writer_t *writer) const {
+void datum_t::write_json_unchecked_stack(json_writer_t *writer) const {
     switch (get_type()) {
     case MINVAL: rfail_datum(base_exc_t::LOGIC, "Cannot convert `r.minval` to JSON.");
     case MAXVAL: rfail_datum(base_exc_t::LOGIC, "Cannot convert `r.maxval` to JSON.");
@@ -1439,6 +1439,15 @@ void datum_t::write_json(json_writer_t *writer) const {
     case UNINITIALIZED: // fallthru
     default: unreachable();
     }
+}
+
+template <class json_writer_t>
+void datum_t::write_json(json_writer_t *writer) const {
+    return call_with_enough_stack(std::bind(
+        &datum_t::write_json_unchecked_stack<json_writer_t>,
+        this,
+        writer),
+        MIN_DATUM_RECURSION_STACK_SPACE);
 }
 
 // Explicit instantiation
