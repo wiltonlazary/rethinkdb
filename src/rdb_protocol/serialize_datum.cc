@@ -54,6 +54,20 @@ enum class datum_offset_size_t {
 // which in the worst-case could lead to quadratic serialization costs.
 // This is the data structure in which we store the sizes.
 struct size_tree_node_t {
+    size_tree_node_t() = default;
+    size_tree_node_t(const size_tree_node_t &) = default;
+    size_tree_node_t(size_tree_node_t &&) = default;
+    size_tree_node_t &operator=(const size_tree_node_t &) = default;
+    size_tree_node_t &operator=(size_tree_node_t &&) = default;
+    ~size_tree_node_t() {
+        // A stack overflow could occur while recursively destructing these.
+        // Stop that from happening.
+        if (!child_sizes.empty()) {
+            call_with_enough_stack([this]() {
+                child_sizes.clear();
+            }, MIN_DATUM_SERIALIZATION_STACK_SPACE);
+        }
+    }
     size_t size;
     std::vector<size_tree_node_t> child_sizes;
 };
@@ -446,7 +460,7 @@ MUST_USE archive_result_t datum_deserialize_object(
         if (bad(res)) { return res; }
         res = datum_deserialize(s, &p.second);
         if (bad(res)) { return res; }
-        m->push_back(std::move(p));
+        m->emplace_back(std::move(p));
     }
 
     return archive_result_t::SUCCESS;
