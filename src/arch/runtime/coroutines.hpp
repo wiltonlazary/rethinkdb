@@ -241,12 +241,15 @@ Otherwise it spawns a new coroutine, runs `fun` in there, waits for it to
 finish if necessary, and returns the result of the call.*/
 template<class result_t, class callable_t>
 inline result_t call_with_enough_stack(callable_t &&fun, size_t min_bytes_free) {
-    if (has_n_bytes_free_stack_space(min_bytes_free)) {
+    coro_t *origin = coro_t::self();
+    // This implementation only works if we're in a coroutine. If we're not,
+    // we just call `fun` right away and hope that the stack size is not an issue
+    // in those situations.
+    if (origin == nullptr || has_n_bytes_free_stack_space(min_bytes_free)) {
         return fun();
     } else {
         result_t res;
         std::exception_ptr exception;
-        coro_t *origin = coro_t::self();
         bool did_block = false;
         bool done_immediately = false;
         coro_t::spawn_now_dangerously([&]() {

@@ -2,6 +2,7 @@
 #include "rdb_protocol/serialize_datum.hpp"
 
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <string>
 #include <vector>
