@@ -6,6 +6,7 @@
 #include "arch/runtime/runtime.hpp"
 #include "arch/timing.hpp"
 #include "concurrency/cond_var.hpp"
+#include "time.hpp"
 #include "unittest/gtest.hpp"
 #include "unittest/unittest_utils.hpp"
 
@@ -93,5 +94,86 @@ TEST(CoroutineUtilsTest, WithEnoughStackException) {
     });
     EXPECT_TRUE(got_exception);
 }
+
+// This is not really a unit test, but a micro benchmark to test the overhead
+// of call_with_enough_stack. No need to run this in debug mode.
+#ifdef NDEBUG
+NOINLINE int test_function() {
+    return 1;
+}
+NOINLINE int test_function_blocking() {
+    coro_t::yield();
+    return 1;
+}
+
+TEST(CoroutineUtilsTest, WithEnoughStackBenchmark) {
+    run_in_coro([&]() {
+        const int NUM_REPETITIONS = 1000000;
+
+        // Get the base line first
+        printf("Getting base line timings.\n");
+        int sum = 0;
+        ticks_t start_ticks = get_ticks();
+        for(int i = 0; i < NUM_REPETITIONS; ++i) {
+            sum += test_function();
+        }
+        double dur_base = ticks_to_secs(get_ticks() - start_ticks);
+        EXPECT_EQ(sum, NUM_REPETITIONS);
+
+        sum = 0;
+        start_ticks = get_ticks();
+        for(int i = 0; i < NUM_REPETITIONS; ++i) {
+            sum += test_function_blocking();
+        }
+        double dur_base_blocking = ticks_to_secs(get_ticks() - start_ticks);
+        EXPECT_EQ(sum, NUM_REPETITIONS);
+
+        {
+            printf("Test 1: call_without_enough_stack without spawning: ");
+            sum = 0;
+            start_ticks = get_ticks();
+            for(int i = 0; i < NUM_REPETITIONS; ++i) {
+                // Use std::bind because that's what we're usually going to use in
+                // our code.
+                sum += call_with_enough_stack<int>(std::bind(&test_function), 1);
+            }
+            double dur = ticks_to_secs(get_ticks() - start_ticks);
+            EXPECT_EQ(sum, NUM_REPETITIONS);
+            printf("%f us overhead\n",
+                   (dur - dur_base) / NUM_REPETITIONS * 1000000);
+        }
+        {
+            printf("Test 2: call_without_enough_stack with spawning: ");
+            sum = 0;
+            start_ticks = get_ticks();
+            for(int i = 0; i < NUM_REPETITIONS; ++i) {
+                // Use std::bind because that's what we're usually going to use in
+                // our code.
+                sum += call_with_enough_stack<int>(std::bind(&test_function),
+                                                   COROUTINE_STACK_SIZE);
+            }
+            double dur = ticks_to_secs(get_ticks() - start_ticks);
+            EXPECT_EQ(sum, NUM_REPETITIONS);
+            printf("%f us overhead\n",
+                   (dur - dur_base) / NUM_REPETITIONS * 1000000);
+        }
+        {
+            printf("Test 3: call_without_enough_stack with blocking: ");
+            sum = 0;
+            start_ticks = get_ticks();
+            for(int i = 0; i < NUM_REPETITIONS; ++i) {
+                // Use std::bind because that's what we're usually going to use in
+                // our code.
+                sum += call_with_enough_stack<int>(std::bind(&test_function_blocking),
+                                                   COROUTINE_STACK_SIZE);
+            }
+            double dur = ticks_to_secs(get_ticks() - start_ticks);
+            EXPECT_EQ(sum, NUM_REPETITIONS);
+            printf("%f us overhead\n",
+                   (dur - dur_base_blocking) / NUM_REPETITIONS * 1000000);
+        }
+    });
+}
+#endif
 
 }   /* namespace unittest */

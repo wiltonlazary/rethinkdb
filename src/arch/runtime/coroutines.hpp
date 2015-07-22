@@ -240,7 +240,7 @@ coroutine. If that is the case, this function calls `fun` right away.
 Otherwise it spawns a new coroutine, runs `fun` in there, waits for it to
 finish if necessary, and returns the result of the call.*/
 template<class result_t, class callable_t>
-inline result_t call_with_enough_stack(callable_t &&fun, size_t min_bytes_free) {
+inline result_t call_with_enough_stack(callable_t &&fun, const size_t min_bytes_free) {
     coro_t *origin = coro_t::self();
     // This implementation only works if we're in a coroutine. If we're not,
     // we just call `fun` right away and hope that the stack size is not an issue
