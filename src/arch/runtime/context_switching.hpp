@@ -14,6 +14,8 @@
 at the cost of removing some safety guarantees provided by the constructor and
 destructor. */
 
+static const size_t COROUTINES_SEGMENTS = 10;
+
 struct artificial_stack_context_ref_t {
 
     /* Creates a nil `context_ref_t`. */
@@ -36,6 +38,7 @@ private:
     From that pointer, we find the instruction pointer, relevant registers, and
     so on. */
     void *pointer;
+    void *segments_context[COROUTINES_SEGMENTS];
 
     DISABLE_COPYING(artificial_stack_context_ref_t);
 };
@@ -69,11 +72,9 @@ public:
     size_t free_space_below(const void *addr) const;
 
 private:
+    void *segments_context[COROUTINES_SEGMENTS];
     void *stack;
     size_t stack_size;
-#ifdef VALGRIND
-    int valgrind_stack_id;
-#endif
 };
 
 /* `context_switch()` switches from one context to another.

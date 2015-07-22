@@ -38,31 +38,31 @@ bool artificial_stack_context_ref_t::is_nil() {
     return pointer == NULL;
 }
 
-artificial_stack_t::artificial_stack_t(void (*initial_fun)(void), size_t _stack_size)
-    : stack_size(_stack_size) {
+extern "C" {
+
+void *__splitstack_makecontext( std::size_t,
+                                void * [COROUTINES_SEGMENTS],
+                                std::size_t *);
+
+void __splitstack_releasecontext( void * [COROUTINES_SEGMENTS]);
+
+void __splitstack_resetcontext( void * [COROUTINES_SEGMENTS]);
+
+void __splitstack_block_signals_context( void * [COROUTINES_SEGMENTS],
+                                         int * new_value, int * old_value);
+
+void __splitstack_getcontext( void * [COROUTINES_SEGMENTS]);
+
+void __splitstack_setcontext( void * [COROUTINES_SEGMENTS]);
+}
+
+artificial_stack_t::artificial_stack_t(void (*initial_fun)(void), size_t _stack_size) {
     /* Allocate the stack */
-    stack = malloc_aligned(stack_size, getpagesize());
+    stack = __splitstack_makecontext(_stack_size, segments_context, &stack_size);
 
-    /* Tell the operating system that it can unmap the stack space
-    (except for the first page, which we are definitely going to need).
-    This is an optimization to keep memory consumption in check. */
-    guarantee(stack_size >= static_cast<size_t>(getpagesize()));
-    madvise(stack, stack_size - getpagesize(), MADV_DONTNEED);
-
-    /* Protect the end of the stack so that we crash when we get a stack
-    overflow instead of corrupting memory. */
-#ifndef THREADED_COROUTINES
-    mprotect(stack, getpagesize(), PROT_NONE);
-#else
-    /* Instruments hangs when running with mprotect and having object identification enabled.
-    We don't need it for THREADED_COROUTINES anyway, so don't use it then. */
-#endif
-
-    /* Register our stack with Valgrind so that it understands what's going on
-    and doesn't create spurious errors */
-#ifdef VALGRIND
-    valgrind_stack_id = VALGRIND_STACK_REGISTER(stack, (intptr_t)stack + stack_size);
-#endif
+    // TODO! ?
+    int off = 0;
+    __splitstack_block_signals_context(segments_context, &off, 0);
 
     /* Set up the stack... */
 
@@ -113,6 +113,7 @@ artificial_stack_t::artificial_stack_t(void (*initial_fun)(void), size_t _stack_
 
     /* Set up stack pointer. */
     context.pointer = sp;
+    memcpy(context.segments_context, segments_context, sizeof(void *[COROUTINES_SEGMENTS]));
 
     /* Our coroutines never return, so we don't put anything else on the stack.
     */
@@ -130,58 +131,30 @@ artificial_stack_t::~artificial_stack_t() {
     destructor. */
     context.pointer = NULL;
 
-    /* Tell Valgrind the stack is no longer in use */
-#ifdef VALGRIND
-// Disable GCC diagnostic for VALGRIND_STACK_DEREGISTER.  The flag
-// exists only in GCC 4.6 and greater.  See the "reenable" comment
-// after the destructor.
-#if defined(__GNUC__) && (100 * __GNUC__ + __GNUC_MINOR__ >= 406)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
-#endif
-    VALGRIND_STACK_DEREGISTER(valgrind_stack_id);
-// Reenable GCC diagnostic for VALGRIND_STACK_DEREGISTER.
-#if defined(__GNUC__) && (100 * __GNUC__ + __GNUC_MINOR__ >= 406)
-#pragma GCC diagnostic pop
-#endif
-#endif
-
-    /* Undo protections changes */
-#ifndef THREADED_COROUTINES
-    mprotect(stack, getpagesize(), PROT_READ | PROT_WRITE);
-#endif
-
-    /* Return the memory to the operating system right away. This makes
-    sense because we keep our own cache of coroutine stacks around and
-    don't need to rely on the allocator to optimize for the case of
-    us quickly re-allocating an object of the same size.
-    On OS X we use MADV_FREE. On Linux MADV_FREE is not available,
-    and we use MADV_DONTNEED instead. */
-#ifdef __MACH__
-    madvise(stack, stack_size, MADV_FREE);
-#else
-    madvise(stack, stack_size, MADV_DONTNEED);
-#endif
-
     /* Release the stack we allocated */
-    free(stack);
+    __splitstack_releasecontext(segments_context);
 }
 
-bool artificial_stack_t::address_in_stack(const void *addr) const {
-    return reinterpret_cast<uintptr_t>(addr) >=
+bool artificial_stack_t::address_in_stack(UNUSED const void *addr) const {
+    // TODO! No idea how to implement this with split stacks.
+    return true;
+    /*return reinterpret_cast<uintptr_t>(addr) >=
             reinterpret_cast<uintptr_t>(get_stack_bound())
         && reinterpret_cast<uintptr_t>(addr) <
-            reinterpret_cast<uintptr_t>(get_stack_base());
+            reinterpret_cast<uintptr_t>(get_stack_base());*/
 }
 
-bool artificial_stack_t::address_is_stack_overflow(const void *addr) const {
-    void *addr_base =
+bool artificial_stack_t::address_is_stack_overflow(UNUSED const void *addr) const {
+    return false;
+    // TODO! No idea how to implement this with split stacks.
+    /*void *addr_base =
         reinterpret_cast<void *>(floor_aligned(reinterpret_cast<uintptr_t>(addr),
                                                getpagesize()));
-    return get_stack_bound() == addr_base;
+    return get_stack_bound() == addr_base;*/
 }
 
 size_t artificial_stack_t::free_space_below(const void *addr) const {
+    // TODO!
     guarantee(address_in_stack(addr) && !address_is_stack_overflow(addr));
     // The bottom page is protected and used to detect stack overflows. Everything
     // above that is usable space.
@@ -220,7 +193,13 @@ void context_switch(artificial_stack_context_ref_t *current_context_out, artific
     void *dest_pointer = dest_context_in->pointer;
     dest_context_in->pointer = NULL;
 
+    __splitstack_getcontext(current_context_out->segments_context);
+    __splitstack_setcontext(dest_context_in->segments_context);
+
     lightweight_swapcontext(&current_context_out->pointer, dest_pointer);
+
+    // TODO! Do we actually return here? Guess we do.
+    __splitstack_setcontext(current_context_out->segments_context);
 }
 
 asm(
