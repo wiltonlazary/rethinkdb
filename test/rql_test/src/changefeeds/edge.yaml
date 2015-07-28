@@ -108,7 +108,7 @@ tests:
     - rb: tbl.map(nondetermmap).changes(squash:false)
       js: tbl.map(nondetermmap).changes({squash:false})
       py: tbl.map(nondetermmap).changes(squash=False)
-      ot: err('RqlRuntimeError', 'Cannot call `changes` after a non-deterministic function.')
+      ot: err('RqlLogicError', 'Cannot call `changes` after a non-deterministic function.')
 
     - rb: postmap_changes3 = tbl.changes(squash:false).map(nondetermmap).limit(100)
       js: postmap_changes3 = tbl.changes({squash:false}).map(nondetermmap).limit(100)
@@ -117,7 +117,7 @@ tests:
     - rb: tbl.filter(nondetermfilter).changes(squash:false)
       js: tbl.filter(nondetermfilter).changes({squash:false})
       py: tbl.filter(nondetermfilter).changes(squash=False)
-      ot: err('RqlRuntimeError', 'Cannot call `changes` after a non-deterministic function.')
+      ot: err('RqlLogicError', 'Cannot call `changes` after a non-deterministic function.')
 
     - rb: postfilter_changes3 = tbl.changes(squash:false).filter(nondetermfilter).limit(4)
       js: postfilter_changes3 = tbl.changes({squash:false}).filter(nondetermfilter).limit(4)
@@ -189,7 +189,7 @@ tests:
       testopts:
         reql-query: False
 
-    - ot: err('RqlRuntimeError', "No attribute `dummy` in object.")
+    - ot: err('RqlNonExistenceError', "No attribute `dummy` in object.")
       py: "sorted([int(x['new_val']['value']) for x in postmap_changes1])"
       rb: (postmap_changes1.map { |x| x['new_val']['value'].to_i }).sort
       js:
@@ -201,7 +201,7 @@ tests:
       testopts:
         reql-query: False
 
-    - ot: err('RqlRuntimeError', "Index out of bounds:" + " 1")
+    - ot: err('RqlNonExistenceError', "Index out of bounds:" + " 1")
       py: "sorted([int(x['new_val']['value']) for x in postmap_changes2])"
       rb: (postmap_changes2.map { |x| x['new_val']['value'].to_i }).sort
       js:
@@ -213,7 +213,7 @@ tests:
       testopts:
         reql-query: False
 
-    - ot: err('RqlRuntimeError', "dummy")
+    - ot: err('RqlUserError', "dummy")
       py: "sorted([int(x['new_val']['value']) for x in postmap_changes3])"
       rb: (postmap_changes3.map { |x| x['new_val']['value'].to_i }).sort
       js:

@@ -85,13 +85,7 @@ class DatabasesContainer extends Backbone.View
                     replicas_ready: table('shards').default([]).map((shard) ->
                         shard('replicas').filter((replica) ->
                             replica('state').eq('ready')).count()).sum()
-                    # TODO: remove this after #4374 is completed
-                    status: table('status').default(
-                        all_replicas_ready: false
-                        ready_for_reads: false
-                        ready_for_writes: false
-                        ready_for_outdated_reads: false
-                    )
+                    status: table('status')
                     id: table('id')
                 )
 
@@ -140,10 +134,10 @@ class DatabasesListView extends Backbone.View
             @databases_view.push view
             @$el.append view.render().$el
 
-        if @container.loading
-            @$el.html @template.loading_databases()
-        else if @collection.length is 0
+        if @collection.length is 0
             @$el.html @template.no_databases()
+        else if @container.loading
+            @$el.html @template.loading_databases()
 
         @listenTo @collection, 'add', (database) =>
             new_view = new DatabaseView
