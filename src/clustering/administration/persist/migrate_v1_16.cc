@@ -179,57 +179,221 @@ void migrate_databases(const cluster_semilattice_metadata_t &metadata,
     out->write(mdkey_cluster_semilattices(), new_metadata, nullptr);
 }
 
+region_map_t<version_range_t> to_version_range_map(const region_map_t<binary_blob_t> &blob_map) {
+    return blob_map.map(blob_map.get_domain(),
+        [&] (const binary_blob_t &b) -> version_range_t {
+            return binary_blob_t::get<version_range_t>(b);
+        });
+}
+
 void migrate_tables(io_backender_t *io_backender,
                     serializer_t *serializer,
                     const base_path_t &base_path,
+                    bool erase_inconsistent_data,
                     const cluster_semilattice_metadata_t &metadata,
                     const branch_history_t &branch_history,
                     metadata_file_t::write_txn_t *out) {
     dummy_cache_balancer_t balancer(GIGABYTE);
     auto &tables = metadata.rdb_namespaces.namespaces;
     pmap(tables.begin(), tables.end(), [&] (std::pair<namespace_id_t, namespace_semilattice_metadata_t> &info) {
-            if (!pair->second.is_deleted()) {
+            if (!info->second.is_deleted()) {
                 try {
-                    rdb_protocol_t::store_t(region_t::universe(),
-                                            serializer,
-                                            &balancer,
-                                            uuid_to_str(pair->first),
-                                            false,
-                                            &get_global_perfmon_collection(),
-                                            nullptr,
-                                            io_backender,
-                                            base_path,
-                                            scoped_ptr_t<outdated_index_report_t>(),
-                                            pair->first);
-                    // Read out branch ids for each region
+                    rdb_protocol_t::store_t store(region_t::universe(),
+                                                  serializer,
+                                                  &balancer,
+                                                  uuid_to_str(info->first),
+                                                  false,
+                                                  &get_global_perfmon_collection(),
+                                                  nullptr,
+                                                  io_backender,
+                                                  base_path,
+                                                  scoped_ptr_t<outdated_index_report_t>(),
+                                                  info->first);
+                    migrate_branch_ids(
+                        branch_history,
+                        info->first,
+                        to_version_range_map(
+                            store.get_metainfo(order_token_t::ignore,
+                                                &token,
+                                                store.get_region(),
+                                                nullptr)));
 
-                    // Read out each secondary index (for each region?)
+                    migrate_active_table(info->first,
+                                         info->second.get(),
+                                         metadata.servers,
+                                         store.sindex_list(nullptr),
+                                         out);
                 } catch () {
-                    // TODO: what happens when a table file isn't there?
+                    // TODO: how does this fail if the table file is missing?
+                    // TODO: do we need to do branch ids if the table isn't active on this server?
+                    migrate_inactive_table(info->first, info->second.get(), out);
                 }
             } else {
-
+                // Nothing is stored on disk for deleted tables
             }
          });
+
+    // Loop over tables again and rewrite the metainfo blob using version_ts instead of version_range_ts
+    // This should be the last thing done because afterwards the table files will be incompatible with previous versions
 }
 
 void migrate_branch_ids(const branch_history_t &branch_history,
                         const namespace_id_t &table_id,
-                        const region_map_t<version_t> &versions,
+                        const region_map_t<version_range_t> &versions,
+                        bool erase_inconsistent_data,
                         metadata_file_t::write_txn_t *out) {
+    std::set<branch_id_t> seen_branches;
+    std::queue<branch_id_t> branches_to_save;
     for (auto const &pair : versions) {
-        mdprefix_branch_birth_certificate().suffix(
-            uuid_to_str(table_id) + "/" + uuid_to_str(branch_id),
+        if (!pair.second.is_coherent()) {
+            if (!erase_inconsistent_data) {
+                fail_due_to_user_error("retry with flag to erase inconsistent data"); // TODO: better message
+            } else {
+                // The data is in an unrecoverable state, but there should be coherent
+                // data elsewhere in the cluster, this may be reset later.
+            }
+        } else if (seen_branches.count(pair.second.earliest) == 0) {
+            seen_branches.insert(pair.second.earliest);
+            branches_to_save.push(pair.second.earliest);
+        }
+    }
+
+    while (!branches_to_save.empty()) {
+        auto branch_it = branch_history.branches.find(branches_to_save.front());
+        guarantee(branch_it != branch_history.branches.end());
+        branches_to_save.pop();
+
+        region_t region = branch_it->second.get_domain();
+        guarantee(branch_it->second.region == region);
+
+        ::branch_birth_certificate_t new_birth_certificate;
+        new_birth_certificate.initial_timestamp = branch_it->second.initial_timestamp;
+        new_birth_certificate.origin = branch_it->second.origin.map(region,
+            [&] (const version_range_t &v) -> ::version_t {
+                guarantee(v.is_coherent());
+                if (seen_branches.count(v.earliest) == 0) {
+                    seen_branches.insert(v.earliest);
+                    branches_to_save.push(v.earliest);
+                }
+                return v.earliest();
+            });
+
+        out->write(mdprefix_branch_birth_certificate().suffix(
+                       uuid_to_str(table_id) + "/" + uuid_to_str(branch_it->first))
+                   new_birth_certificate, nullptr);
     }
 }
 
-void migrate_cluster_metadata (io_backender_t *io_backender,
-                               serializer_t *serializer,
-                               const base_path_t &base_path,
-                               txn_t *txn,
-                               buf_parent_t buf_parent,
-                               const void *old_superblock,
-                               metadata_file_t::write_txn_t *new_output) {
+// This function will use a new uuid rather than the timestamp's tiebreaker because
+// we are combining multiple timestamps into one - we could potentially lose changes across
+// the cluster.  Rather than have conflicting data in the committed raft log under the same
+// epoch (on two different servers), we may instead lose a configuration change.  This should
+// only realistically happen if configuration changes were made while the cluster was in the
+// process of shutting down before the upgrade.
+template <typename ...Args>
+multi_table_manager_timestamp_t max_versioned_timestamp(const versioned_t<Args> &v...) {
+    std::vector<time_t> times = { v.get_timestamp()... };
+    auto it = std::max_element(times.begin(), times.end());
+    size_t offset = it - times.begin();
+
+    multi_table_manager_timestamp_t res;
+    res.epoch.timestamp = times[offset];
+    res.epoch.id = generate_uuid();
+    res.log_index = 1; // We will always migrate in exactly one log entry for this epoch
+    return res;
+}
+
+void migrate_inactive_table(const namespace_id_t &table_id,
+                            const namespace_semilattice_metadata_t &table_metadata,
+                            metadata_file_t::write_txn_t *out) {
+    // We want to stamp this with the maximum timestamp seen in the table's metadata
+    table_inactive_persistent_state_t state;
+    state.timestamp = max_versioned_timestamp(table_metadata.name,
+                                              table_metadata.database,
+                                              table_metadata.primary_key);
+    state.second_hand_config.name = table_metadata.name.get();
+    state.second_hand_config.database = table_metadata.database.get();
+    state.second_hand_config.primary_key = table_metadata.primary_key.get();
+
+    out->write(mdprefix_table_inactive().suffix(uuid_to_str(table_id)), state, nullptr);
+
+}
+
+void migrate_active_table(const server_id_t &this_server_id,
+                          const namespace_id_t &table_id,
+                          const namespace_semilattice_metadata_t &table_metadata,
+                          const servers_semilattice_metadata_t &servers_metadata,
+                          const std::map<std::string, std::pair<sindex_config_t, sindex_status_t> > &sindexes,
+                          metadata_file_t::write_txn_t *out) {
+    const table_replication_info_t &old_config = table_metadata.replication_info.get();
+    raft_member_id_t own_raft_id(generate_uuid());
+    table_active_persistent_state_t active_state;
+    active_state.epoch = max_versioned_timestamp(table_metadata.name,
+                                                 table_metadata.database,
+                                                 table_metadata.primary_key,
+                                                 table_metadata.replication_info).epoch;
+    active_state.raft_member_id = own_raft_id;
+    out->write(mdprefix_table_active().suffix(uuid_to_str(table_id)), active_state, nullptr);
+
+    table_raft_state_t raft_state;
+    raft_state.config.config.basic.name = table_metadata.name.get();
+    raft_state.config.config.basic.database = table_metadata.database.get();
+    raft_state.config.config.basic.primary_key = table_metadata.primary_key.get();
+    raft_state.config.config.write_ack_config =
+        old_config.config.write_ack_config.mode == write_ack_config_t::mode_t::single ?
+            ::write_ack_config_t::SINGLE : ::write_ack_config_t::MAJORITY;
+    raft_state.config.config.durability = old_config.durability;
+    raft_state.config.shard_scheme.split_points = old_config.shard_scheme.split_points;
+    raft_state.config.server_names = ;
+
+    std::set<server_id_t> used_servers;
+    for (auto const &s : old_config.config.shards) {
+        ::table_config_t::shard_t new_shard;
+        new_shard.all_replicas = s.replicas;
+        new_shard.primary_replica = s.primary_replica;
+        raft_state.config.config.shards.push_back(std::move(new_shard));
+        used_servers.insert(s.replicas.begin(), s.replicas.end());
+    }
+
+    for (auto const &pair : sindexes) {
+        raft_state.config.config.sindexes.insert(std::make_pair(pair.first, pair.second.first));
+    }
+
+    for (auto const &serv_id : used_servers) {
+        auto serv_it = servers_metadata.servers.find(serv_id);
+        if (serv_it != servers_metadata.servers.end() && !serv_it->second.is_deleted()) {
+            raft_state.config.server_names.emplace(
+                serv_id, std::make_pair(1, serv_it->second.get().name.get()));
+        }
+
+        raft_member_id_t new_raft_id(generate_uuid());
+        raft_state.member_ids.emplace(
+            serv_id,
+            serv_id == this_server_id ?
+                own_raft_id : raft_member_id_t(generate_uuid()));
+    }
+
+    raft_config_t raft_config;
+    config.voting_members.insert(own_raft_id)
+
+    raft_persistent_state_t<table_raft_state_t> persistent_state = 
+        raft_persistent_state_t<table_raft_state_t>::make_initial(raft_state, raft_config);
+
+    // TODO: Is it necessary to have an initial log entry?
+    persistent_state.log.append();
+
+    // The `table_raft_storage_interface_t` constructor will persist the header, snapshot, and logs
+    table_raft_storage_interface_t storage_interface(nullptr, out, table_id, persistent_state, nullptr)
+}
+
+void migrate_cluster_metadata(io_backender_t *io_backender,
+                              serializer_t *serializer,
+                              const base_path_t &base_path,
+                              bool erase_inconsistent_data,
+                              txn_t *txn,
+                              buf_parent_t buf_parent,
+                              const void *old_superblock,
+                              metadata_file_t::write_txn_t *new_output) {
     const cluster_metadata_superblock_t *sb =
         static_cast<const cluster_metadata_superblock_t *>(old_superblock);
     cluster_version_t v = cluster_superblock_version(sb);
@@ -282,7 +446,7 @@ void migrate_cluster_metadata (io_backender_t *io_backender,
 
     migrate_server(sb->server_id, metadata, new_output);
     migrate_databases(metadata, new_output);
-    migrate_tables(io_backender, serializer, base_path, metadata, branch_history, new_output);
+    migrate_tables(io_backender, serializer, base_path, erase_inconsistent_data, metadata, branch_history, new_output);
 }
 
 void migrate_auth_file(io_backender_t *io_backender,
