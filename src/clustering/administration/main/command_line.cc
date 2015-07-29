@@ -40,7 +40,7 @@
 #include "clustering/administration/main/path.hpp"
 #include "clustering/administration/persist/file.hpp"
 #include "clustering/administration/persist/file_keys.hpp"
-#include "clustering/administration/persist/migrate_v1_16.hpp"
+#include "clustering/administration/persist/migrate/migrate_v1_16.hpp"
 #include "clustering/administration/servers/server_metadata.hpp"
 #include "logger.hpp"
 
@@ -749,7 +749,6 @@ void run_rethinkdb_serve(const base_path_t &base_path,
         if (our_server_id != nullptr && cluster_metadata != nullptr) {
             metadata_file.init(new metadata_file_t(
                 &io_backender,
-                base_path,
                 get_cluster_metadata_filename(base_path),
                 &metadata_perfmon_collection,
                 [&](metadata_file_t::write_txn_t *write_txn, signal_t *interruptor) {
@@ -771,7 +770,9 @@ void run_rethinkdb_serve(const base_path_t &base_path,
         } else {
             metadata_file.init(new metadata_file_t(
                 &io_backender,
+                base_path,
                 get_cluster_metadata_filename(base_path),
+                false, // TODO: get 'erase_consistent_data' from command-line flag
                 &metadata_perfmon_collection,
                 &non_interruptor));
             /* The `metadata_file_t` constructor will migrate the main metadata if it
@@ -781,7 +782,7 @@ void run_rethinkdb_serve(const base_path_t &base_path,
                 {
                     metadata_file_t::write_txn_t txn(metadata_file.get(),
                                                      &non_interruptor);
-                    migrate_v1_16::migrate_auth_file(&io_backender, auth_path, &txn);
+                    migrate_auth_metadata_to_v2_1(&io_backender, auth_path, &txn);
                     /* End the inner scope here so we flush the new metadata file before
                     we delete the old auth file */
                 }

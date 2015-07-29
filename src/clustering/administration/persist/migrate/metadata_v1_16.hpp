@@ -1,28 +1,35 @@
 // Copyright 2010-2015 RethinkDB, all rights reserved.
-#ifndef CLUSTERING_ADMINISTRATION_PERSIST_V1_16_HPP_
-#define CLUSTERING_ADMINISTRATION_PERSIST_V1_16_HPP_
+#ifndef CLUSTERING_ADMINISTRATION_PERSIST_MIGRATE_METADATA_V1_16_HPP_
+#define CLUSTERING_ADMINISTRATION_PERSIST_MIGRATE_METADATA_V1_16_HPP_
 
+#include <map>
+#include <set>
 #include <string>
+#include <vector>
 
+#include "errors.hpp"
+#include <boost/optional.hpp>
+
+#include "btree/keys.hpp"
 #include "buffer_cache/types.hpp"
-#include "clustering/administration/metadata.hpp"
-#include "clustering/administration/persist/file.hpp"
-#include "containers/scoped.hpp"
-#include "rpc/semilattice/view.hpp"
-#include "serializer/types.hpp"
+#include "containers/auth_key.hpp"
+#include "containers/name_string.hpp"
+#include "containers/uuid.hpp"
+#include "region/region_map.hpp"
+#include "rpc/semilattice/joins/deletable.hpp"
+#include "rpc/semilattice/joins/versioned.hpp"
+#include "rpc/semilattice/joins/macros.hpp"
+#include "timestamps.hpp"
 
-namespace migrate_v1_16 {
+namespace metadata_v1_16 {
 
-// TODO: consider removing structures that haven't changed during migration
-//   possibly just `version_t` and `database(s)_semilattice_metadata_t`
-class version_t {
-public:
-    version_t() { }
+struct version_t {
     branch_id_t branch;
     state_timestamp_t timestamp;
 };
 
 RDB_DECLARE_SERIALIZABLE(version_t);
+RDB_DECLARE_EQUALITY_COMPARABLE(version_t);
 
 /* `version_range_t` is a pair of `version_t`s. The meta-info, which is stored
    in the superblock of the B-tree, records a `version_range_t` for each range of
@@ -35,13 +42,13 @@ RDB_DECLARE_SERIALIZABLE(version_t);
    point between the version the B-tree was at before the backfill started and the
    version that the backfiller is at. */
 
-class version_range_t {
-public:
-    version_range_t() { }
-    version_t earliest, latest;
+struct version_range_t {
+    version_t earliest;
+    version_t latest;
 };
 
 RDB_DECLARE_SERIALIZABLE(version_range_t);
+RDB_DECLARE_EQUALITY_COMPARABLE(version_range_t);
 
 struct branch_birth_certificate_t {
     region_t region;
@@ -98,7 +105,9 @@ ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(write_ack_config_t::mode_t, int8_t,
                                       write_ack_config_t::mode_t::single,
                                       write_ack_config_t::mode_t::complex);
 RDB_DECLARE_SERIALIZABLE(write_ack_config_t::req_t);
+RDB_DECLARE_EQUALITY_COMPARABLE(write_ack_config_t::req_t);
 RDB_DECLARE_SERIALIZABLE(write_ack_config_t);
+RDB_DECLARE_EQUALITY_COMPARABLE(write_ack_config_t);
 
 struct table_config_t {
     struct shard_t {
@@ -107,22 +116,19 @@ struct table_config_t {
     };
     std::vector<shard_t> shards;
     write_ack_config_t write_ack_config;
-    write_durability_t durability;
+    ::write_durability_t durability;
 };
 
-RDB_DECLARE_SERIALIZABLE(table_config_t);
 RDB_DECLARE_SERIALIZABLE(table_config_t::shard_t);
-RDB_DECLARE_EQUALITY_COMPARABLE(table_config_t);
 RDB_DECLARE_EQUALITY_COMPARABLE(table_config_t::shard_t);
+RDB_DECLARE_SERIALIZABLE(table_config_t);
+RDB_DECLARE_EQUALITY_COMPARABLE(table_config_t);
 
 struct table_shard_scheme_t {
-    std::vector<store_key_t> split_points;
-
     size_t num_shards() const;
     key_range_t get_shard_range(size_t i) const;
-    size_t find_shard_for_key(const store_key_t &key) const;
 
-    static table_shard_scheme_t one_shard();
+    std::vector<store_key_t> split_points;
 };
 
 RDB_DECLARE_SERIALIZABLE(table_shard_scheme_t);
@@ -152,8 +158,6 @@ struct namespaces_semilattice_metadata_t {
 RDB_DECLARE_SERIALIZABLE(namespaces_semilattice_metadata_t);
 
 struct cluster_semilattice_metadata_t {
-    cluster_semilattice_metadata_t() { }
-
     namespaces_semilattice_metadata_t rdb_namespaces;
     servers_semilattice_metadata_t servers;
     databases_semilattice_metadata_t databases;
@@ -161,16 +165,12 @@ struct cluster_semilattice_metadata_t {
 
 RDB_DECLARE_SERIALIZABLE(cluster_semilattice_metadata_t);
 
-void migrate_cluster_metadata(
-    txn_t *txn,
-    buf_parent_t buf_parent,
-    const void *old_superblock,
-    metadata_file_t::write_txn_t *destination);
+struct auth_semilattice_metadata_t {
+    versioned_t<auth_key_t> auth_key;
+};
 
-void migrate_auth_file(
-    const serializer_filepath_t &path,
-    metadata_file_t::write_txn_t *destination);
+RDB_DECLARE_SERIALIZABLE(auth_semilattice_metadata_t);
 
-} // namespace migrate_v1_16
+} // namespace metadata_v1_16
 
-#endif /* CLUSTERING_ADMINISTRATION_PERSIST_V1_16_HPP_ */
+#endif /* CLUSTERING_ADMINISTRATION_PERSIST_MIGRATE_METADATA_V1_16_HPP_ */

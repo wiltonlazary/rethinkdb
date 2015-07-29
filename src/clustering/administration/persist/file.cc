@@ -6,7 +6,7 @@
 #include "buffer_cache/blob.hpp"
 #include "buffer_cache/cache_balancer.hpp"
 #include "buffer_cache/serialize_onto_blob.hpp"
-#include "clustering/administration/persist/migrate_v1_16.hpp"
+#include "clustering/administration/persist/migrate/migrate_v1_16.hpp"
 #include "config/args.hpp"
 #include "serializer/log/log_serializer.hpp"
 #include "serializer/merger.hpp"
@@ -289,7 +289,9 @@ void metadata_file_t::write_txn_t::write_bin(
 
 metadata_file_t::metadata_file_t(
         io_backender_t *io_backender,
+        const base_path_t &base_path,
         const serializer_filepath_t &filename,
+        bool erase_inconsistent_data,
         perfmon_collection_t *perfmon_parent,
         signal_t *interruptor) :
     btree_stats(perfmon_parent, "metadata")
@@ -315,15 +317,16 @@ metadata_file_t::metadata_file_t(
                 "created by versions older than RethinkDB 1.14.");
             break;
         }
+        case superblock_version_t::pre_1_16: // fallthrough intentional
         case superblock_version_t::from_1_16_to_2_0: {
             scoped_malloc_t<void> sb_copy(cache->max_block_size().value());
             memcpy(sb_copy.get(), sb_data, cache->max_block_size().value());
             init_metadata_superblock(sb_data, cache->max_block_size().value());
             sb_write.reset();
             sb_lock.reset();
-            migrate_v1_16::migrate_cluster_metadata(
-                io_backender, serializer.get(),
-                &write_txn.txn, buf_parent_t(&write_txn.txn), sb_copy.get(), &write_txn);
+            migrate_cluster_metadata_to_v2_1(
+                io_backender, serializer.get(), base_path, erase_inconsistent_data,
+                buf_parent_t(&write_txn.txn), sb_copy.get(), &write_txn);
             break;
         }
         case superblock_version_t::post_2_1: {

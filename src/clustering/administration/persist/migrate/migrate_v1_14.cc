@@ -1,41 +1,11 @@
-#include "clustering/administration/persist/migrate_pre_v1_16.hpp"
+// Copyright 2010-2015 RethinkDB, all rights reserved.
+#include "clustering/administration/persist/migrate/migrate_v1_14.hpp"
 
-namespace pre_v1_16 {
-
-RDB_IMPL_SERIALIZABLE_1(persistable_blueprint_t, machines_roles);
-INSTANTIATE_DESERIALIZE_SINCE_v1_13(persistable_blueprint_t);
-RDB_IMPL_SERIALIZABLE_1(database_semilattice_metadata_t, name);
-INSTANTIATE_DESERIALIZE_SINCE_v1_13(database_semilattice_metadata_t);
-RDB_IMPL_SERIALIZABLE_1(databases_semilattice_metadata_t, databases);
-INSTANTIATE_DESERIALIZE_SINCE_v1_13(databases_semilattice_metadata_t);
-RDB_IMPL_SERIALIZABLE_1(datacenter_semilattice_metadata_t, name);
-INSTANTIATE_DESERIALIZE_SINCE_v1_13(datacenter_semilattice_metadata_t);
-RDB_IMPL_SERIALIZABLE_1(datacenters_semilattice_metadata_t, datacenters);
-INSTANTIATE_DESERIALIZE_SINCE_v1_13(datacenters_semilattice_metadata_t);
-RDB_IMPL_SERIALIZABLE_2(machine_semilattice_metadata_t, datacenter, name);
-INSTANTIATE_DESERIALIZE_SINCE_v1_13(machine_semilattice_metadata_t);
-RDB_IMPL_SERIALIZABLE_1(machines_semilattice_metadata_t, machines);
-INSTANTIATE_DESERIALIZE_SINCE_v1_13(machines_semilattice_metadata_t);
-RDB_IMPL_SERIALIZABLE_2(ack_expectation_t, expectation_, hard_durability_);
-INSTANTIATE_DESERIALIZE_SINCE_v1_13(ack_expectation_t);
-RDB_IMPL_SERIALIZABLE_10(namespace_semilattice_metadata_t,
-                         blueprint, primary_datacenter, replica_affinities,
-                         ack_expectations, shards, name, primary_pinnings,
-                         secondary_pinnings, primary_key, database);
-INSTANTIATE_DESERIALIZE_SINCE_v1_13(namespace_semilattice_metadata_t);
-RDB_IMPL_SERIALIZABLE_1(namespaces_semilattice_metadata_t, namespaces);
-INSTANTIATE_DESERIALIZE_SINCE_v1_13(namespaces_semilattice_metadata_t);
-RDB_IMPL_SERIALIZABLE_4(cluster_semilattice_metadata_t,
-                        rdb_namespaces, machines, datacenters, databases);
-INSTANTIATE_DESERIALIZE_SINCE_v1_13(cluster_semilattice_metadata_t);
-RDB_IMPL_SERIALIZABLE_1(auth_semilattice_metadata_t, auth_key);
-INSTANTIATE_DESERIALIZE_SINCE_v1_13(auth_semilattice_metadata_t);
-
-} // namespace pre_v1_16
+#include "logger.hpp"
 
 template<class T>
 T get_vclock_best(
-        const pre_v1_16::vclock_t<T> &vclock,
+        const metadata_v1_14::vclock_t<T> &vclock,
         int *best_total_out) {
     guarantee(!vclock.values.empty());
     /* If there are multiple versions in the vector clock, choose the one with the
@@ -43,7 +13,7 @@ T get_vclock_best(
     choose the most recently modified version. */
     int best_total = -1;
     T best_value;
-    for (const typename pre_v1_16::vclock_t<T>::stamped_value_t &value : vclock.values) {
+    for (const typename metadata_v1_14::vclock_t<T>::stamped_value_t &value : vclock.values) {
         int total = 0;
         for (const auto &pair : value.first) {
             total += pair.second;
@@ -62,7 +32,7 @@ T get_vclock_best(
 
 template<class old_t, class new_t>
 versioned_t<new_t> migrate_vclock_transform(
-        const pre_v1_16::vclock_t<old_t> &vclock,
+        const metadata_v1_14::vclock_t<old_t> &vclock,
         const std::function<new_t(const old_t &)> &converter) {
     int best_total;
     old_t best_value = get_vclock_best(vclock, &best_total);
@@ -78,7 +48,7 @@ versioned_t<new_t> migrate_vclock_transform(
 
 template<class T>
 versioned_t<T> migrate_vclock(
-        const pre_v1_16::vclock_t<T> &vclock) {
+        const metadata_v1_14::vclock_t<T> &vclock) {
     return migrate_vclock_transform<T, T>(vclock, [](const T &v) { return v; });
 }
 
@@ -87,7 +57,7 @@ the unit test and this file uses `migrate_vclock()`, we don't put it in the head
 instead, the unit test declares it and we explicitly instantiate it here. */
 template
 versioned_t<std::string> migrate_vclock<std::string>(
-    const pre_v1_16::vclock_t<std::string> &);
+    const metadata_v1_14::vclock_t<std::string> &);
 
 template<class old_t, class new_t>
 std::map<uuid_u, deletable_t<new_t> > migrate_map(
@@ -106,9 +76,9 @@ std::map<uuid_u, deletable_t<new_t> > migrate_map(
     return new_map;
 }
 
-database_semilattice_metadata_t migrate_database(
-        const pre_v1_16::database_semilattice_metadata_t &old_md) {
-    database_semilattice_metadata_t new_md;
+metadata_v1_16::database_semilattice_metadata_t migrate_database(
+        const metadata_v1_14::database_semilattice_metadata_t &old_md) {
+    metadata_v1_16::database_semilattice_metadata_t new_md;
     new_md.name = migrate_vclock_transform<name_string_t, name_string_t>(
         old_md.name,
         [](const name_string_t &old_name) -> name_string_t {
@@ -124,28 +94,28 @@ database_semilattice_metadata_t migrate_database(
     return new_md;
 }
 
-databases_semilattice_metadata_t migrate_databases(
-        const pre_v1_16::databases_semilattice_metadata_t &old_md) {
-    databases_semilattice_metadata_t new_md;
+metadata_v1_16::databases_semilattice_metadata_t migrate_databases(
+        const metadata_v1_14::databases_semilattice_metadata_t &old_md) {
+    metadata_v1_16::databases_semilattice_metadata_t new_md;
     new_md.databases = migrate_map<
-            pre_v1_16::database_semilattice_metadata_t,
-            database_semilattice_metadata_t>(
+            metadata_v1_14::database_semilattice_metadata_t,
+            metadata_v1_16::database_semilattice_metadata_t>(
         old_md.databases,
-        [&](const pre_v1_16::database_semilattice_metadata_t &old_database) {
+        [&](const metadata_v1_14::database_semilattice_metadata_t &old_database) {
             return migrate_database(old_database);
         });
     return new_md;
 }
 
-server_semilattice_metadata_t migrate_server(
-        const pre_v1_16::machine_semilattice_metadata_t &old_md,
-        const pre_v1_16::datacenters_semilattice_metadata_t &datacenters) {
-    server_semilattice_metadata_t new_md;
+metadata_v1_16::server_semilattice_metadata_t migrate_server(
+        const metadata_v1_14::machine_semilattice_metadata_t &old_md,
+        const metadata_v1_14::datacenters_semilattice_metadata_t &datacenters) {
+    metadata_v1_16::server_semilattice_metadata_t new_md;
     new_md.name = migrate_vclock(old_md.name);
     new_md.tags = migrate_vclock_transform<
-            pre_v1_16::datacenter_id_t, std::set<name_string_t> >(
+            metadata_v1_14::datacenter_id_t, std::set<name_string_t> >(
         old_md.datacenter,
-        [&](const pre_v1_16::datacenter_id_t &dc) -> std::set<name_string_t> {
+        [&](const metadata_v1_14::datacenter_id_t &dc) -> std::set<name_string_t> {
             std::set<name_string_t> tags;
             tags.insert(name_string_t::guarantee_valid("default"));
             auto it = datacenters.datacenters.find(dc);
@@ -157,35 +127,35 @@ server_semilattice_metadata_t migrate_server(
     return new_md;
 }
 
-servers_semilattice_metadata_t migrate_servers(
-        const pre_v1_16::machines_semilattice_metadata_t &old_md,
-        const pre_v1_16::datacenters_semilattice_metadata_t &datacenters) {
-    servers_semilattice_metadata_t new_md;
+metadata_v1_16::servers_semilattice_metadata_t migrate_servers(
+        const metadata_v1_14::machines_semilattice_metadata_t &old_md,
+        const metadata_v1_14::datacenters_semilattice_metadata_t &datacenters) {
+    metadata_v1_16::servers_semilattice_metadata_t new_md;
     new_md.servers = migrate_map<
-            pre_v1_16::machine_semilattice_metadata_t,
-            server_semilattice_metadata_t>(
+            metadata_v1_14::machine_semilattice_metadata_t,
+            metadata_v1_16::server_semilattice_metadata_t>(
         old_md.machines,
-        [&](const pre_v1_16::machine_semilattice_metadata_t &old_machine) {
+        [&](const metadata_v1_14::machine_semilattice_metadata_t &old_machine) {
             return migrate_server(old_machine, datacenters);
         });
     return new_md;
 }
 
-write_ack_config_t::req_t migrate_ack_req(
+metadata_v1_16::write_ack_config_t::req_t migrate_ack_req(
         int num_acks,
         std::set<server_id_t> replicas_for_acks,
-        const std::vector<table_config_t::shard_t> &config_shards,
+        const std::vector<metadata_v1_16::table_config_t::shard_t> &config_shards,
         name_string_t table_name,
         name_string_t db_name,
         const std::string &where) {
     guarantee(num_acks != 0);
-    write_ack_config_t::req_t req;
+    metadata_v1_16::write_ack_config_t::req_t req;
     req.replicas = replicas_for_acks;
     if (num_acks == 1) {
-        req.mode = write_ack_config_t::mode_t::single;
+        req.mode = metadata_v1_16::write_ack_config_t::mode_t::single;
     } else {
         int largest = 0;
-        for (const table_config_t::shard_t &shard : config_shards) {
+        for (const metadata_v1_16::table_config_t::shard_t &shard : config_shards) {
             int overlap = 0;
             for (const server_id_t &server : shard.replicas) {
                 overlap += replicas_for_acks.count(server);
@@ -202,20 +172,20 @@ write_ack_config_t::req_t migrate_ack_req(
                 db_name.c_str(), table_name.c_str(), num_acks, where.c_str(),
                 majority_equivalent);
         }
-        req.mode = write_ack_config_t::mode_t::majority;
+        req.mode = metadata_v1_16::write_ack_config_t::mode_t::majority;
     }
     return req;
 }
 
 std::set<server_id_t> get_servers_in_dc(
-        const pre_v1_16::machines_semilattice_metadata_t &machines,
-        const pre_v1_16::datacenter_id_t &dc) {
+        const metadata_v1_14::machines_semilattice_metadata_t &machines,
+        const metadata_v1_14::datacenter_id_t &dc) {
     std::set<server_id_t> servers;
     for (const auto &pair : machines.machines) {
         if (pair.second.is_deleted()) {
             continue;
         }
-        pre_v1_16::datacenter_id_t server_dc =
+        metadata_v1_14::datacenter_id_t server_dc =
             get_vclock_best(pair.second.get_ref().datacenter, nullptr);
         if (server_dc == dc) {
             servers.insert(pair.first);
@@ -225,8 +195,8 @@ std::set<server_id_t> get_servers_in_dc(
 }
 
 name_string_t get_name_of_dc(
-        const pre_v1_16::datacenters_semilattice_metadata_t &datacenters,
-        const pre_v1_16::datacenter_id_t &dc) {
+        const metadata_v1_14::datacenters_semilattice_metadata_t &datacenters,
+        const metadata_v1_14::datacenter_id_t &dc) {
     auto it = datacenters.datacenters.find(dc);
     if (it == datacenters.datacenters.end() || it->second.is_deleted()) {
         return name_string_t::guarantee_valid("__deleted_datacenter__");
@@ -235,13 +205,13 @@ name_string_t get_name_of_dc(
     }
 }
 
-namespace_semilattice_metadata_t migrate_table(
-        const pre_v1_16::namespace_semilattice_metadata_t &old_md,
+metadata_v1_16::namespace_semilattice_metadata_t migrate_table(
+        const metadata_v1_14::namespace_semilattice_metadata_t &old_md,
         /* We need the databases, datacenters, and machines as context */
-        const pre_v1_16::databases_semilattice_metadata_t &databases,
-        const pre_v1_16::datacenters_semilattice_metadata_t &datacenters,
-        const pre_v1_16::machines_semilattice_metadata_t &machines) {
-    namespace_semilattice_metadata_t new_md;
+        const metadata_v1_14::databases_semilattice_metadata_t &databases,
+        const metadata_v1_14::datacenters_semilattice_metadata_t &datacenters,
+        const metadata_v1_14::machines_semilattice_metadata_t &machines) {
+    metadata_v1_16::namespace_semilattice_metadata_t new_md;
 
     /* Migrate the easy fields */
     new_md.name = migrate_vclock(old_md.name);
@@ -258,15 +228,15 @@ namespace_semilattice_metadata_t migrate_table(
         db_name = name_string_t::guarantee_valid("__deleted_database__");
     }
 
-    table_replication_info_t repli_info;
+    metadata_v1_16::table_replication_info_t repli_info;
 
     /* Extract the data we'll need for the more complicated translations. We store the
     vclock totals individually and we'll add them together at the end. */
     int blueprint_vclock_total;
-    pre_v1_16::persistable_blueprint_t blueprint =
+    metadata_v1_14::persistable_blueprint_t blueprint =
         get_vclock_best(old_md.blueprint, &blueprint_vclock_total);
     int acks_vclock_total;
-    std::map<pre_v1_16::datacenter_id_t, pre_v1_16::ack_expectation_t> acks =
+    std::map<metadata_v1_14::datacenter_id_t, metadata_v1_14::ack_expectation_t> acks =
         get_vclock_best(old_md.ack_expectations, &acks_vclock_total);
 
     /* Use the same split points as before */
@@ -287,11 +257,11 @@ namespace_semilattice_metadata_t migrate_table(
     for (const auto &server_roles : blueprint.machines_roles) {
         guarantee(server_roles.second.size() == repli_info.shard_scheme.num_shards());
         for (size_t i = 0; i < repli_info.shard_scheme.num_shards(); ++i) {
-            table_config_t::shard_t *s = &repli_info.config.shards[i];
+            metadata_v1_16::table_config_t::shard_t *s = &repli_info.config.shards[i];
             region_t r = hash_region_t<key_range_t>(
                 repli_info.shard_scheme.get_shard_range(i));
             auto it = server_roles.second.find(r);
-            blueprint_role_t role;
+            metadata_v1_14::blueprint_role_t role;
             if (it == server_roles.second.end()) {
                 /* The reason we handle this instead of crashing is that this
                 hypothetically might happen if the user wrote directly to `/ajax` */
@@ -303,11 +273,11 @@ namespace_semilattice_metadata_t migrate_table(
                 shard, we'll just set it as a secondary replica. This will result in the
                 user's data being replicated too many times but at least they won't lose
                 any data. */
-                role = blueprint_role_secondary;
+                role = metadata_v1_14::blueprint_role_secondary;
             } else {
                 role = it->second;
             }
-            if (role == blueprint_role_primary) {
+            if (role == metadata_v1_14::blueprint_role_primary) {
                 if (!s->primary_replica.is_unset()) {
                     logERR("Metadata corruption detected when migrating to RethinkDB "
                         "1.16 format: table `%s.%s` has two different servers listed as "
@@ -317,16 +287,16 @@ namespace_semilattice_metadata_t migrate_table(
                 }
                 s->primary_replica = server_roles.first;
                 s->replicas.insert(server_roles.first);
-            } else if (role == blueprint_role_secondary) {
+            } else if (role == metadata_v1_14::blueprint_role_secondary) {
                 s->replicas.insert(server_roles.first);
             }
-            if (role != blueprint_role_nothing) {
+            if (role != metadata_v1_14::blueprint_role_nothing) {
                 all_relevant_servers.insert(server_roles.first);
             }
         }
     }
     for (size_t i = 0; i < repli_info.shard_scheme.num_shards(); ++i) {
-        table_config_t::shard_t *s = &repli_info.config.shards[i];
+        metadata_v1_16::table_config_t::shard_t *s = &repli_info.config.shards[i];
         if (s->primary_replica.is_unset()) {
             /* This is probably impossible unless the user was mucking around with
             `/ajax`, but fortunately there's a pretty simple translation that won't break
@@ -361,7 +331,7 @@ namespace_semilattice_metadata_t migrate_table(
         }
         if (pair.second.expectation_ == 1) {
             bool all_primaries_in_datacenter = true;
-            for (const table_config_t::shard_t &shard : repli_info.config.shards) {
+            for (const metadata_v1_16::table_config_t::shard_t &shard : repli_info.config.shards) {
                 if (ack_servers.count(shard.primary_replica) != 1) {
                     all_primaries_in_datacenter = false;
                     break;
@@ -377,7 +347,7 @@ namespace_semilattice_metadata_t migrate_table(
             }
         }
         name_string_t dc_name = get_name_of_dc(datacenters, pair.first);
-        write_ack_config_t::req_t req = migrate_ack_req(
+        metadata_v1_16::write_ack_config_t::req_t req = migrate_ack_req(
             pair.second.expectation_,
             ack_servers,
             repli_info.config.shards,
@@ -392,7 +362,8 @@ namespace_semilattice_metadata_t migrate_table(
         if (num_general_acks == 0) {
             /* This is possible if the user reduced the ack requirement to zero for some
             reason. It's equivalent to a single general ack. */
-            repli_info.config.write_ack_config.mode = write_ack_config_t::mode_t::single;
+            repli_info.config.write_ack_config.mode =
+                metadata_v1_16::write_ack_config_t::mode_t::single;
         } else {
             repli_info.config.write_ack_config.mode = migrate_ack_req(
                 num_general_acks,
@@ -403,9 +374,10 @@ namespace_semilattice_metadata_t migrate_table(
                 "overall").mode;
         }
     } else {
-        repli_info.config.write_ack_config.mode = write_ack_config_t::mode_t::complex;
+        repli_info.config.write_ack_config.mode =
+            metadata_v1_16::write_ack_config_t::mode_t::complex;
         if (num_general_acks > 0) {
-            write_ack_config_t::req_t req = migrate_ack_req(
+            metadata_v1_16::write_ack_config_t::req_t req = migrate_ack_req(
                 /* Pre-v1.16 ack requirements were non-overlapping, so N general acks
                 means N additional acks after all the specific acks are satisfied. v1.16
                 ack requirements are overlapping, so to be equivalent we have to add the
@@ -452,7 +424,7 @@ namespace_semilattice_metadata_t migrate_table(
 
     /* Write `repli_info` back to `new_md`, wrapped in a `versioned_t` */
     new_md.replication_info =
-        versioned_t<table_replication_info_t>::make_with_manual_timestamp(
+        versioned_t<metadata_v1_16::table_replication_info_t>::make_with_manual_timestamp(
             /* Choose the timestamp by adding together the vclock totals from the fields
             on the pre-v1.16 metadata we consulted. This ensures that if we apply this
             procedure to two servers' metadata, and one has a more up-to-date vector
@@ -465,36 +437,36 @@ namespace_semilattice_metadata_t migrate_table(
     return new_md;
 }
 
-namespaces_semilattice_metadata_t migrate_tables(
-        const pre_v1_16::namespaces_semilattice_metadata_t &old_md,
+metadata_v1_16::namespaces_semilattice_metadata_t migrate_tables(
+        const metadata_v1_14::namespaces_semilattice_metadata_t &old_md,
         /* We need the databases, datacenters, and machines as context */
-        const pre_v1_16::databases_semilattice_metadata_t &databases,
-        const pre_v1_16::datacenters_semilattice_metadata_t &datacenters,
-        const pre_v1_16::machines_semilattice_metadata_t &machines) {
-    namespaces_semilattice_metadata_t new_md;
+        const metadata_v1_14::databases_semilattice_metadata_t &databases,
+        const metadata_v1_14::datacenters_semilattice_metadata_t &datacenters,
+        const metadata_v1_14::machines_semilattice_metadata_t &machines) {
+    metadata_v1_16::namespaces_semilattice_metadata_t new_md;
     new_md.namespaces = migrate_map<
-            pre_v1_16::namespace_semilattice_metadata_t,
-            namespace_semilattice_metadata_t>(
+            metadata_v1_14::namespace_semilattice_metadata_t,
+            metadata_v1_16::namespace_semilattice_metadata_t>(
         old_md.namespaces,
-        [&](const pre_v1_16::namespace_semilattice_metadata_t &old_table) {
+        [&](const metadata_v1_14::namespace_semilattice_metadata_t &old_table) {
             return migrate_table(old_table, databases, datacenters, machines);
         });
     return new_md;
 }
 
-cluster_semilattice_metadata_t migrate_cluster_metadata_to_v1_16(
-        const pre_v1_16::cluster_semilattice_metadata_t &old_md) {
-    cluster_semilattice_metadata_t new_md;
-    new_md.rdb_namespaces = migrate_tables(*old_md.rdb_namespaces, old_md.databases,
+metadata_v1_16::cluster_semilattice_metadata_t migrate_cluster_metadata_v1_14_to_v1_16(
+        const metadata_v1_14::cluster_semilattice_metadata_t &old_md) {
+    metadata_v1_16::cluster_semilattice_metadata_t new_md;
+    new_md.rdb_namespaces = migrate_tables(old_md.rdb_namespaces, old_md.databases,
                                            old_md.datacenters, old_md.machines);
     new_md.servers = migrate_servers(old_md.machines, old_md.datacenters);
     new_md.databases = migrate_databases(old_md.databases);
     return new_md;
 }
 
-auth_semilattice_metadata_t migrate_auth_metadata_to_v1_16(
-        const pre_v1_16::auth_semilattice_metadata_t &old_md) {
-    auth_semilattice_metadata_t new_md;
+metadata_v1_16::auth_semilattice_metadata_t migrate_auth_metadata_v1_14_to_v1_16(
+        const metadata_v1_14::auth_semilattice_metadata_t &old_md) {
+    metadata_v1_16::auth_semilattice_metadata_t new_md;
     new_md.auth_key = migrate_vclock(old_md.auth_key);
     return new_md;
 }

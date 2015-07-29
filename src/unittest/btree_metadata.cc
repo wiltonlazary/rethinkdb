@@ -34,7 +34,9 @@ TPTEST(BtreeMetadata, MetadataTest) {
     {
         metadata_file_t file(
             &io_backender,
+            base_path_t("."),
             temp_file.name(),
+            false,
             &get_global_perfmon_collection(),
             &non_interruptor);
         metadata_file_t::read_txn_t txn(&file, &non_interruptor);
@@ -91,7 +93,9 @@ TPTEST(BtreeMetadata, ManyKeysBigValues) {
     {
         metadata_file_t file(
             &io_backender,
+            base_path_t("."),
             temp_file.name(),
+            false,
             &get_global_perfmon_collection(),
             &non_interruptor);
         metadata_file_t::read_txn_t txn(&file, &non_interruptor);
