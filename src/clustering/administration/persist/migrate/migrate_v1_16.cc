@@ -178,10 +178,11 @@ void migrate_branch_ids(const metadata_v1_16::branch_history_t &branch_history,
                         signal_t *interruptor) {
     std::set<branch_id_t> seen_branches;
     std::queue<branch_id_t> branches_to_save;
-    versions.visit(region_t::universe(),
+    versions.visit(versions.get_domain(),
         [&] (const region_t &, const metadata_v1_16::version_range_t &v) {
             if (v.earliest == v.latest) {
-                if (seen_branches.count(v.earliest.branch) == 0) {
+                if (!v.earliest.branch.is_nil() &&
+                    seen_branches.count(v.earliest.branch) == 0) {
                     seen_branches.insert(v.earliest.branch);
                     branches_to_save.push(v.earliest.branch);
                 }
@@ -205,7 +206,8 @@ void migrate_branch_ids(const metadata_v1_16::branch_history_t &branch_history,
         new_birth_certificate.origin = branch_it->second.origin.map(region,
             [&] (const metadata_v1_16::version_range_t &v) -> ::version_t {
                 guarantee(v.earliest == v.latest);
-                if (seen_branches.count(v.earliest.branch) == 0) {
+                if (!v.earliest.branch.is_nil() &&
+                    seen_branches.count(v.earliest.branch) == 0) {
                     seen_branches.insert(v.earliest.branch);
                     branches_to_save.push(v.earliest.branch);
                 }
