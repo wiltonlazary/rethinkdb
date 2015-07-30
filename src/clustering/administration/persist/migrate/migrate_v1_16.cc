@@ -170,16 +170,17 @@ region_map_t<metadata_v1_16::version_range_t> to_version_range_map(const region_
         });
 }
 
-void migrate_branch_ids(const metadata_v1_16::branch_history_t &branch_history,
-                        const namespace_id_t &table_id,
-                        const region_map_t<metadata_v1_16::version_range_t> &versions,
-                        bool erase_inconsistent_data,
-                        metadata_file_t::write_txn_t *out,
-                        signal_t *interruptor) {
+region_map_t<version_t> migrate_branch_ids(
+        const metadata_v1_16::branch_history_t &branch_history,
+        const namespace_id_t &table_id,
+        const region_map_t<metadata_v1_16::version_range_t> &versions,
+        bool erase_inconsistent_data,
+        metadata_file_t::write_txn_t *out,
+        signal_t *interruptor) {
     std::set<branch_id_t> seen_branches;
     std::queue<branch_id_t> branches_to_save;
-    versions.visit(versions.get_domain(),
-        [&] (const region_t &, const metadata_v1_16::version_range_t &v) {
+    region_map_t<version_t> new_version_map = versions.map(versions.get_domain(),
+        [&] (const metadata_v1_16::version_range_t &v) -> ::version_t {
             if (v.earliest == v.latest) {
                 if (!v.earliest.branch.is_nil() &&
                     seen_branches.count(v.earliest.branch) == 0) {
@@ -191,7 +192,9 @@ void migrate_branch_ids(const metadata_v1_16::branch_history_t &branch_history,
             } else {
                 // The data is in an unrecoverable state, but there should be coherent
                 // data elsewhere in the cluster, this may be reset later.
+                return version_t::zero();
             }
+            return ::version_t(v.earliest.branch, v.earliest.timestamp);
         });
 
     while (!branches_to_save.empty()) {
@@ -218,6 +221,8 @@ void migrate_branch_ids(const metadata_v1_16::branch_history_t &branch_history,
                        uuid_to_str(table_id) + "/" + uuid_to_str(branch_it->first)),
                    new_birth_certificate, interruptor);
     }
+
+    return new_version_map;
 }
 
 // This function will use a new uuid rather than the timestamp's tiebreaker because
@@ -314,7 +319,7 @@ void migrate_active_table(const server_id_t &this_server_id,
     raft_config_t raft_config;
     raft_config.voting_members.insert(own_raft_id);
 
-    raft_persistent_state_t<table_raft_state_t> persistent_state = 
+    raft_persistent_state_t<table_raft_state_t> persistent_state =
         raft_persistent_state_t<table_raft_state_t>::make_initial(raft_state, raft_config);
 
     // The `table_raft_storage_interface_t` constructor will persist the header, snapshot, and logs
@@ -362,19 +367,6 @@ void migrate_tables(io_backender_t *io_backender,
                                       scoped_ptr_t<outdated_index_report_t>(),
                                       info.first);
 
-                        read_token_t token;
-                        migrate_branch_ids(
-                            branch_history,
-                            info.first,
-                            to_version_range_map(
-                                store.get_metainfo(order_token_t::ignore,
-                                                   &token,
-                                                   store.get_region(),
-                                                   interruptor)),
-                            erase_inconsistent_data,
-                            out,
-                            interruptor);
-
                         if (index == 0) {
                             migrate_active_table(this_server_id,
                                                  info.first,
@@ -388,12 +380,31 @@ void migrate_tables(io_backender_t *io_backender,
                             // migrate_inactive_table(info.first, info.second.get_ref(), out,
                             //                        interruptor);
                         }
+
+                        read_token_t read_token;
+                        region_map_t<version_t> new_version_map = migrate_branch_ids(
+                            branch_history,
+                            info.first,
+                            to_version_range_map(
+                                store.get_metainfo(order_token_t::ignore,
+                                                   &read_token,
+                                                   store.get_region(),
+                                                   interruptor)),
+                            erase_inconsistent_data,
+                            out,
+                            interruptor);
+
+                        write_token_t write_token;
+                        store.new_write_token(&write_token);
+                        store.set_metainfo(from_version_map(new_version_map),
+                                           order_token_t::ignore,
+                                           &write_token,
+                                           write_durability_t::HARD,
+                                           interruptor);
                      });
             }
          });
 
-    // Loop over tables again and rewrite the metainfo blob using version_ts instead of version_range_ts
-    // This should be the last thing done because afterwards the table files will be incompatible with previous versions
 }
 
 void migrate_cluster_metadata_to_v2_1(io_backender_t *io_backender,
