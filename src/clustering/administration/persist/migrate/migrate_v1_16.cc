@@ -119,7 +119,8 @@ static void read_blob(buf_parent_t parent, const char *ref, int maxreflen,
 
 void migrate_server(const server_id_t &server_id,
                     const metadata_v1_16::cluster_semilattice_metadata_t &metadata,
-                    metadata_file_t::write_txn_t *out) {
+                    metadata_file_t::write_txn_t *out,
+                    signal_t *interruptor) {
     auto self_it = metadata.servers.servers.find(server_id);
     guarantee(self_it != metadata.servers.servers.end(),
               "Migration of cluster metadata failed, could not find own server config.");
@@ -134,12 +135,13 @@ void migrate_server(const server_id_t &server_id,
     new_config.config.tags = self_it->second.get_ref().tags.get_ref();
     new_config.config.cache_size_bytes = self_it->second.get_ref().cache_size_bytes.get_ref();
 
-    out->write(mdkey_server_config(), new_config, nullptr);
-    out->write(mdkey_server_id(), server_id, nullptr);
+    out->write(mdkey_server_config(), new_config, interruptor);
+    out->write(mdkey_server_id(), server_id, interruptor);
 }
 
 void migrate_databases(const metadata_v1_16::cluster_semilattice_metadata_t &metadata,
-                       metadata_file_t::write_txn_t *out) {
+                       metadata_file_t::write_txn_t *out,
+                       signal_t *interruptor) {
     ::cluster_semilattice_metadata_t new_metadata;
     for (auto const &pair : metadata.databases.databases) {
         if (!pair.second.is_deleted()) {
@@ -151,12 +153,12 @@ void migrate_databases(const metadata_v1_16::cluster_semilattice_metadata_t &met
         } else {
             auto res = new_metadata.databases.databases.insert(
                 std::make_pair(pair.first,
-                               deletable_t<::database_semilattice_metadata_t>()));
+                               deletable_t<database_semilattice_metadata_t>()));
             guarantee(res.second);
             res.first->second.mark_deleted();
         }
     }
-    out->write(mdkey_cluster_semilattices(), new_metadata, nullptr);
+    out->write(mdkey_cluster_semilattices(), new_metadata, interruptor);
 }
 
 region_map_t<metadata_v1_16::version_range_t> to_version_range_map(const region_map_t<binary_blob_t> &blob_map) {
@@ -170,7 +172,8 @@ void migrate_branch_ids(const metadata_v1_16::branch_history_t &branch_history,
                         const namespace_id_t &table_id,
                         const region_map_t<metadata_v1_16::version_range_t> &versions,
                         bool erase_inconsistent_data,
-                        metadata_file_t::write_txn_t *out) {
+                        metadata_file_t::write_txn_t *out,
+                        signal_t *interruptor) {
     std::set<branch_id_t> seen_branches;
     std::queue<branch_id_t> branches_to_save;
     versions.visit(region_t::universe(),
@@ -209,7 +212,7 @@ void migrate_branch_ids(const metadata_v1_16::branch_history_t &branch_history,
 
         out->write(mdprefix_branch_birth_certificate().suffix(
                        uuid_to_str(table_id) + "/" + uuid_to_str(branch_it->first)),
-                   new_birth_certificate, nullptr);
+                   new_birth_certificate, interruptor);
     }
 }
 
@@ -234,7 +237,8 @@ multi_table_manager_timestamp_t max_versioned_timestamp(const versioned_t<Args> 
 
 void migrate_inactive_table(const namespace_id_t &table_id,
                             const metadata_v1_16::namespace_semilattice_metadata_t &table_metadata,
-                            metadata_file_t::write_txn_t *out) {
+                            metadata_file_t::write_txn_t *out,
+                            signal_t *interruptor) {
     // We want to stamp this with the maximum timestamp seen in the table's metadata
     table_inactive_persistent_state_t state;
     state.timestamp = max_versioned_timestamp(table_metadata.name,
@@ -244,7 +248,7 @@ void migrate_inactive_table(const namespace_id_t &table_id,
     state.second_hand_config.database = table_metadata.database.get_ref();
     state.second_hand_config.primary_key = table_metadata.primary_key.get_ref();
 
-    out->write(mdprefix_table_inactive().suffix(uuid_to_str(table_id)), state, nullptr);
+    out->write(mdprefix_table_inactive().suffix(uuid_to_str(table_id)), state, interruptor);
 
 }
 
@@ -253,7 +257,8 @@ void migrate_active_table(const server_id_t &this_server_id,
                           const metadata_v1_16::namespace_semilattice_metadata_t &table_metadata,
                           const metadata_v1_16::servers_semilattice_metadata_t &servers_metadata,
                           const std::map<std::string, std::pair<sindex_config_t, sindex_status_t> > &sindexes,
-                          metadata_file_t::write_txn_t *out) {
+                          metadata_file_t::write_txn_t *out,
+                          signal_t *interruptor) {
     const metadata_v1_16::table_replication_info_t &old_config = table_metadata.replication_info.get_ref();
     raft_member_id_t own_raft_id(generate_uuid());
     table_active_persistent_state_t active_state;
@@ -262,7 +267,7 @@ void migrate_active_table(const server_id_t &this_server_id,
                                                  table_metadata.primary_key,
                                                  table_metadata.replication_info).epoch;
     active_state.raft_member_id = own_raft_id;
-    out->write(mdprefix_table_active().suffix(uuid_to_str(table_id)), active_state, nullptr);
+    out->write(mdprefix_table_active().suffix(uuid_to_str(table_id)), active_state, interruptor);
 
     table_raft_state_t raft_state;
     raft_state.config.config.basic.name = table_metadata.name.get_ref();
@@ -310,17 +315,18 @@ void migrate_active_table(const server_id_t &this_server_id,
 
     // The `table_raft_storage_interface_t` constructor will persist the header, snapshot, and logs
     table_raft_storage_interface_t storage_interface(nullptr, out, table_id,
-                                                     persistent_state, nullptr);
+                                                     persistent_state, interruptor);
 }
 
 void migrate_tables(io_backender_t *io_backender,
-                    serializer_t *serializer,
                     const base_path_t &base_path,
                     bool erase_inconsistent_data,
                     const server_id_t &this_server_id,
                     const metadata_v1_16::cluster_semilattice_metadata_t &metadata,
                     const metadata_v1_16::branch_history_t &branch_history,
-                    metadata_file_t::write_txn_t *out) {
+                    metadata_file_t::write_txn_t *out,
+                    signal_t *interruptor) {
+    perfmon_collection_t dummy_stats;
     dummy_cache_balancer_t balancer(GIGABYTE);
     auto &tables = metadata.rdb_namespaces.namespaces;
     pmap(tables.begin(), tables.end(),
@@ -328,8 +334,13 @@ void migrate_tables(io_backender_t *io_backender,
                         deletable_t<metadata_v1_16::namespace_semilattice_metadata_t> > &info) {
             if (!info.second.is_deleted()) {
                 try {
+                    serializer_filepath_t table_path(base_path, uuid_to_str(info.first));
+                    filepath_file_opener_t file_opener(table_path, io_backender);
+                    standard_serializer_t serializer(standard_serializer_t::dynamic_config_t(),
+                                                     &file_opener, &dummy_stats);
+
                     store_t store(region_t::universe(),
-                                  serializer,
+                                  &serializer,
                                   &balancer,
                                   uuid_to_str(info.first),
                                   false,
@@ -348,21 +359,24 @@ void migrate_tables(io_backender_t *io_backender,
                             store.get_metainfo(order_token_t::ignore,
                                                &token,
                                                store.get_region(),
-                                               nullptr)),
+                                               interruptor)),
                         erase_inconsistent_data,
-                        out);
+                        out,
+                        interruptor);
 
                     migrate_active_table(this_server_id,
                                          info.first,
                                          info.second.get_ref(),
                                          metadata.servers,
-                                         store.sindex_list(nullptr),
-                                         out);
+                                         store.sindex_list(interruptor),
+                                         out,
+                                         interruptor);
                 } catch (...) {
                     logERR("TODO: table file missing");
                     // TODO: how does this fail if the table file is missing?
                     // TODO: do we need to do branch ids if the table isn't active on this server?
-                    migrate_inactive_table(info.first, info.second.get_ref(), out);
+                    migrate_inactive_table(info.first, info.second.get_ref(), out,
+                                           interruptor);
                 }
             } else {
                 // Nothing is stored on disk for deleted tables
@@ -374,12 +388,12 @@ void migrate_tables(io_backender_t *io_backender,
 }
 
 void migrate_cluster_metadata_to_v2_1(io_backender_t *io_backender,
-                                      serializer_t *serializer,
                                       const base_path_t &base_path,
                                       bool erase_inconsistent_data,
                                       buf_parent_t buf_parent,
                                       const void *old_superblock,
-                                      metadata_file_t::write_txn_t *new_output) {
+                                      metadata_file_t::write_txn_t *out,
+                                      signal_t *interruptor) {
     const cluster_metadata_superblock_t *sb =
         static_cast<const cluster_metadata_superblock_t *>(old_superblock);
     cluster_version_t v = cluster_superblock_version(sb);
@@ -430,15 +444,16 @@ void migrate_cluster_metadata_to_v2_1(io_backender_t *io_backender,
                   return deserialize_for_version(v, s, &branch_history);
               });
 
-    migrate_server(sb->server_id, metadata, new_output);
-    migrate_databases(metadata, new_output);
-    migrate_tables(io_backender, serializer, base_path, erase_inconsistent_data,
-                   sb->server_id, metadata, branch_history, new_output);
+    migrate_server(sb->server_id, metadata, out, interruptor);
+    migrate_databases(metadata, out, interruptor);
+    migrate_tables(io_backender, base_path, erase_inconsistent_data,
+                   sb->server_id, metadata, branch_history, out, interruptor);
 }
 
 void migrate_auth_metadata_to_v2_1(io_backender_t *io_backender,
                                    const serializer_filepath_t &path,
-                                   metadata_file_t::write_txn_t *destination) {
+                                   metadata_file_t::write_txn_t *out,
+                                   signal_t *interruptor) {
     perfmon_collection_t dummy_stats;
     filepath_file_opener_t file_opener(path, io_backender);
     standard_serializer_t serializer(standard_serializer_t::dynamic_config_t(), &file_opener, &dummy_stats);
@@ -504,5 +519,5 @@ void migrate_auth_metadata_to_v2_1(io_backender_t *io_backender,
     ::auth_semilattice_metadata_t new_metadata;
     new_metadata.auth_key = metadata.auth_key;
 
-    destination->write(mdkey_auth_semilattices(), new_metadata, nullptr);
+    out->write(mdkey_auth_semilattices(), new_metadata, interruptor);
 }

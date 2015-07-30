@@ -325,8 +325,9 @@ metadata_file_t::metadata_file_t(
             sb_write.reset();
             sb_lock.reset();
             migrate_cluster_metadata_to_v2_1(
-                io_backender, serializer.get(), base_path, erase_inconsistent_data,
-                buf_parent_t(&write_txn.txn), sb_copy.get(), &write_txn);
+                io_backender, base_path, erase_inconsistent_data,
+                buf_parent_t(&write_txn.txn), sb_copy.get(), &write_txn,
+                interruptor);
             break;
         }
         case superblock_version_t::post_2_1: {
