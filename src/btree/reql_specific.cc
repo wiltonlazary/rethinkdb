@@ -231,7 +231,6 @@ void get_superblock_metainfo(
         uint32_t sb_size;
         const reql_btree_superblock_t *data
             = static_cast<const reql_btree_superblock_t *>(read.get_data_read(&sb_size));
-        debugf("read %d bytes, expected %d bytes\n", sb_size, REQL_BTREE_SUPERBLOCK_SIZE);
         guarantee(sb_size == REQL_BTREE_SUPERBLOCK_SIZE);
 
         // The const cast is okay because we access the data with access_t::read

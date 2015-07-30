@@ -12,6 +12,8 @@
 #include "containers/binary_blob.hpp"
 #include "rdb_protocol/store.hpp"
 #include "serializer/log/log_serializer.hpp"
+#include "serializer/merger.hpp"
+#include "serializer/translator.hpp"
 
 struct cluster_metadata_superblock_t {
     block_magic_t magic;
@@ -326,60 +328,65 @@ void migrate_tables(io_backender_t *io_backender,
                     const metadata_v1_16::branch_history_t &branch_history,
                     metadata_file_t::write_txn_t *out,
                     signal_t *interruptor) {
-    perfmon_collection_t dummy_stats;
     dummy_cache_balancer_t balancer(GIGABYTE);
     auto &tables = metadata.rdb_namespaces.namespaces;
     pmap(tables.begin(), tables.end(),
          [&] (std::pair<const namespace_id_t,
                         deletable_t<metadata_v1_16::namespace_semilattice_metadata_t> > &info) {
+            // We don't need to store anything for deleted tables
             if (!info.second.is_deleted()) {
-                try {
-                    serializer_filepath_t table_path(base_path, uuid_to_str(info.first));
-                    filepath_file_opener_t file_opener(table_path, io_backender);
-                    standard_serializer_t serializer(standard_serializer_t::dynamic_config_t(),
-                                                     &file_opener, &dummy_stats);
+                perfmon_collection_t dummy_stats;
+                serializer_filepath_t table_path(base_path, uuid_to_str(info.first));
+                filepath_file_opener_t file_opener(table_path, io_backender);
+                scoped_ptr_t<standard_serializer_t> inner_serializer(
+                    new standard_serializer_t(standard_serializer_t::dynamic_config_t(),
+                                              &file_opener, &dummy_stats));
+                merger_serializer_t merger_serializer(std::move(inner_serializer),
+                                                      MERGER_SERIALIZER_MAX_ACTIVE_WRITES);
+                std::vector<serializer_t *> underlying({ &merger_serializer });
+                serializer_multiplexer_t multiplexer(underlying);
 
-                    store_t store(region_t::universe(),
-                                  &serializer,
-                                  &balancer,
-                                  uuid_to_str(info.first),
-                                  false,
-                                  &get_global_perfmon_collection(),
-                                  nullptr,
-                                  io_backender,
-                                  base_path,
-                                  scoped_ptr_t<outdated_index_report_t>(),
-                                  info.first);
+                pmap(CPU_SHARDING_FACTOR, [&] (int index) {
+                        perfmon_collection_t inner_dummy_stats;
+                        store_t store(cpu_sharding_subspace(index),
+                                      multiplexer.proxies[index],
+                                      &balancer,
+                                      "table_migration",
+                                      false,
+                                      &inner_dummy_stats,
+                                      nullptr,
+                                      io_backender,
+                                      base_path,
+                                      scoped_ptr_t<outdated_index_report_t>(),
+                                      info.first);
 
-                    read_token_t token;
-                    migrate_branch_ids(
-                        branch_history,
-                        info.first,
-                        to_version_range_map(
-                            store.get_metainfo(order_token_t::ignore,
-                                               &token,
-                                               store.get_region(),
-                                               interruptor)),
-                        erase_inconsistent_data,
-                        out,
-                        interruptor);
+                        read_token_t token;
+                        migrate_branch_ids(
+                            branch_history,
+                            info.first,
+                            to_version_range_map(
+                                store.get_metainfo(order_token_t::ignore,
+                                                   &token,
+                                                   store.get_region(),
+                                                   interruptor)),
+                            erase_inconsistent_data,
+                            out,
+                            interruptor);
 
-                    migrate_active_table(this_server_id,
-                                         info.first,
-                                         info.second.get_ref(),
-                                         metadata.servers,
-                                         store.sindex_list(interruptor),
-                                         out,
-                                         interruptor);
-                } catch (...) {
-                    logERR("TODO: table file missing");
-                    // TODO: how does this fail if the table file is missing?
-                    // TODO: do we need to do branch ids if the table isn't active on this server?
-                    migrate_inactive_table(info.first, info.second.get_ref(), out,
-                                           interruptor);
-                }
-            } else {
-                // Nothing is stored on disk for deleted tables
+                        if (index == 0) {
+                            migrate_active_table(this_server_id,
+                                                 info.first,
+                                                 info.second.get_ref(),
+                                                 metadata.servers,
+                                                 store.sindex_list(interruptor),
+                                                 out,
+                                                 interruptor);
+                            // TODO: figure out how to tell if table is active on this server
+                            // maybe we can just make it active on every server and it will get figured out?
+                            // migrate_inactive_table(info.first, info.second.get_ref(), out,
+                            //                        interruptor);
+                        }
+                     });
             }
          });
 
