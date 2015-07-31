@@ -927,11 +927,10 @@ datum_t datum_t::drop_literals_unchecked_stack(bool *encountered_literal_out) co
 }
 
 datum_t datum_t::drop_literals(bool *encountered_literal_out) const {
-    return call_with_enough_stack<datum_t>(std::bind(
-            &datum_t::drop_literals_unchecked_stack,
-            this,
-            encountered_literal_out),
-        MIN_DATUM_RECURSION_STACK_SPACE);
+    return call_with_enough_stack<datum_t>([&] {
+        return this->drop_literals_unchecked_stack(
+            encountered_literal_out);
+    }, MIN_DATUM_RECURSION_STACK_SPACE);
 }
 
 void datum_t::rcheck_valid_replace(datum_t old_val,
@@ -1443,11 +1442,9 @@ void datum_t::write_json_unchecked_stack(json_writer_t *writer) const {
 
 template <class json_writer_t>
 void datum_t::write_json(json_writer_t *writer) const {
-    return call_with_enough_stack(std::bind(
-        &datum_t::write_json_unchecked_stack<json_writer_t>,
-        this,
-        writer),
-        MIN_DATUM_RECURSION_STACK_SPACE);
+    return call_with_enough_stack([&] {
+	return this->write_json_unchecked_stack<json_writer_t>(writer);
+    }, MIN_DATUM_RECURSION_STACK_SPACE);
 }
 
 // Explicit instantiation
@@ -1573,11 +1570,9 @@ datum_t datum_t::default_merge_unchecked_stack(const datum_t &rhs) const {
 }
 
 datum_t datum_t::merge(const datum_t &rhs) const {
-    return call_with_enough_stack<datum_t>(std::bind(
-            &datum_t::default_merge_unchecked_stack,
-            this,
-            std::cref(rhs)),
-        MIN_DATUM_RECURSION_STACK_SPACE);
+    return call_with_enough_stack<datum_t>([&] {
+	return this->default_merge_unchecked_stack(rhs);
+    }, MIN_DATUM_RECURSION_STACK_SPACE);
 }
 
 datum_t datum_t::custom_merge_unchecked_stack(const datum_t &rhs,
@@ -1603,14 +1598,10 @@ datum_t datum_t::merge(const datum_t &rhs,
                        merge_resoluter_t f,
                        const configured_limits_t &limits,
                        std::set<std::string> *conditions_out) const {
-    return call_with_enough_stack<datum_t>(std::bind(
-            &datum_t::custom_merge_unchecked_stack,
-            this,
-            std::cref(rhs),
-            std::move(f),
-            std::cref(limits),
-            conditions_out),
-        MIN_DATUM_RECURSION_STACK_SPACE);
+    return call_with_enough_stack<datum_t>([&] {
+        return this->custom_merge_unchecked_stack(
+            rhs, std::move(f), limits, conditions_out);
+    }, MIN_DATUM_RECURSION_STACK_SPACE);
 }
 
 template<class T>
@@ -1684,11 +1675,9 @@ int datum_t::cmp_unchecked_stack(const datum_t &rhs) const {
 }
 
 int datum_t::cmp(const datum_t &rhs) const {
-    return call_with_enough_stack<int>(std::bind(
-            &datum_t::cmp_unchecked_stack,
-            this,
-            std::cref(rhs)),
-        MIN_DATUM_RECURSION_STACK_SPACE);
+    return call_with_enough_stack<int>([&] {
+        return this->cmp_unchecked_stack(rhs);
+    }, MIN_DATUM_RECURSION_STACK_SPACE);
 }
 
 bool datum_t::operator==(const datum_t &rhs) const { return cmp(rhs) == 0; }

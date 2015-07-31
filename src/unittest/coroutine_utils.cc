@@ -129,7 +129,7 @@ TEST(CoroutineUtilsTest, WithEnoughStackBenchmark) {
         EXPECT_EQ(sum, NUM_REPETITIONS);
 
         {
-            printf("Test 1: call_without_enough_stack without spawning: ");
+            printf("Test 1: call_with_enough_stack without spawning: ");
             sum = 0;
             start_ticks = get_ticks();
             for(int i = 0; i < NUM_REPETITIONS; ++i) {
@@ -143,7 +143,7 @@ TEST(CoroutineUtilsTest, WithEnoughStackBenchmark) {
                    (dur - dur_base) / NUM_REPETITIONS * 1000000);
         }
         {
-            printf("Test 2: call_without_enough_stack with spawning: ");
+            printf("Test 2: call_with_enough_stack with spawning: ");
             sum = 0;
             start_ticks = get_ticks();
             for(int i = 0; i < NUM_REPETITIONS; ++i) {
@@ -158,7 +158,7 @@ TEST(CoroutineUtilsTest, WithEnoughStackBenchmark) {
                    (dur - dur_base) / NUM_REPETITIONS * 1000000);
         }
         {
-            printf("Test 3: call_without_enough_stack with blocking: ");
+            printf("Test 3: call_with_enough_stack with blocking: ");
             sum = 0;
             start_ticks = get_ticks();
             for(int i = 0; i < NUM_REPETITIONS; ++i) {
