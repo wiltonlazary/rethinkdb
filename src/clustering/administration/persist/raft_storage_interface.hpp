@@ -27,9 +27,7 @@ public:
     raft_member_id_t voted_for;
     raft_log_index_t commit_index;
 };
-
-RDB_IMPL_SERIALIZABLE_3_SINCE_v2_1(table_raft_stored_header_t,
-    current_term, voted_for, commit_index);
+RDB_DECLARE_SERIALIZABLE(table_raft_stored_header_t);
 
 class table_raft_stored_snapshot_t {
 public:
@@ -38,9 +36,7 @@ public:
     raft_log_index_t log_prev_index;
     raft_term_t log_prev_term;
 };
-
-RDB_IMPL_SERIALIZABLE_4_SINCE_v2_1(table_raft_stored_snapshot_t,
-    snapshot_state, snapshot_config, log_prev_index, log_prev_term);
+RDB_DECLARE_SERIALIZABLE(table_raft_stored_snapshot_t);
 
 class table_raft_storage_interface_t :
     public raft_storage_interface_t<table_raft_state_t> {

@@ -1,6 +1,4 @@
-// Copyright 2010-2013 RethinkDB, all rights reserved.
-#include <map>
-
+// Copyright 2010-2015 RethinkDB, all rights reserved.
 #include "unittest/gtest.hpp"
 
 #include "clustering/administration/metadata.hpp"

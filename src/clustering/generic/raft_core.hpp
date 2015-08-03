@@ -1,4 +1,4 @@
-// Copyright 2010-2014 RethinkDB, all rights reserved.
+// Copyright 2010-2015 RethinkDB, all rights reserved.
 #ifndef CLUSTERING_GENERIC_RAFT_CORE_HPP_
 #define CLUSTERING_GENERIC_RAFT_CORE_HPP_
 
@@ -180,7 +180,8 @@ public:
 
     /* The equality and inequality operators are mostly for debugging */
     bool operator==(const raft_complex_config_t &other) const {
-        return config == other.config && new_config == other.new_config;
+        return config == other.config &&
+            new_config == other.new_config;
     }
     bool operator!=(const raft_complex_config_t &other) const {
         return !(*this == other);
@@ -215,7 +216,9 @@ public:
 
     /* The equality and inequality operators are for testing. */
     bool operator==(const raft_log_entry_t<state_t> &other) const {
-        return type == other.type && term == other.term && change == other.change &&
+        return type == other.type &&
+            term == other.term &&
+            change == other.change &&
             config == other.config;
     }
     bool operator!=(const raft_log_entry_t<state_t> &other) const {
@@ -297,7 +300,8 @@ public:
 
     /* The equality and inequality operators are for testing. */
     bool operator==(const raft_log_t<state_t> &other) const {
-        return prev_index == other.prev_index && prev_term == other.prev_term &&
+        return prev_index == other.prev_index &&
+            prev_term == other.prev_term &&
             entries == other.entries;
     }
     bool operator!=(const raft_log_t<state_t> &other) const {
@@ -349,9 +353,11 @@ public:
 
     /* The equality and inequality operators are for testing. */
     bool operator==(const raft_persistent_state_t<state_t> &other) const {
-        return current_term == other.current_term && voted_for == other.voted_for &&
+        return current_term == other.current_term &&
+            voted_for == other.voted_for &&
             snapshot_state == other.snapshot_state &&
-            snapshot_config == other.snapshot_config && log == other.log &&
+            snapshot_config == other.snapshot_config &&
+            log == other.log &&
             commit_index == other.commit_index;
     }
     bool operator!=(const raft_persistent_state_t<state_t> &other) const {

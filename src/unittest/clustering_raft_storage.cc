@@ -1,7 +1,4 @@
 // Copyright 2010-2015 RethinkDB, all rights reserved.
-
-#include <iostream>
-
 #include "unittest/gtest.hpp"
 
 #include "arch/io/disk.hpp"
