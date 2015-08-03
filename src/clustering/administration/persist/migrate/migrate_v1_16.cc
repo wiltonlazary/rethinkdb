@@ -163,44 +163,18 @@ void migrate_databases(const metadata_v1_16::cluster_semilattice_metadata_t &met
     out->write(mdkey_cluster_semilattices(), new_metadata, interruptor);
 }
 
-region_map_t<metadata_v1_16::version_range_t> to_version_range_map(const region_map_t<binary_blob_t> &blob_map) {
-    return blob_map.map(blob_map.get_domain(),
-        [&] (const binary_blob_t &b) -> metadata_v1_16::version_range_t {
-            return binary_blob_t::get<metadata_v1_16::version_range_t>(b);
-        });
-}
-
-region_map_t<version_t> migrate_branch_ids(
-        const metadata_v1_16::branch_history_t &branch_history,
+void migrate_branch_ids(
         const namespace_id_t &table_id,
-        const region_map_t<metadata_v1_16::version_range_t> &versions,
-        bool erase_inconsistent_data,
+        std::set<branch_id_t> seen_branches,
+        const metadata_v1_16::branch_history_t &branch_history,
         metadata_file_t::write_txn_t *out,
         signal_t *interruptor) {
-    std::set<branch_id_t> seen_branches;
-    std::queue<branch_id_t> branches_to_save;
-    region_map_t<version_t> new_version_map = versions.map(versions.get_domain(),
-        [&] (const metadata_v1_16::version_range_t &v) -> ::version_t {
-            if (v.earliest == v.latest) {
-                if (!v.earliest.branch.is_nil() &&
-                    seen_branches.count(v.earliest.branch) == 0) {
-                    seen_branches.insert(v.earliest.branch);
-                    branches_to_save.push(v.earliest.branch);
-                }
-            } else if (!erase_inconsistent_data) {
-                fail_due_to_user_error("retry with flag to erase inconsistent data"); // TODO: better message
-            } else {
-                // The data is in an unrecoverable state, but there should be coherent
-                // data elsewhere in the cluster, this may be reset later.
-                return version_t::zero();
-            }
-            return ::version_t(v.earliest.branch, v.earliest.timestamp);
-        });
+    std::deque<branch_id_t> branches_to_save(seen_branches.begin(), seen_branches.end());
 
     while (!branches_to_save.empty()) {
         auto branch_it = branch_history.branches.find(branches_to_save.front());
         guarantee(branch_it != branch_history.branches.end());
-        branches_to_save.pop();
+        branches_to_save.pop_front();
 
         region_t region = branch_it->second.region;
         branch_birth_certificate_t new_birth_certificate;
@@ -212,7 +186,7 @@ region_map_t<version_t> migrate_branch_ids(
                 if (!v.earliest.branch.is_nil() &&
                     seen_branches.count(v.earliest.branch) == 0) {
                     seen_branches.insert(v.earliest.branch);
-                    branches_to_save.push(v.earliest.branch);
+                    branches_to_save.push_back(v.earliest.branch);
                 }
                 return ::version_t(v.earliest.branch, v.earliest.timestamp);
             });
@@ -221,8 +195,6 @@ region_map_t<version_t> migrate_branch_ids(
                        uuid_to_str(table_id) + "/" + uuid_to_str(branch_it->first)),
                    new_birth_certificate, interruptor);
     }
-
-    return new_version_map;
 }
 
 // This function will use a new uuid rather than the timestamp's tiebreaker because
@@ -381,27 +353,45 @@ void migrate_tables(io_backender_t *io_backender,
                             //                        interruptor);
                         }
 
-                        read_token_t read_token;
-                        region_map_t<version_t> new_version_map = migrate_branch_ids(
-                            branch_history,
-                            info.first,
-                            to_version_range_map(
-                                store.get_metainfo(order_token_t::ignore,
-                                                   &read_token,
-                                                   store.get_region(),
-                                                   interruptor)),
-                            erase_inconsistent_data,
-                            out,
-                            interruptor);
+                        std::set<branch_id_t> seen_branches;
 
-                        write_token_t write_token;
-                        store.new_write_token(&write_token);
-                        store.set_metainfo(from_version_map(new_version_map),
-                                           order_token_t::ignore,
-                                           &write_token,
-                                           write_durability_t::HARD,
+                        read_token_t read_token;
+                        if (store.metainfo_version(&read_token,
+                                                   interruptor) == cluster_version_t::v2_0) {
+                            write_token_t write_token;
+                            store.new_write_token(&write_token);
+                            store.migrate_metainfo(
+                                order_token_t::ignore, &write_token,
+                                cluster_version_t::v2_0, cluster_version_t::v2_1,
+                                [&] (const binary_blob_t &blob) -> binary_blob_t {
+                                    auto const &v = binary_blob_t::get<metadata_v1_16::version_range_t>(blob);
+                                    ::version_t res(v.earliest.branch, v.earliest.timestamp);
+                                    if (v.earliest == v.latest) {
+                                        if (!v.earliest.branch.is_nil()) {
+                                            seen_branches.insert(v.earliest.branch);
+                                        }
+                                    } else if (!erase_inconsistent_data) {
+                                        // TODO: better message
+                                        fail_due_to_user_error("retry with flag to erase inconsistent data");
+                                    } else {
+                                        // The data is in an unrecoverable state, but
+                                        // there should be coherent data elsewhere in
+                                        // in the cluster, this may be reset later.
+                                        res = version_t::zero();
+                                    }
+                                    return binary_blob_t::make<version_t>(res);
+                                }, interruptor);
+                        }
+
+                        guarantee(store.metainfo_version(&read_token,
+                                                         interruptor) == cluster_version_t::v2_1);
+
+                        migrate_branch_ids(info.first,
+                                           std::move(seen_branches),
+                                           branch_history,
+                                           out,
                                            interruptor);
-                     });
+                    });
             }
          });
 
