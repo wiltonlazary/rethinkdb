@@ -9,7 +9,7 @@
 
 void migrate_cluster_metadata_to_v2_1(io_backender_t *io_backender,
                                       const base_path_t &base_path,
-                                      bool erase_inconsistent_data,
+                                      bool migrate_inconsistent_data,
                                       buf_parent_t buf_parent,
                                       const void *old_superblock,
                                       metadata_file_t::write_txn_t *out,

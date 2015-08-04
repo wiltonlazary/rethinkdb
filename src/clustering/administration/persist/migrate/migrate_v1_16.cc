@@ -298,7 +298,7 @@ void migrate_table(const server_id_t &this_server_id,
 
 void migrate_tables(io_backender_t *io_backender,
                     const base_path_t &base_path,
-                    bool erase_inconsistent_data,
+                    bool migrate_inconsistent_data,
                     const server_id_t &this_server_id,
                     const metadata_v1_16::cluster_semilattice_metadata_t &metadata,
                     const metadata_v1_16::branch_history_t &branch_history,
@@ -363,14 +363,15 @@ void migrate_tables(io_backender_t *io_backender,
                                         if (!v.earliest.branch.is_nil()) {
                                             seen_branches.insert(v.earliest.branch);
                                         }
-                                    } else if (!erase_inconsistent_data) {
+                                    } else if (!migrate_inconsistent_data) {
                                         fail_due_to_user_error("This node's data for the table with ID %s is "
                                                                "in an inconsistent state because a resharding "
                                                                "or rebalancing operation was in progress when "
                                                                "the node was shut down.  To continue, some or "
                                                                "all local data for the table will need to be "
                                                                "cleared.  Please back up your data files and "
-                                                               "retry with the --migrate-inconsistent-data flag.");
+                                                               "retry with the --migrate-inconsistent-data flag.",
+                                                               uuid_to_str(info.first).c_str());
                                     } else {
                                         // The data is in an unrecoverable state, but
                                         // there should be coherent data elsewhere in
@@ -397,7 +398,7 @@ void migrate_tables(io_backender_t *io_backender,
 
 void migrate_cluster_metadata_to_v2_1(io_backender_t *io_backender,
                                       const base_path_t &base_path,
-                                      bool erase_inconsistent_data,
+                                      bool migrate_inconsistent_data,
                                       buf_parent_t buf_parent,
                                       const void *old_superblock,
                                       metadata_file_t::write_txn_t *out,
@@ -454,7 +455,7 @@ void migrate_cluster_metadata_to_v2_1(io_backender_t *io_backender,
 
     migrate_server(sb->server_id, metadata, out, interruptor);
     migrate_databases(metadata, out, interruptor);
-    migrate_tables(io_backender, base_path, erase_inconsistent_data,
+    migrate_tables(io_backender, base_path, migrate_inconsistent_data,
                    sb->server_id, metadata, branch_history, out, interruptor);
 }
 

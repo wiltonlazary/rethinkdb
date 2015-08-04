@@ -148,7 +148,7 @@ public:
         io_backender_t *io_backender,
         const base_path_t &base_path,
         const serializer_filepath_t &filename,
-        bool erase_inconsistent_data,
+        bool migrate_inconsistent_data,
         perfmon_collection_t *perfmon_parent,
         signal_t *interruptor);
 
