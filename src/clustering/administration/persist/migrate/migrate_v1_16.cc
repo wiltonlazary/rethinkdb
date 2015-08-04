@@ -119,6 +119,12 @@ static void read_blob(buf_parent_t parent, const char *ref, int maxreflen,
     guarantee_deserialization(res, "T (template code)");
 }
 
+void migrate_heartbeat(metadata_file_t::write_txn_t *out,
+                       signal_t *interruptor) {
+    out->write(mdkey_heartbeat_semilattices(),
+               heartbeat_semilattice_metadata_t(), interruptor);
+}
+
 void migrate_server(const server_id_t &server_id,
                     const metadata_v1_16::cluster_semilattice_metadata_t &metadata,
                     metadata_file_t::write_txn_t *out,
@@ -453,6 +459,7 @@ void migrate_cluster_metadata_to_v2_1(io_backender_t *io_backender,
                   return deserialize_for_version(v, s, &branch_history);
               });
 
+    migrate_heartbeat(out, interruptor);
     migrate_server(sb->server_id, metadata, out, interruptor);
     migrate_databases(metadata, out, interruptor);
     migrate_tables(io_backender, base_path, migrate_inconsistent_data,
