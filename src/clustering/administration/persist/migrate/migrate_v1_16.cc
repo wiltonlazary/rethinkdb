@@ -364,8 +364,13 @@ void migrate_tables(io_backender_t *io_backender,
                                             seen_branches.insert(v.earliest.branch);
                                         }
                                     } else if (!erase_inconsistent_data) {
-                                        // TODO: better message
-                                        fail_due_to_user_error("retry with flag to erase inconsistent data");
+                                        fail_due_to_user_error("This node's data for the table with ID %s is "
+                                                               "in an inconsistent state because a resharding "
+                                                               "or rebalancing operation was in progress when "
+                                                               "the node was shut down.  To continue, some or "
+                                                               "all local data for the table will need to be "
+                                                               "cleared.  Please back up your data files and "
+                                                               "retry with the --migrate-inconsistent-data flag.");
                                     } else {
                                         // The data is in an unrecoverable state, but
                                         // there should be coherent data elsewhere in
