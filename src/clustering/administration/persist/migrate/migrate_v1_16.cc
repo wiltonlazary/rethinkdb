@@ -216,87 +216,84 @@ multi_table_manager_timestamp_t max_versioned_timestamp(const versioned_t<Args> 
     return res;
 }
 
-void migrate_inactive_table(const namespace_id_t &table_id,
-                            const metadata_v1_16::namespace_semilattice_metadata_t &table_metadata,
-                            metadata_file_t::write_txn_t *out,
-                            signal_t *interruptor) {
-    // We want to stamp this with the maximum timestamp seen in the table's metadata
-    table_inactive_persistent_state_t state;
-    state.timestamp = max_versioned_timestamp(table_metadata.name,
-                                              table_metadata.database,
-                                              table_metadata.primary_key);
-    state.second_hand_config.name = table_metadata.name.get_ref();
-    state.second_hand_config.database = table_metadata.database.get_ref();
-    state.second_hand_config.primary_key = table_metadata.primary_key.get_ref();
-
-    out->write(mdprefix_table_inactive().suffix(uuid_to_str(table_id)), state, interruptor);
-
-}
-
-void migrate_active_table(const server_id_t &this_server_id,
-                          const namespace_id_t &table_id,
-                          const metadata_v1_16::namespace_semilattice_metadata_t &table_metadata,
-                          const metadata_v1_16::servers_semilattice_metadata_t &servers_metadata,
-                          const std::map<std::string, std::pair<sindex_config_t, sindex_status_t> > &sindexes,
-                          metadata_file_t::write_txn_t *out,
-                          signal_t *interruptor) {
+void migrate_table(const server_id_t &this_server_id,
+                   const namespace_id_t &table_id,
+                   const metadata_v1_16::namespace_semilattice_metadata_t &table_metadata,
+                   const metadata_v1_16::servers_semilattice_metadata_t &servers_metadata,
+                   const std::map<std::string, std::pair<sindex_config_t, sindex_status_t> > &sindexes,
+                   metadata_file_t::write_txn_t *out,
+                   signal_t *interruptor) {
     const metadata_v1_16::table_replication_info_t &old_config = table_metadata.replication_info.get_ref();
-    raft_member_id_t own_raft_id(generate_uuid());
-    table_active_persistent_state_t active_state;
-    active_state.epoch = max_versioned_timestamp(table_metadata.name,
-                                                 table_metadata.database,
-                                                 table_metadata.primary_key,
-                                                 table_metadata.replication_info).epoch;
-    active_state.raft_member_id = own_raft_id;
-    out->write(mdprefix_table_active().suffix(uuid_to_str(table_id)), active_state, interruptor);
 
-    table_raft_state_t raft_state;
-    raft_state.config.config.basic.name = table_metadata.name.get_ref();
-    raft_state.config.config.basic.database = table_metadata.database.get_ref();
-    raft_state.config.config.basic.primary_key = table_metadata.primary_key.get_ref();
-    raft_state.config.config.write_ack_config =
+    table_config_and_shards_t config;
+    config.config.basic.name = table_metadata.name.get_ref();
+    config.config.basic.database = table_metadata.database.get_ref();
+    config.config.basic.primary_key = table_metadata.primary_key.get_ref();
+    config.config.write_ack_config =
         old_config.config.write_ack_config.mode ==
             metadata_v1_16::write_ack_config_t::mode_t::single ?
                 ::write_ack_config_t::SINGLE : ::write_ack_config_t::MAJORITY;
-    raft_state.config.config.durability = old_config.config.durability;
-    raft_state.config.shard_scheme.split_points = old_config.shard_scheme.split_points;
+    config.config.durability = old_config.config.durability;
+    config.shard_scheme.split_points = old_config.shard_scheme.split_points;
 
     std::set<server_id_t> used_servers;
     for (auto const &s : old_config.config.shards) {
         ::table_config_t::shard_t new_shard;
         new_shard.all_replicas = s.replicas;
         new_shard.primary_replica = s.primary_replica;
-        raft_state.config.config.shards.push_back(std::move(new_shard));
+        config.config.shards.push_back(std::move(new_shard));
         used_servers.insert(s.replicas.begin(), s.replicas.end());
     }
 
     for (auto const &pair : sindexes) {
-        raft_state.config.config.sindexes.insert(std::make_pair(pair.first, pair.second.first));
+        config.config.sindexes.insert(std::make_pair(pair.first, pair.second.first));
     }
 
     for (auto const &serv_id : used_servers) {
         auto serv_it = servers_metadata.servers.find(serv_id);
         if (serv_it != servers_metadata.servers.end() && !serv_it->second.is_deleted()) {
-            raft_state.config.server_names.names.insert(std::make_pair(
+            config.server_names.names.insert(std::make_pair(
                 serv_id, std::make_pair(1, serv_it->second.get_ref().name.get_ref())));
         }
-
-        raft_member_id_t new_raft_id(generate_uuid());
-        raft_state.member_ids.insert(std::make_pair(
-            serv_id,
-            serv_id == this_server_id ?
-                own_raft_id : raft_member_id_t(generate_uuid())));
     }
 
-    raft_config_t raft_config;
-    raft_config.voting_members.insert(own_raft_id);
+    table_raft_state_t raft_state = make_new_table_raft_state(config);
+    auto own_membership = raft_state.member_ids.find(this_server_id);
 
-    raft_persistent_state_t<table_raft_state_t> persistent_state =
-        raft_persistent_state_t<table_raft_state_t>::make_initial(raft_state, raft_config);
+    if (own_membership == raft_state.member_ids.end()) {
+        // This server is not involved in the table - write an inactive state
+        table_inactive_persistent_state_t state;
+        state.timestamp = max_versioned_timestamp(table_metadata.name,
+                                                  table_metadata.database,
+                                                  table_metadata.primary_key);
+        state.second_hand_config.name = table_metadata.name.get_ref();
+        state.second_hand_config.database = table_metadata.database.get_ref();
+        state.second_hand_config.primary_key = table_metadata.primary_key.get_ref();
 
-    // The `table_raft_storage_interface_t` constructor will persist the header, snapshot, and logs
-    table_raft_storage_interface_t storage_interface(nullptr, out, table_id,
-                                                     persistent_state, interruptor);
+        out->write(mdprefix_table_inactive().suffix(uuid_to_str(table_id)), state, interruptor);
+    } else {
+        // This server is involved in the table - write an active state
+        raft_config_t raft_config;
+        for (auto const &pair : raft_state.member_ids) {
+            raft_config.voting_members.insert(pair.second);
+        }
+
+        raft_persistent_state_t<table_raft_state_t> persistent_state =
+            raft_persistent_state_t<table_raft_state_t>::make_initial(raft_state, raft_config);
+
+        table_active_persistent_state_t active_state;
+        active_state.epoch = max_versioned_timestamp(table_metadata.name,
+                                                     table_metadata.database,
+                                                     table_metadata.primary_key,
+                                                     table_metadata.replication_info).epoch;
+        guarantee(own_membership != raft_state.member_ids.end());
+        active_state.raft_member_id = own_membership->second;
+        out->write(mdprefix_table_active().suffix(uuid_to_str(table_id)), active_state, interruptor);
+
+        // The `table_raft_storage_interface_t` constructor will persist the header, snapshot, and logs
+        table_raft_storage_interface_t storage_interface(nullptr, out, table_id,
+                                                         persistent_state, interruptor);
+    }
 }
 
 void migrate_tables(io_backender_t *io_backender,
@@ -340,17 +337,13 @@ void migrate_tables(io_backender_t *io_backender,
                                       info.first);
 
                         if (index == 0) {
-                            migrate_active_table(this_server_id,
-                                                 info.first,
-                                                 info.second.get_ref(),
-                                                 metadata.servers,
-                                                 store.sindex_list(interruptor),
-                                                 out,
-                                                 interruptor);
-                            // TODO: figure out how to tell if table is active on this server
-                            // maybe we can just make it active on every server and it will get figured out?
-                            // migrate_inactive_table(info.first, info.second.get_ref(), out,
-                            //                        interruptor);
+                            migrate_table(this_server_id,
+                                          info.first,
+                                          info.second.get_ref(),
+                                          metadata.servers,
+                                          store.sindex_list(interruptor),
+                                          out,
+                                          interruptor);
                         }
 
                         std::set<branch_id_t> seen_branches;
