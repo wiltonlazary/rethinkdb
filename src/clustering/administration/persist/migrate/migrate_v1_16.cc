@@ -223,7 +223,7 @@ multi_table_manager_timestamp_t max_versioned_timestamp(const versioned_t<Args> 
     multi_table_manager_timestamp_t res;
     res.epoch.timestamp = times[offset];
     res.epoch.id = generate_uuid();
-    res.log_index = 1; // We will always migrate in exactly one log entry for this epoch
+    res.log_index = 0;
     return res;
 }
 
@@ -431,6 +431,7 @@ void migrate_cluster_metadata_to_v2_1(io_backender_t *io_backender,
                                       const void *old_superblock,
                                       metadata_file_t::write_txn_t *out,
                                       signal_t *interruptor) {
+    logINF("Migrating cluster metadata");
     const cluster_metadata_superblock_t *sb =
         static_cast<const cluster_metadata_superblock_t *>(old_superblock);
     cluster_version_t v = cluster_superblock_version(sb);
@@ -492,6 +493,7 @@ void migrate_auth_metadata_to_v2_1(io_backender_t *io_backender,
                                    const serializer_filepath_t &path,
                                    metadata_file_t::write_txn_t *out,
                                    signal_t *interruptor) {
+    logINF("Migrating auth metadata");
     perfmon_collection_t dummy_stats;
     filepath_file_opener_t file_opener(path, io_backender);
     standard_serializer_t serializer(standard_serializer_t::dynamic_config_t(), &file_opener, &dummy_stats);
