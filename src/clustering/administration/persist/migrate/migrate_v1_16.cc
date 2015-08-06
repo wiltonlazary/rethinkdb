@@ -169,12 +169,13 @@ void migrate_databases(const metadata_v1_16::cluster_semilattice_metadata_t &met
     out->write(mdkey_cluster_semilattices(), new_metadata, interruptor);
 }
 
-void migrate_branch_ids(
+::branch_history_t migrate_branch_ids(
         const namespace_id_t &table_id,
         std::set<branch_id_t> seen_branches,
         const metadata_v1_16::branch_history_t &branch_history,
         metadata_file_t::write_txn_t *out,
         signal_t *interruptor) {
+    branch_history_t result;
     std::deque<branch_id_t> branches_to_save(seen_branches.begin(), seen_branches.end());
 
     while (!branches_to_save.empty()) {
@@ -197,10 +198,14 @@ void migrate_branch_ids(
                 return ::version_t(v.earliest.branch, v.earliest.timestamp);
             });
 
+        result.branches.insert(std::make_pair(branch_it->first, new_birth_certificate));
+
         out->write(mdprefix_branch_birth_certificate().suffix(
                        uuid_to_str(table_id) + "/" + uuid_to_str(branch_it->first)),
                    new_birth_certificate, interruptor);
     }
+
+    return result;
 }
 
 // This function will use a new uuid rather than the timestamp's tiebreaker because
@@ -227,6 +232,7 @@ void migrate_table(const server_id_t &this_server_id,
                    const metadata_v1_16::namespace_semilattice_metadata_t &table_metadata,
                    const metadata_v1_16::servers_semilattice_metadata_t &servers_metadata,
                    const std::map<std::string, std::pair<sindex_config_t, sindex_status_t> > &sindexes,
+                   const ::branch_history_t &branch_history,
                    metadata_file_t::write_txn_t *out,
                    signal_t *interruptor) {
     const metadata_v1_16::table_replication_info_t &old_config = table_metadata.replication_info.get_ref();
@@ -264,6 +270,7 @@ void migrate_table(const server_id_t &this_server_id,
     }
 
     table_raft_state_t raft_state = make_new_table_raft_state(config);
+    raft_state.branch_history = branch_history;
     auto own_membership = raft_state.member_ids.find(this_server_id);
 
     if (own_membership == raft_state.member_ids.end()) {
@@ -307,7 +314,7 @@ void migrate_tables(io_backender_t *io_backender,
                     bool migrate_inconsistent_data,
                     const server_id_t &this_server_id,
                     const metadata_v1_16::cluster_semilattice_metadata_t &metadata,
-                    const metadata_v1_16::branch_history_t &branch_history,
+                    const metadata_v1_16::branch_history_t &old_branch_history,
                     metadata_file_t::write_txn_t *out,
                     signal_t *interruptor) {
     dummy_cache_balancer_t balancer(GIGABYTE);
@@ -328,6 +335,9 @@ void migrate_tables(io_backender_t *io_backender,
                 std::vector<serializer_t *> underlying({ &merger_serializer });
                 serializer_multiplexer_t multiplexer(underlying);
 
+                std::set<branch_id_t> seen_branches;
+                std::map<std::string, std::pair<sindex_config_t, sindex_status_t> > sindex_list;
+
                 pmap(CPU_SHARDING_FACTOR, [&] (int index) {
                         perfmon_collection_t inner_dummy_stats;
                         store_t store(cpu_sharding_subspace(index),
@@ -343,16 +353,8 @@ void migrate_tables(io_backender_t *io_backender,
                                       info.first);
 
                         if (index == 0) {
-                            migrate_table(this_server_id,
-                                          info.first,
-                                          info.second.get_ref(),
-                                          metadata.servers,
-                                          store.sindex_list(interruptor),
-                                          out,
-                                          interruptor);
+                            sindex_list = store.sindex_list(interruptor);
                         }
-
-                        std::set<branch_id_t> seen_branches;
 
                         read_token_t read_token;
                         if (store.metainfo_version(&read_token,
@@ -390,13 +392,23 @@ void migrate_tables(io_backender_t *io_backender,
 
                         guarantee(store.metainfo_version(&read_token,
                                                          interruptor) == cluster_version_t::v2_1);
-
-                        migrate_branch_ids(info.first,
-                                           std::move(seen_branches),
-                                           branch_history,
-                                           out,
-                                           interruptor);
                     });
+
+                branch_history_t new_branch_history =
+                    migrate_branch_ids(info.first,
+                                       std::move(seen_branches),
+                                       old_branch_history,
+                                       out,
+                                       interruptor);
+
+                migrate_table(this_server_id,
+                              info.first,
+                              info.second.get_ref(),
+                              metadata.servers,
+                              sindex_list,
+                              new_branch_history,
+                              out,
+                              interruptor);
             }
          });
 
