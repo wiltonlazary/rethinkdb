@@ -765,7 +765,6 @@ void run_rethinkdb_serve(const base_path_t &base_path,
                         heartbeat_semilattice_metadata_t(), interruptor);
                 },
                 &non_interruptor));
-            // TODO: check if this is right, users should be able to overwrite the cache size at startup
             guarantee(!static_cast<bool>(total_cache_size), "rethinkdb porcelain should "
                 "have already set up total_cache_size");
         } else {
