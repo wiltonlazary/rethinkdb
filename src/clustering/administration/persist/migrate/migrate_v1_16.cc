@@ -356,6 +356,7 @@ void migrate_tables(io_backender_t *io_backender,
                             sindex_list = store.sindex_list(interruptor);
                         }
 
+                        bool reset_data = false;
                         read_token_t read_token;
                         if (store.metainfo_version(&read_token,
                                                    interruptor) == cluster_version_t::v2_0) {
@@ -384,6 +385,7 @@ void migrate_tables(io_backender_t *io_backender,
                                         // The data is in an unrecoverable state, but
                                         // there should be coherent data elsewhere in
                                         // in the cluster, this may be reset later.
+                                        reset_data = true;
                                         res = version_t::zero();
                                     }
                                     return binary_blob_t::make<version_t>(res);
@@ -392,6 +394,14 @@ void migrate_tables(io_backender_t *io_backender,
 
                         guarantee(store.metainfo_version(&read_token,
                                                          interruptor) == cluster_version_t::v2_1);
+
+                        if (reset_data) {
+                            guarantee(migrate_inconsistent_data);
+                            store.reset_data(binary_blob_t::make<version_t>(version_t::zero()),
+                                             cpu_sharding_subspace(index),
+                                             write_durability_t::HARD,
+                                             interruptor);
+                        }
                     });
 
                 branch_history_t new_branch_history =
