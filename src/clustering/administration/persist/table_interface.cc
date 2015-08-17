@@ -158,7 +158,8 @@ public:
     }
 
     bool is_gc_active() {
-        if (!drainer.is_draining() && serializer.has()) {
+        rassert(!drainer.is_draining());
+        if (serializer.has()) {
             return serializer->is_gc_active();
         } else {
             return false;
