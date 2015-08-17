@@ -1,6 +1,6 @@
 # Copyright 2010-2015 RethinkDB, all rights reserved.
 
-import os, signal, string, subprocess, sys, time
+import os, signal, subprocess, sys, time
 
 import utils, vcoptparse
 

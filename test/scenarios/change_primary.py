@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # Copyright 2010-2015 RethinkDB, all rights reserved.
 
-import sys, os, time
+import os, pprint, sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir, 'common')))
 import rdb_unittest, scenario_common, utils, vcoptparse, workload_runner
@@ -24,10 +24,10 @@ class ChangePrimary(rdb_unittest.RdbTestCase):
         
         workload_ports = workload_runner.RDBPorts(host=alpha.host, http_port=alpha.http_port, rdb_port=alpha.driver_port, db_name=self.dbName, table_name=self.tableName)
         with workload_runner.SplitOrContinuousWorkload(opts, workload_ports) as workload:
-            print('%r' % workload.opts)
-            utils.print_with_time("Starting workload")
+            utils.print_with_time('Workloads:\n%s' % pprint.pformat(workload.opts))
+            utils.print_with_time("Running before workload")
             workload.run_before()
-            
+            utils.print_with_time("Before workload complete")
             self.checkCluster()
             workload.check()
             
@@ -35,17 +35,14 @@ class ChangePrimary(rdb_unittest.RdbTestCase):
             shardConfig = self.table.config()['shards'].run(self.conn)
             shardConfig[0]['primary_replica'] = beta.name
             self.table.config().update({'shards': shardConfig}).run(self.conn)
-            time.sleep(1)
-            self.table.wait(wait_for='all_replicas_ready')
-            
+            self.table.wait(wait_for='all_replicas_ready').run(self.conn)
             self.checkCluster()
             
             utils.print_with_time("Running after workload")
             workload.run_after()
             self.checkCluster()
+            utils.print_with_time("After workload complete")
             
-            utils.print_with_time("Workload complete")
-
 # ==== main
 
 if __name__ == '__main__':
