@@ -18,8 +18,20 @@ class RDBPorts(object):
         env["DB_NAME"] = self.db_name
         env["TABLE_NAME"] = self.table_name
 
-def run(command_line, ports, timeout):
-    assert isinstance(ports, RDBPorts)
+def run(command_line, ports, timeout, db_name=None, table_name=None):
+    if isinstance(ports, RDBPorts):
+        if db_name is not None:
+            ports.db_name = db_name
+        if table_name is not None:
+            ports.table_name = table_name
+    else: # probably a driver._Process subclass
+        assert db_name is not None, 'When using a non-RDBPorts ports, db_name must be supplied'
+        assert table_name is not None, 'When using a non-RDBPorts ports, table_name must be supplied'
+        
+        assert hasattr(ports, 'http_port'), 'When using a non-RDBPorts ports, the ports object must have a http_port attribute: %r' % ports
+        assert hasattr(ports, 'driver_port'), 'When using a non-RDBPorts ports, the ports object must have a driver_port attribute: %r' % ports
+        
+        ports = RDBPorts(host=ports.host, http_port=ports.http_port, rdb_port=ports.driver_port, db_name=db_name, table_name=table_name)
 
     start_time = time.time()
     end_time = start_time + timeout
@@ -71,8 +83,8 @@ class ContinuousWorkload(object):
             assert db_name is not None, 'When using a non-RDBPorts ports, db_name must be supplied'
             assert table_name is not None, 'When using a non-RDBPorts ports, table_name must be supplied'
             
-            assert hasattr(ports, 'http_port'), 'When using a non-RDBPorts ports, the object must have a http_port attribute: %r' % ports
-            assert hasattr(ports, 'driver_port'), 'When using a non-RDBPorts ports, the object must have a driver_port attribute: %r' % ports
+            assert hasattr(ports, 'http_port'), 'When using a non-RDBPorts ports, the ports object must have a http_port attribute: %r' % ports
+            assert hasattr(ports, 'driver_port'), 'When using a non-RDBPorts ports, the ports object must have a driver_port attribute: %r' % ports
             
             self.ports = RDBPorts(host=ports.host, http_port=ports.http_port, rdb_port=ports.driver_port, db_name=db_name, table_name=table_name)
 
