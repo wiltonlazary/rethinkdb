@@ -8,13 +8,14 @@
 superblock; instead it manipulates the superblock using the abstract `superblock_t`. This
 file provides the concrete superblock implementation used for ReQL primary and sindex
 B-trees. It also provides functions for working with the secondary index block and the
-metainfo, which are unrelated to the B-tree but stored on the ReQL primary superblock. 
+metainfo, which are unrelated to the B-tree but stored on the ReQL primary superblock.
 
 `btree/secondary_operations.*` and `btree/reql_specific.*` are the only files in the
 `btree/` directory that know about ReQL-specific concepts such as metainfo and sindexes.
 They should probably be moved out of the `btree/` directory. */
 
 class binary_blob_t;
+class btree_sindex_cache_t;
 
 /* `real_superblock_t` represents the superblock for the primary B-tree of a table. */
 class real_superblock_t : public superblock_t {
@@ -39,7 +40,7 @@ private:
     For writes it locks the write superblock acquisition semaphore until the
     sb_buf_ is released.
     Note that this is used to throttle writes compared to reads, but not required
-    for correctness. */    
+    for correctness. */
     new_semaphore_acq_t write_semaphore_acq_;
 
     buf_lock_t sb_buf_;
@@ -85,7 +86,8 @@ public:
     // metainfo (with a single key/value pair). Not for use with sindex superblocks.
     static void init_real_superblock(real_superblock_t *superblock,
                                 const std::vector<char> &metainfo_key,
-                                const binary_blob_t &metainfo_value);
+                                const binary_blob_t &metainfo_value,
+                                btree_sindex_cache_t *sindex_cache);
     static void init_sindex_superblock(sindex_superblock_t *superblock);
 
     btree_slice_t(cache_t *cache,

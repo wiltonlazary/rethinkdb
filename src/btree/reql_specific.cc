@@ -1,6 +1,7 @@
 // Copyright 2010-2015 RethinkDB, all rights reserved.
 #include "btree/reql_specific.hpp"
 
+#include "btree/btree_sindex_cache.hpp"
 #include "btree/secondary_operations.hpp"
 #include "buffer_cache/blob.hpp"
 #include "containers/binary_blob.hpp"
@@ -143,7 +144,8 @@ block_id_t sindex_superblock_t::get_sindex_block_id() {
 
 void btree_slice_t::init_real_superblock(real_superblock_t *superblock,
                                          const std::vector<char> &metainfo_key,
-                                         const binary_blob_t &metainfo_value) {
+                                         const binary_blob_t &metainfo_value,
+                                         btree_sindex_cache_t *sindex_cache) {
     buf_write_t sb_write(superblock->get());
     auto sb = static_cast<reql_btree_superblock_t *>(
             sb_write.get_data_write(REQL_BTREE_SUPERBLOCK_SIZE));
@@ -160,7 +162,7 @@ void btree_slice_t::init_real_superblock(real_superblock_t *superblock,
                             cluster_version_t::v2_1);
 
     buf_lock_t sindex_block(superblock->get(), alt_create_t::create);
-    initialize_secondary_indexes(&sindex_block);
+    initialize_secondary_indexes(&sindex_block, sindex_cache);
     sb->sindex_block = sindex_block.block_id();
 }
 

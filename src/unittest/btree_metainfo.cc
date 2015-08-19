@@ -2,6 +2,7 @@
 #include "unittest/gtest.hpp"
 
 #include "arch/io/disk.hpp"
+#include "btree/btree_sindex_cache.hpp"
 #include "btree/operations.hpp"
 #include "btree/reql_specific.hpp"
 #include "buffer_cache/cache_balancer.hpp"
@@ -60,8 +61,10 @@ TPTEST(BtreeMetainfo, MetainfoTest) {
         txn_t txn(&cache_conn, write_durability_t::HARD, 1);
         buf_lock_t sb_lock(&txn, SUPERBLOCK_ID, alt_create_t::create);
         real_superblock_t superblock(std::move(sb_lock));
+        btree_sindex_cache_t btree_sindex_cache;
         btree_slice_t::init_real_superblock(&superblock,
-                                            std::vector<char>(), binary_blob_t());
+                                            std::vector<char>(), binary_blob_t(),
+                                            &btree_sindex_cache);
     }
 
     for (int i = 0; i < 3; ++i) {

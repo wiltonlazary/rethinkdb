@@ -14,14 +14,17 @@
 #include "rdb_protocol/erase_range.hpp"
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/shards.hpp"
+#include "rdb_protocol/sindex_cache.hpp"
 #include "rdb_protocol/table_common.hpp"
 
 void store_t::note_reshard() {
     changefeed_servers.clear();
 }
 
-reql_version_t update_sindex_last_compatible_version(secondary_index_t *sindex,
-                                                     buf_lock_t *sindex_block) {
+reql_version_t update_sindex_last_compatible_version(
+        secondary_index_t *sindex,
+        buf_lock_t *sindex_block,
+        sindex_cache_t *sindex_cache) {
     sindex_disk_info_t sindex_info;
     deserialize_sindex_info(sindex->opaque_definition, &sindex_info);
 
@@ -44,7 +47,7 @@ reql_version_t update_sindex_last_compatible_version(secondary_index_t *sindex,
 
         sindex->opaque_definition = stream.vector();
 
-        ::set_secondary_index(sindex_block, sindex->id, *sindex);
+        ::set_secondary_index(sindex_block, sindex->id, *sindex, sindex_cache);
     }
 
     return res;
@@ -52,14 +55,15 @@ reql_version_t update_sindex_last_compatible_version(secondary_index_t *sindex,
 
 void store_t::update_outdated_sindex_list(buf_lock_t *sindex_block) {
     if (index_report.has()) {
-        std::map<sindex_name_t, secondary_index_t> sindexes;
-        get_secondary_indexes(sindex_block, &sindexes);
+        std::map<sindex_name_t, secondary_index_t> sindexes
+            = *sindex_cache->get_sindex_map(sindex_block);
 
         std::set<std::string> index_set;
         for (auto it = sindexes.begin(); it != sindexes.end(); ++it) {
             if (!it->first.being_deleted &&
                 update_sindex_last_compatible_version(&it->second,
-                                                      sindex_block) !=
+                                                      sindex_block,
+                                                      sindex_cache.get()) !=
                     reql_version_t::LATEST) {
                 index_set.insert(it->first.name);
             }
@@ -120,9 +124,9 @@ void store_t::help_construct_bring_sindexes_up_to_date() {
     // Drop these and recreate them (see github issue #2925)
     std::set<sindex_name_t> sindexes_to_update;
     {
-        std::map<sindex_name_t, secondary_index_t> sindexes;
-        get_secondary_indexes(&sindex_block, &sindexes);
-        for (auto it = sindexes.begin(); it != sindexes.end(); ++it) {
+        std::shared_ptr<const std::map<sindex_name_t, secondary_index_t> > sindexes
+            = sindex_cache->get_sindex_map(&sindex_block);
+        for (auto it = sindexes->begin(); it != sindexes->end(); ++it) {
             if (!it->second.being_deleted && !it->second.post_construction_complete) {
                 bool success = mark_secondary_index_deleted(&sindex_block, it->first);
                 guarantee(success);
@@ -138,9 +142,9 @@ void store_t::help_construct_bring_sindexes_up_to_date() {
     // Get the new map of indexes, now that we're deleting the old postconstructing ones
     // Kick off coroutines to finish deleting all indexes that are being deleted
     {
-        std::map<sindex_name_t, secondary_index_t> sindexes;
-        get_secondary_indexes(&sindex_block, &sindexes);
-        for (auto it = sindexes.begin(); it != sindexes.end(); ++it) {
+        std::shared_ptr<const std::map<sindex_name_t, secondary_index_t> > sindexes
+            = sindex_cache->get_sindex_map(&sindex_block);
+        for (auto it = sindexes->begin(); it != sindexes->end(); ++it) {
             if (it->second.being_deleted) {
                 coro_t::spawn_sometime(std::bind(&sindex_clearer_t::clear,
                                                  this, it->second, drainer.lock()));
@@ -159,12 +163,14 @@ scoped_ptr_t<sindex_superblock_t> acquire_sindex_for_read(
     real_superblock_t *superblock,
     const std::string &table_name,
     const std::string &sindex_id,
-    sindex_disk_info_t *sindex_info_out,
+    sindex_cache_t *sindex_cache,
+    std::shared_ptr<const sindex_cached_info_t> *sindex_info_out,
     uuid_u *sindex_uuid_out) {
     rassert(sindex_info_out != NULL);
     rassert(sindex_uuid_out != NULL);
 
     scoped_ptr_t<sindex_superblock_t> sindex_sb;
+    // TODO: Avoid copying this if the index is already in the cache
     std::vector<char> sindex_mapping_data;
 
     uuid_u sindex_uuid;
@@ -186,12 +192,7 @@ scoped_ptr_t<sindex_superblock_t> acquire_sindex_for_read(
             ql::base_exc_t::OP_FAILED, e.what(), ql::backtrace_id_t::empty());
     }
 
-    try {
-        deserialize_sindex_info(sindex_mapping_data, sindex_info_out);
-    } catch (const archive_exc_t &e) {
-        crash("%s", e.what());
-    }
-
+    *sindex_info_out = sindex_cache->get_sindex_info(sindex_uuid, sindex_mapping_data);
     *sindex_uuid_out = sindex_uuid;
     return sindex_sb;
 }
@@ -209,7 +210,7 @@ void do_read(ql::env_t *env,
                        env, rget.batchspec, rget.transforms, rget.terminal,
                        rget.sorting, res, release_superblock);
     } else {
-        sindex_disk_info_t sindex_info;
+        std::shared_ptr<const sindex_cached_info_t> sindex_info;
         uuid_u sindex_uuid;
         scoped_ptr_t<sindex_superblock_t> sindex_sb;
         region_t true_region;
@@ -220,11 +221,12 @@ void do_read(ql::env_t *env,
                     superblock,
                     rget.table_name,
                     rget.sindex->id,
+                    store->get_sindex_cache(),
                     &sindex_info,
                     &sindex_uuid);
             ql::skey_version_t skey_version =
                 ql::skey_version_from_reql_version(
-                    sindex_info.mapping_version_info.latest_compatible_reql_version);
+                    sindex_info->mapping_version_info.latest_compatible_reql_version);
             res->skey_version = skey_version;
             true_region = rget.sindex->region
                 ? *rget.sindex->region
@@ -239,7 +241,7 @@ void do_read(ql::env_t *env,
             return;
         }
 
-        if (sindex_info.geo == sindex_geo_bool_t::GEO) {
+        if (sindex_info->geo == sindex_geo_bool_t::GEO) {
             res->result = ql::exc_t(
                 ql::base_exc_t::LOGIC,
                 strprintf(
@@ -398,7 +400,7 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
         rget_read_response_t *res =
             boost::get<rget_read_response_t>(&response->response);
 
-        sindex_disk_info_t sindex_info;
+        std::shared_ptr<const sindex_cached_info_t> sindex_info;
         uuid_u sindex_uuid;
         scoped_ptr_t<sindex_superblock_t> sindex_sb;
         try {
@@ -408,13 +410,14 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
                     superblock,
                     geo_read.table_name,
                     geo_read.sindex.id,
-                &sindex_info, &sindex_uuid);
+                    store->get_sindex_cache(),
+                    &sindex_info, &sindex_uuid);
         } catch (const ql::exc_t &e) {
             res->result = e;
             return;
         }
 
-        if (sindex_info.geo != sindex_geo_bool_t::GEO) {
+        if (sindex_info->geo != sindex_geo_bool_t::GEO) {
             res->result = ql::exc_t(
                 ql::base_exc_t::LOGIC,
                 strprintf(
@@ -448,7 +451,7 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
         nearest_geo_read_response_t *res =
             boost::get<nearest_geo_read_response_t>(&response->response);
 
-        sindex_disk_info_t sindex_info;
+        std::shared_ptr<const sindex_cached_info_t> sindex_info;
         uuid_u sindex_uuid;
         scoped_ptr_t<sindex_superblock_t> sindex_sb;
         try {
@@ -458,13 +461,14 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
                     superblock,
                     geo_read.table_name,
                     geo_read.sindex_id,
-                &sindex_info, &sindex_uuid);
+                    store->get_sindex_cache(),
+                    &sindex_info, &sindex_uuid);
         } catch (const ql::exc_t &e) {
             res->results_or_error = e;
             return;
         }
 
-        if (sindex_info.geo != sindex_geo_bool_t::GEO) {
+        if (sindex_info->geo != sindex_geo_bool_t::GEO) {
             res->results_or_error = ql::exc_t(
                 ql::base_exc_t::LOGIC,
                 strprintf(
@@ -581,8 +585,7 @@ void store_t::protocol_read(const read_t &read,
 
     {
         profile::starter_t start_read("Perform read on shard.", trace);
-        rdb_read_visitor_t v(btree.get(), this,
-                             superblock,
+        rdb_read_visitor_t v(btree.get(), this, superblock,
                              ctx, response, trace.get_or_null(), interruptor);
         boost::apply_visitor(v, read.read);
     }

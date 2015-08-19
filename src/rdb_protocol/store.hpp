@@ -41,6 +41,7 @@ class superblock_t;
 class txn_t;
 class cache_balancer_t;
 struct rdb_modification_report_t;
+class sindex_cache_t;
 
 class sindex_not_ready_exc_t : public std::exception {
 public:
@@ -438,10 +439,18 @@ public:
     // any time the set of outdated indexes for this table changes
     scoped_ptr_t<outdated_index_report_t> index_report;
 
+    sindex_cache_t *get_sindex_cache() {
+        return sindex_cache.get();
+    }
+
 private:
     namespace_id_t table_id;
 
     sindex_context_map_t sindex_context;
+
+    // Cache for the current contents of the sindex_block in the btree.
+    // This is a `scoped_ptr` to avoid a circular include dependency with `btree.hpp`.
+    scoped_ptr_t<sindex_cache_t> sindex_cache;
 
     // Having a lot of writes queued up waiting for the superblock to become available
     // can stall reads for unacceptably long time periods.

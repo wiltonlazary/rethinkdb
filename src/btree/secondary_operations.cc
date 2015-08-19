@@ -1,6 +1,7 @@
 // Copyright 2010-2014 RethinkDB, all rights reserved.
 #include "btree/secondary_operations.hpp"
 
+#include "btree/btree_sindex_cache.hpp"
 #include "btree/operations.hpp"
 #include "buffer_cache/alt.hpp"
 #include "buffer_cache/blob.hpp"
@@ -9,6 +10,9 @@
 #include "containers/archive/versioned.hpp"
 
 RDB_IMPL_SERIALIZABLE_5_SINCE_v1_13(
+        secondary_index_t, superblock, opaque_definition,
+        post_construction_complete, being_deleted, id);
+RDB_IMPL_EQUALITY_COMPARABLE_5(
         secondary_index_t, superblock, opaque_definition,
         post_construction_complete, being_deleted, id);
 
@@ -75,7 +79,7 @@ cluster_version_t sindex_block_version(const btree_sindex_block_t *data) {
     }
 }
 
-void get_secondary_indexes_internal(
+void get_secondary_indexes_from_block(
         buf_lock_t *sindex_block,
         std::map<sindex_name_t, secondary_index_t> *sindexes_out) {
     buf_read_t read(sindex_block);
@@ -91,7 +95,10 @@ void get_secondary_indexes_internal(
 
 void set_secondary_indexes_internal(
         buf_lock_t *sindex_block,
-        const std::map<sindex_name_t, secondary_index_t> &sindexes) {
+        const std::map<sindex_name_t, secondary_index_t> &sindexes,
+        btree_sindex_cache_t *sindex_cache) {
+    sindex_cache->invalidate(sindex_block);
+
     buf_write_t write(sindex_block);
     btree_sindex_block_t *data
         = static_cast<btree_sindex_block_t *>(write.get_data_write());
@@ -106,7 +113,8 @@ void set_secondary_indexes_internal(
             buf_parent_t(sindex_block), &sindex_blob, sindexes);
 }
 
-void initialize_secondary_indexes(buf_lock_t *sindex_block) {
+void initialize_secondary_indexes(buf_lock_t *sindex_block,
+                                  btree_sindex_cache_t *sindex_cache) {
     buf_write_t write(sindex_block);
     btree_sindex_block_t *data
         = static_cast<btree_sindex_block_t *>(write.get_data_write());
@@ -114,17 +122,18 @@ void initialize_secondary_indexes(buf_lock_t *sindex_block) {
     memset(data->sindex_blob, 0, btree_sindex_block_t::SINDEX_BLOB_MAXREFLEN);
 
     set_secondary_indexes_internal(sindex_block,
-                                   std::map<sindex_name_t, secondary_index_t>());
+                                   std::map<sindex_name_t, secondary_index_t>(),
+                                   sindex_cache);
 }
 
 bool get_secondary_index(buf_lock_t *sindex_block, const sindex_name_t &name,
+                         btree_sindex_cache_t *sindex_cache,
                          secondary_index_t *sindex_out) {
-    std::map<sindex_name_t, secondary_index_t> sindex_map;
+    std::shared_ptr<const std::map<sindex_name_t, secondary_index_t> > sindex_map
+        = sindex_cache->get_sindex_map(sindex_block);
 
-    get_secondary_indexes_internal(sindex_block, &sindex_map);
-
-    auto it = sindex_map.find(name);
-    if (it != sindex_map.end()) {
+    auto it = sindex_map->find(name);
+    if (it != sindex_map->end()) {
         *sindex_out = it->second;
         return true;
     } else {
@@ -133,11 +142,12 @@ bool get_secondary_index(buf_lock_t *sindex_block, const sindex_name_t &name,
 }
 
 bool get_secondary_index(buf_lock_t *sindex_block, uuid_u id,
+                         btree_sindex_cache_t *sindex_cache,
                          secondary_index_t *sindex_out) {
-    std::map<sindex_name_t, secondary_index_t> sindex_map;
+    std::shared_ptr<const std::map<sindex_name_t, secondary_index_t> > sindex_map
+        = sindex_cache->get_sindex_map(sindex_block);
 
-    get_secondary_indexes_internal(sindex_block, &sindex_map);
-    for (auto it = sindex_map.begin(); it != sindex_map.end(); ++it) {
+    for (auto it = sindex_map->begin(); it != sindex_map->end(); ++it) {
         if (it->second.id == id) {
             *sindex_out = it->second;
             return true;
@@ -146,12 +156,8 @@ bool get_secondary_index(buf_lock_t *sindex_block, uuid_u id,
     return false;
 }
 
-void get_secondary_indexes(buf_lock_t *sindex_block,
-                           std::map<sindex_name_t, secondary_index_t> *sindexes_out) {
-    get_secondary_indexes_internal(sindex_block, sindexes_out);
-}
-
 void migrate_secondary_index_block(buf_lock_t *sindex_block,
+                                   btree_sindex_cache_t *sindex_cache,
                                    std::map<sindex_name_t, secondary_index_t> *sindexes_out) {
     guarantee(sindexes_out != nullptr);
 
@@ -163,26 +169,30 @@ void migrate_secondary_index_block(buf_lock_t *sindex_block,
         block_version = sindex_block_version(data);
     }
 
-    get_secondary_indexes_internal(sindex_block, sindexes_out);
+    std::shared_ptr<const std::map<sindex_name_t, secondary_index_t> > sindex_map
+        = sindex_cache->get_sindex_map(sindex_block);
     if (block_version != cluster_version_t::LATEST_DISK) {
-        set_secondary_indexes_internal(sindex_block, *sindexes_out);
+        set_secondary_indexes_internal(sindex_block, *sindex_map, sindex_cache);
     }
+    *sindexes_out = *sindex_map;
 }
 
 void set_secondary_index(buf_lock_t *sindex_block, const sindex_name_t &name,
-                         const secondary_index_t &sindex) {
-    std::map<sindex_name_t, secondary_index_t> sindex_map;
-    get_secondary_indexes_internal(sindex_block, &sindex_map);
+                         const secondary_index_t &sindex,
+                         btree_sindex_cache_t *sindex_cache) {
+    std::map<sindex_name_t, secondary_index_t> sindex_map
+        = *sindex_cache->get_sindex_map(sindex_block);
 
     /* We insert even if it already exists overwriting the old value. */
     sindex_map[name] = sindex;
-    set_secondary_indexes_internal(sindex_block, sindex_map);
+    set_secondary_indexes_internal(sindex_block, sindex_map, sindex_cache);
 }
 
 void set_secondary_index(buf_lock_t *sindex_block, uuid_u id,
-                         const secondary_index_t &sindex) {
-    std::map<sindex_name_t, secondary_index_t> sindex_map;
-    get_secondary_indexes_internal(sindex_block, &sindex_map);
+                         const secondary_index_t &sindex,
+                         btree_sindex_cache_t *sindex_cache) {
+    std::map<sindex_name_t, secondary_index_t> sindex_map
+        = *sindex_cache->get_sindex_map(sindex_block);
 
     for (auto it = sindex_map.begin(); it != sindex_map.end(); ++it) {
         if (it->second.id == id) {
@@ -190,15 +200,16 @@ void set_secondary_index(buf_lock_t *sindex_block, uuid_u id,
             it->second = sindex;
         }
     }
-    set_secondary_indexes_internal(sindex_block, sindex_map);
+    set_secondary_indexes_internal(sindex_block, sindex_map, sindex_cache);
 }
 
-bool delete_secondary_index(buf_lock_t *sindex_block, const sindex_name_t &name) {
-    std::map<sindex_name_t, secondary_index_t> sindex_map;
-    get_secondary_indexes_internal(sindex_block, &sindex_map);
+bool delete_secondary_index(buf_lock_t *sindex_block, const sindex_name_t &name,
+                            btree_sindex_cache_t *sindex_cache) {
+    std::map<sindex_name_t, secondary_index_t> sindex_map
+        = *sindex_cache->get_sindex_map(sindex_block);
 
     if (sindex_map.erase(name) == 1) {
-        set_secondary_indexes_internal(sindex_block, sindex_map);
+        set_secondary_indexes_internal(sindex_block, sindex_map, sindex_cache);
         return true;
     } else {
         return false;

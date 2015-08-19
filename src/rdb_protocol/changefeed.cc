@@ -11,6 +11,7 @@
 #include "rdb_protocol/btree.hpp"
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/protocol.hpp"
+#include "rdb_protocol/sindex_cache.hpp"
 #include "rdb_protocol/val.hpp"
 #include "rpc/mailbox/typed.hpp"
 
@@ -960,7 +961,7 @@ public:
                     is_primary_t::NO, n, sorting, ops}),
             *pk_range,
             sorting,
-            *ref.sindex_info,
+            ref.sindex_info,
             &resp,
             release_superblock_t::KEEP);
         auto *gs = boost::get<ql::grouped_t<ql::stream_t> >(&resp.result);

@@ -2,6 +2,7 @@
 #include "unittest/gtest.hpp"
 
 #include "arch/io/disk.hpp"
+#include "btree/btree_sindex_cache.hpp"
 #include "btree/operations.hpp"
 #include "btree/reql_specific.hpp"
 #include "buffer_cache/alt.hpp"
@@ -35,12 +36,15 @@ TPTEST(BTreeSindex, LowLevelOps) {
     cache_t cache(&serializer, &balancer, &get_global_perfmon_collection());
     cache_conn_t cache_conn(&cache);
 
+    btree_sindex_cache_t btree_sindex_cache;
+
     {
         txn_t txn(&cache_conn, write_durability_t::HARD, 1);
         buf_lock_t sb_lock(&txn, SUPERBLOCK_ID, alt_create_t::create);
         real_superblock_t superblock(std::move(sb_lock));
         btree_slice_t::init_real_superblock(&superblock,
-                                            std::vector<char>(), binary_blob_t());
+                                            std::vector<char>(), binary_blob_t(),
+                                            &btree_sindex_cache);
     }
 
     order_source_t order_source;
@@ -59,7 +63,7 @@ TPTEST(BTreeSindex, LowLevelOps) {
                                 superblock->get_sindex_block_id(),
                                 access_t::write);
 
-        initialize_secondary_indexes(&sindex_block);
+        initialize_secondary_indexes(&sindex_block, &btree_sindex_cache);
     }
 
     for (int i = 0; i < 100; ++i) {
@@ -83,7 +87,7 @@ TPTEST(BTreeSindex, LowLevelOps) {
                                 superblock->get_sindex_block_id(),
                                 access_t::write);
 
-        set_secondary_index(&sindex_block, name, s);
+        set_secondary_index(&sindex_block, name, s, &btree_sindex_cache);
     }
 
     {
@@ -97,14 +101,19 @@ TPTEST(BTreeSindex, LowLevelOps) {
                                 superblock->get_sindex_block_id(),
                                 access_t::write);
 
-        std::map<sindex_name_t, secondary_index_t> sindexes;
-        get_secondary_indexes(&sindex_block, &sindexes);
+        std::shared_ptr<const std::map<sindex_name_t, secondary_index_t> > sindexes
+            = btree_sindex_cache.get_sindex_map(&sindex_block);
+        {
+            std::map<sindex_name_t, secondary_index_t> sindexes_from_block;
+            get_secondary_indexes_from_block(&sindex_block, &sindexes_from_block);
+            ASSERT_TRUE(sindexes_from_block == *sindexes);
+        }
 
-        auto it = sindexes.begin();
+        auto it = sindexes->begin();
         auto jt = mirror.begin();
 
         for (;;) {
-            if (it == sindexes.end()) {
+            if (it == sindexes->end()) {
                 ASSERT_TRUE(jt == mirror.end());
                 break;
             }

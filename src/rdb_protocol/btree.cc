@@ -32,6 +32,7 @@
 #include "rdb_protocol/pseudo_geometry.hpp"
 #include "rdb_protocol/serialize_datum_onto_blob.hpp"
 #include "rdb_protocol/shards.hpp"
+#include "rdb_protocol/sindex_cache.hpp"
 #include "rdb_protocol/table_common.hpp"
 
 #include "debug.hpp"
@@ -538,10 +539,11 @@ class rget_sindex_data_t {
 public:
     rget_sindex_data_t(const key_range_t &_pkey_range, const ql::datum_range_t &_range,
                        reql_version_t wire_func_reql_version,
-                       ql::map_wire_func_t wire_func, sindex_multi_bool_t _multi)
+                       const counted_t<const ql::func_t> &_func,
+                       sindex_multi_bool_t _multi)
         : pkey_range(_pkey_range), range(_range),
           func_reql_version(wire_func_reql_version),
-          func(wire_func.compile_wire_func()), multi(_multi) { }
+          func(_func), multi(_multi) { }
 private:
     friend class rget_cb_t;
     const key_range_t pkey_range;
@@ -769,21 +771,21 @@ void rdb_rget_secondary_slice(
         const boost::optional<terminal_variant_t> &terminal,
         const key_range_t &pk_range,
         sorting_t sorting,
-        const sindex_disk_info_t &sindex_info,
+        const std::shared_ptr<const sindex_cached_info_t> &sindex_info,
         rget_read_response_t *response,
         release_superblock_t release_superblock) {
 
     r_sanity_check(boost::get<ql::exc_t>(&response->result) == NULL);
-    guarantee(sindex_info.geo == sindex_geo_bool_t::REGULAR);
+    guarantee(sindex_info->geo == sindex_geo_bool_t::REGULAR);
     profile::starter_t starter("Do range scan on secondary index.", ql_env->trace);
 
     const reql_version_t sindex_func_reql_version =
-        sindex_info.mapping_version_info.latest_compatible_reql_version;
+        sindex_info->mapping_version_info.latest_compatible_reql_version;
     rget_cb_t callback(
         rget_io_data_t(response, slice),
         job_data_t(ql_env, batchspec, transforms, terminal, sorting),
         rget_sindex_data_t(pk_range, sindex_range, sindex_func_reql_version,
-                           sindex_info.mapping, sindex_info.multi),
+                           sindex_info->compiled_mapping, sindex_info->multi),
         sindex_region.inner);
     btree_concurrent_traversal(
         superblock,
@@ -804,20 +806,20 @@ void rdb_get_intersecting_slice(
         const std::vector<ql::transform_variant_t> &transforms,
         const boost::optional<ql::terminal_variant_t> &terminal,
         const key_range_t &pk_range,
-        const sindex_disk_info_t &sindex_info,
+        const std::shared_ptr<const sindex_cached_info_t> &sindex_info,
         rget_read_response_t *response) {
     guarantee(query_geometry.has());
 
-    guarantee(sindex_info.geo == sindex_geo_bool_t::GEO);
+    guarantee(sindex_info->geo == sindex_geo_bool_t::GEO);
     profile::starter_t starter("Do intersection scan on geospatial index.", ql_env->trace);
 
     const reql_version_t sindex_func_reql_version =
-        sindex_info.mapping_version_info.latest_compatible_reql_version;
+        sindex_info->mapping_version_info.latest_compatible_reql_version;
     collect_all_geo_intersecting_cb_t callback(
         slice,
         geo_job_data_t(ql_env, batchspec, transforms, terminal),
-        geo_sindex_data_t(pk_range, sindex_info.mapping, sindex_func_reql_version,
-                          sindex_info.multi),
+        geo_sindex_data_t(pk_range, sindex_info->compiled_mapping,
+                          sindex_func_reql_version, sindex_info->multi),
         query_geometry,
         sindex_region.inner,
         response);
@@ -837,15 +839,15 @@ void rdb_get_nearest_slice(
     sindex_superblock_t *superblock,
     ql::env_t *ql_env,
     const key_range_t &pk_range,
-    const sindex_disk_info_t &sindex_info,
+    const std::shared_ptr<const sindex_cached_info_t> &sindex_info,
     nearest_geo_read_response_t *response) {
 
-    guarantee(sindex_info.geo == sindex_geo_bool_t::GEO);
+    guarantee(sindex_info->geo == sindex_geo_bool_t::GEO);
     profile::starter_t starter("Do nearest traversal on geospatial index.",
                                ql_env->trace);
 
     const reql_version_t sindex_func_reql_version =
-        sindex_info.mapping_version_info.latest_compatible_reql_version;
+        sindex_info->mapping_version_info.latest_compatible_reql_version;
 
     // TODO (daniel): Instead of calling this multiple times until we are done,
     //   results should be streamed lazily. Also, even if we don't do that,
@@ -857,8 +859,8 @@ void rdb_get_nearest_slice(
         try {
             nearest_traversal_cb_t callback(
                 slice,
-                geo_sindex_data_t(pk_range, sindex_info.mapping,
-                                  sindex_func_reql_version, sindex_info.multi),
+                geo_sindex_data_t(pk_range, sindex_info->compiled_mapping,
+                                  sindex_func_reql_version, sindex_info->multi),
                 ql_env,
                 &state);
             btree_concurrent_traversal(
@@ -1146,12 +1148,12 @@ std::vector<std::string> expand_geo_key(
 
 void compute_keys(const store_key_t &primary_key,
                   ql::datum_t doc,
-                  const sindex_disk_info_t &index_info,
+                  const std::shared_ptr<const sindex_cached_info_t> &index_info,
                   std::vector<std::pair<store_key_t, ql::datum_t> > *keys_out) {
     guarantee(keys_out->empty());
 
     const reql_version_t reql_version =
-        index_info.mapping_version_info.latest_compatible_reql_version;
+        index_info->mapping_version_info.latest_compatible_reql_version;
 
     // Secondary index functions are deterministic (so no need for an rdb_context_t)
     // and evaluated in a pristine environment (without global optargs).
@@ -1161,13 +1163,13 @@ void compute_keys(const store_key_t &primary_key,
                          reql_version);
 
     ql::datum_t index =
-        index_info.mapping.compile_wire_func()->call(&sindex_env, doc)->as_datum();
+        index_info->compiled_mapping->call(&sindex_env, doc)->as_datum();
 
-    if (index_info.multi == sindex_multi_bool_t::MULTI
+    if (index_info->multi == sindex_multi_bool_t::MULTI
         && index.get_type() == ql::datum_t::R_ARRAY) {
         for (uint64_t i = 0; i < index.arr_size(); ++i) {
             const ql::datum_t &skey = index.get(i, ql::THROW);
-            if (index_info.geo == sindex_geo_bool_t::GEO) {
+            if (index_info->geo == sindex_geo_bool_t::GEO) {
                 std::vector<std::string> geo_keys = expand_geo_key(reql_version,
                                                                    skey,
                                                                    primary_key,
@@ -1195,7 +1197,7 @@ void compute_keys(const store_key_t &primary_key,
             }
         }
     } else {
-        if (index_info.geo == sindex_geo_bool_t::GEO) {
+        if (index_info->geo == sindex_geo_bool_t::GEO) {
             std::vector<std::string> geo_keys = expand_geo_key(reql_version,
                                                                index,
                                                                primary_key,
@@ -1315,12 +1317,10 @@ void rdb_update_single_sindex(
     guarantee(old_keys_out == NULL || old_keys_out->size() == 0);
     guarantee(new_keys_out == NULL || new_keys_out->size() == 0);
 
-    sindex_disk_info_t sindex_info;
-    try {
-        deserialize_sindex_info(sindex->sindex.opaque_definition, &sindex_info);
-    } catch (const archive_exc_t &e) {
-        crash("%s", e.what());
-    }
+    std::shared_ptr<const sindex_cached_info_t> sindex_info =
+        store->get_sindex_cache()->get_sindex_info(sindex->sindex.id,
+                                                   sindex->sindex.opaque_definition);
+
     // TODO(2015-01): Actually get real profiling information for
     // secondary index updates.
     profile::trace_t *const trace = nullptr;
@@ -1507,7 +1507,7 @@ void rdb_update_single_sindex(
                 guarantee(clients_spot->read_signal()->is_pulsed());
                 guarantee(limit_clients_spot->read_signal()->is_pulsed());
                 lm->commit(lm_spot, ql::changefeed::sindex_ref_t{
-                        sindex->btree, superblock, &sindex_info});
+                        sindex->btree, superblock, sindex_info});
             });
     }
 }

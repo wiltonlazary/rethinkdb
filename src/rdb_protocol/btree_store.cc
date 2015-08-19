@@ -21,6 +21,7 @@
 #include "rdb_protocol/btree.hpp"
 #include "rdb_protocol/erase_range.hpp"
 #include "rdb_protocol/protocol.hpp"
+#include "rdb_protocol/sindex_cache.hpp"
 #include "serializer/config.hpp"
 #include "stl_utils.hpp"
 
@@ -96,6 +97,7 @@ store_t::store_t(const region_t &region,
       ctx(_ctx),
       index_report(std::move(_index_report)),
       table_id(_table_id),
+      sindex_cache(new sindex_cache_t),
       write_superblock_acq_semaphore(WRITE_SUPERBLOCK_ACQ_WAITERS_LIMIT)
 {
     cache.init(new cache_t(serializer, balancer, &perfmon_collection));
@@ -117,7 +119,8 @@ store_t::store_t(const region_t &region,
         txn_t txn(general_cache_conn.get(), write_durability_t::HARD, 1);
         buf_lock_t sb_lock(&txn, SUPERBLOCK_ID, alt_create_t::create);
         real_superblock_t superblock(std::move(sb_lock));
-        btree_slice_t::init_real_superblock(&superblock, key.vector(), binary_blob_t());
+        btree_slice_t::init_real_superblock(&superblock, key.vector(), binary_blob_t(),
+                                            sindex_cache.get());
     }
 
     btree.init(new btree_slice_t(cache.get(),
@@ -149,7 +152,7 @@ store_t::store_t(const region_t &region,
                                 access_t::write);
 
         std::map<sindex_name_t, secondary_index_t> sindexes;
-        migrate_secondary_index_block(&sindex_block, &sindexes);
+        migrate_secondary_index_block(&sindex_block, sindex_cache.get(), &sindexes);
 
         for (auto it = sindexes.begin(); it != sindexes.end(); ++it) {
             // Deleted secondary indexes should not be added to the perfmons
@@ -292,12 +295,12 @@ std::map<std::string, std::pair<sindex_config_t, sindex_status_t> > store_t::sin
                             access_t::read);
     superblock->release();
 
-    std::map<sindex_name_t, secondary_index_t> secondary_indexes;
-    get_secondary_indexes(&sindex_block, &secondary_indexes);
+    std::shared_ptr<const std::map<sindex_name_t, secondary_index_t> > secondary_indexes
+        = sindex_cache->get_sindex_map(&sindex_block);
     sindex_block.reset_buf_lock();
 
     std::map<std::string, std::pair<sindex_config_t, sindex_status_t> > results;
-    for (const auto &pair : secondary_indexes) {
+    for (const auto &pair : *secondary_indexes) {
         guarantee(pair.first.being_deleted == pair.second.being_deleted);
         if (pair.second.being_deleted) {
             continue;
@@ -402,9 +405,10 @@ void store_t::sindex_rename_multi(
     for (const auto &pair : name_changes) {
         secondary_index_t definition;
         bool success = get_secondary_index(
-            &sindex_block, sindex_name_t(pair.first), &definition);
+            &sindex_block, sindex_name_t(pair.first), sindex_cache.get(), &definition);
         guarantee(success);
-        success = delete_secondary_index(&sindex_block, sindex_name_t(pair.first));
+        success = delete_secondary_index(
+            &sindex_block, sindex_name_t(pair.first), sindex_cache.get());
         guarantee(success);
 
         auto slice_it = secondary_index_slices.find(definition.id);
@@ -419,7 +423,8 @@ void store_t::sindex_rename_multi(
     }
 
     for (const auto &pair : to_put_back) {
-        set_secondary_index(&sindex_block, sindex_name_t(pair.first), pair.second.first);
+        set_secondary_index(&sindex_block, sindex_name_t(pair.first), pair.second.first,
+                            sindex_cache.get());
         pair.second.second->rename(&perfmon_collection, "index-" + pair.first);
     }
 
@@ -443,7 +448,8 @@ void store_t::sindex_drop(
     superblock->release();
 
     secondary_index_t sindex;
-    bool success = ::get_secondary_index(&sindex_block, sindex_name_t(name), &sindex);
+    bool success = ::get_secondary_index(&sindex_block, sindex_name_t(name),
+                                         sindex_cache.get(), &sindex);
     guarantee(success, "sindex_drop() called on sindex that doesn't exist");
 
     /* Mark the secondary index as deleted */
@@ -617,7 +623,7 @@ bool store_t::add_sindex_internal(
         const std::vector<char> &opaque_definition,
         buf_lock_t *sindex_block) {
     secondary_index_t sindex;
-    if (::get_secondary_index(sindex_block, name, &sindex)) {
+    if (::get_secondary_index(sindex_block, name, sindex_cache.get(), &sindex)) {
         return false; // sindex was already created
     } else {
         {
@@ -638,7 +644,7 @@ bool store_t::add_sindex_internal(
 
         sindex.post_construction_complete = false;
 
-        ::set_secondary_index(sindex_block, name, sindex);
+        ::set_secondary_index(sindex_block, name, sindex, sindex_cache.get());
         return true;
     }
 }
@@ -837,7 +843,8 @@ void store_t::clear_sindex(
                                           sindex.superblock, access_t::write);
         sindex_superblock_lock.write_acq_signal()->wait_lazily_unordered();
         sindex_superblock_lock.mark_deleted();
-        ::delete_secondary_index(&sindex_block, compute_sindex_deletion_name(sindex.id));
+        ::delete_secondary_index(&sindex_block, compute_sindex_deletion_name(sindex.id),
+                                 sindex_cache.get());
         size_t num_erased = secondary_index_slices.erase(sindex.id);
         guarantee(num_erased == 1);
     }
@@ -888,22 +895,23 @@ std::map<sindex_name_t, secondary_index_t> store_t::get_sindexes() const {
     buf_lock_t sindex_block(
         superblock->expose_buf(), superblock->get_sindex_block_id(), access_t::read);
 
-    std::map<sindex_name_t, secondary_index_t> sindexes;
-    get_secondary_indexes(&sindex_block, &sindexes);
+    std::shared_ptr<const std::map<sindex_name_t, secondary_index_t> > sindexes
+        = sindex_cache->get_sindex_map(&sindex_block);
 
-    return sindexes;
+    return *sindexes;
 }
 
 bool store_t::mark_index_up_to_date(const sindex_name_t &name,
                                     buf_lock_t *sindex_block)
     THROWS_NOTHING {
     secondary_index_t sindex;
-    bool found = ::get_secondary_index(sindex_block, name, &sindex);
+    bool found = ::get_secondary_index(sindex_block, name, sindex_cache.get(),
+                                       &sindex);
 
     if (found) {
         sindex.post_construction_complete = true;
 
-        ::set_secondary_index(sindex_block, name, sindex);
+        ::set_secondary_index(sindex_block, name, sindex, sindex_cache.get());
     }
 
     return found;
@@ -913,12 +921,12 @@ bool store_t::mark_index_up_to_date(uuid_u id,
                                     buf_lock_t *sindex_block)
     THROWS_NOTHING {
     secondary_index_t sindex;
-    bool found = ::get_secondary_index(sindex_block, id, &sindex);
+    bool found = ::get_secondary_index(sindex_block, id, sindex_cache.get(), &sindex);
 
     if (found) {
         sindex.post_construction_complete = true;
 
-        ::set_secondary_index(sindex_block, id, sindex);
+        ::set_secondary_index(sindex_block, id, sindex, sindex_cache.get());
     }
 
     return found;
@@ -928,19 +936,20 @@ MUST_USE bool store_t::mark_secondary_index_deleted(
         buf_lock_t *sindex_block,
         const sindex_name_t &name) {
     secondary_index_t sindex;
-    bool success = get_secondary_index(sindex_block, name, &sindex);
+    bool success = get_secondary_index(sindex_block, name, sindex_cache.get(),
+                                       &sindex);
     if (!success) {
         return false;
     }
 
     // Delete the current entry
-    success = delete_secondary_index(sindex_block, name);
+    success = delete_secondary_index(sindex_block, name, sindex_cache.get());
     guarantee(success);
 
     // Insert the new entry under a different name
     const sindex_name_t sindex_del_name = compute_sindex_deletion_name(sindex.id);
     sindex.being_deleted = true;
-    set_secondary_index(sindex_block, sindex_del_name, sindex);
+    set_secondary_index(sindex_block, sindex_del_name, sindex, sindex_cache.get());
 
     // Hide the index from the perfmon collection
     auto slice_it = secondary_index_slices.find(sindex.id);
@@ -971,7 +980,7 @@ MUST_USE bool store_t::acquire_sindex_superblock_for_read(
 
     /* Figure out what the superblock for this index is. */
     secondary_index_t sindex;
-    if (!::get_secondary_index(&sindex_block, name, &sindex)) {
+    if (!::get_secondary_index(&sindex_block, name, sindex_cache.get(), &sindex)) {
         return false;
     }
 
@@ -1006,7 +1015,7 @@ MUST_USE bool store_t::acquire_sindex_superblock_for_write(
 
     /* Figure out what the superblock for this index is. */
     secondary_index_t sindex;
-    if (!::get_secondary_index(&sindex_block, name, &sindex)) {
+    if (!::get_secondary_index(&sindex_block, name, sindex_cache.get(), &sindex)) {
         return false;
     }
     *sindex_uuid_out = sindex.id;
@@ -1065,10 +1074,10 @@ void store_t::acquire_post_constructed_sindex_superblocks_for_write(
     THROWS_NOTHING {
     assert_thread();
     std::set<sindex_name_t> sindexes_to_acquire;
-    std::map<sindex_name_t, secondary_index_t> sindexes;
-    ::get_secondary_indexes(sindex_block, &sindexes);
+    std::shared_ptr<const std::map<sindex_name_t, secondary_index_t> > sindexes
+        = sindex_cache->get_sindex_map(sindex_block);
 
-    for (auto it = sindexes.begin(); it != sindexes.end(); ++it) {
+    for (auto it = sindexes->begin(); it != sindexes->end(); ++it) {
         /* Note that this can include indexes currently being deleted.
         In fact it must include those indexes if they had been post constructed
         before, since there might still be ongoing transactions traversing the
@@ -1090,10 +1099,10 @@ bool store_t::acquire_sindex_superblocks_for_write(
     THROWS_ONLY(sindex_not_ready_exc_t) {
     assert_thread();
 
-    std::map<sindex_name_t, secondary_index_t> sindexes;
-    ::get_secondary_indexes(sindex_block, &sindexes);
+    std::shared_ptr<const std::map<sindex_name_t, secondary_index_t> > sindexes
+        = sindex_cache->get_sindex_map(sindex_block);
 
-    for (auto it = sindexes.begin(); it != sindexes.end(); ++it) {
+    for (auto it = sindexes->begin(); it != sindexes->end(); ++it) {
         if (sindexes_to_acquire && !std_contains(*sindexes_to_acquire, it->first)) {
             continue;
         }
@@ -1124,10 +1133,10 @@ bool store_t::acquire_sindex_superblocks_for_write(
     THROWS_ONLY(sindex_not_ready_exc_t) {
     assert_thread();
 
-    std::map<sindex_name_t, secondary_index_t> sindexes;
-    ::get_secondary_indexes(sindex_block, &sindexes);
+    std::shared_ptr<const std::map<sindex_name_t, secondary_index_t> > sindexes
+        = sindex_cache->get_sindex_map(sindex_block);
 
-    for (auto it = sindexes.begin(); it != sindexes.end(); ++it) {
+    for (auto it = sindexes->begin(); it != sindexes->end(); ++it) {
         if (sindexes_to_acquire && !std_contains(*sindexes_to_acquire, it->second.id)) {
             continue;
         }

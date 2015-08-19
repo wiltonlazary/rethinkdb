@@ -17,6 +17,7 @@
 #include "rdb_protocol/minidriver.hpp"
 #include "rdb_protocol/pb_utils.hpp"
 #include "rdb_protocol/protocol.hpp"
+#include "rdb_protocol/sindex_cache.hpp"
 #include "rdb_protocol/store.hpp"
 #include "rdb_protocol/sym.hpp"
 #include "stl_utils.hpp"
@@ -134,12 +135,9 @@ ql::grouped_t<ql::stream_t> read_row_via_sindex(
             &sindex_uuid);
     guarantee(sindex_exists);
 
-    sindex_disk_info_t sindex_info;
-    try {
-        deserialize_sindex_info(opaque_definition, &sindex_info);
-    } catch (const archive_exc_t &e) {
-        crash("%s", e.what());
-    }
+    sindex_cache_t sindex_cache;
+    std::shared_ptr<const sindex_cached_info_t> sindex_info =
+        sindex_cache.get_sindex_info(sindex_uuid, opaque_definition);
 
     rget_read_response_t res;
     ql::datum_range_t datum_range(ql::datum_t(static_cast<double>(sindex_value)));

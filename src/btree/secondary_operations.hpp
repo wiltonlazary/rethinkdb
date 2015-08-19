@@ -10,6 +10,7 @@
 #include "containers/archive/archive.hpp"
 #include "containers/uuid.hpp"
 #include "rpc/serialize_macros.hpp"
+#include "rpc/semilattice/joins/macros.hpp"
 #include "serializer/types.hpp"
 
 /* This file contains code for working with the sindex block, which is a child of the
@@ -20,6 +21,7 @@ table's primary superblock.
 They should probably be moved out of the `btree/` directory. */
 
 class buf_lock_t;
+class btree_sindex_cache_t;
 
 struct secondary_index_t {
     secondary_index_t()
@@ -54,6 +56,7 @@ struct secondary_index_t {
 };
 
 RDB_DECLARE_SERIALIZABLE(secondary_index_t);
+RDB_DECLARE_EQUALITY_COMPARABLE(secondary_index_t);
 
 struct sindex_name_t {
     sindex_name_t()
@@ -83,32 +86,40 @@ RDB_DECLARE_SERIALIZABLE(sindex_name_t);
 /* Note if this function is called after secondary indexes have been added it
  * will leak blocks (and also make those secondary indexes unusable.) There's
  * no reason to ever do this. */
-void initialize_secondary_indexes(buf_lock_t *superblock);
+void initialize_secondary_indexes(buf_lock_t *superblock,
+                                  btree_sindex_cache_t *sindex_cache);
 
 bool get_secondary_index(buf_lock_t *sindex_block,
                          const sindex_name_t &name,
+                         btree_sindex_cache_t *sindex_cache,
                          secondary_index_t *sindex_out);
 
 bool get_secondary_index(buf_lock_t *sindex_block, uuid_u id,
+                         btree_sindex_cache_t *sindex_cache,
                          secondary_index_t *sindex_out);
 
-void get_secondary_indexes(buf_lock_t *sindex_block,
-                           std::map<sindex_name_t, secondary_index_t> *sindexes_out);
+void get_secondary_indexes_from_block(
+        buf_lock_t *sindex_block,
+        std::map<sindex_name_t, secondary_index_t> *sindexes_out);
 
 /* Rewrites the secondary index block with up-to-date serialization */
 void migrate_secondary_index_block(buf_lock_t *sindex_block,
+                                   btree_sindex_cache_t *sindex_cache,
                                    std::map<sindex_name_t, secondary_index_t> *sindexes_out);
 
 /* Overwrites existing values with the same id. */
 void set_secondary_index(buf_lock_t *sindex_block,
-                         const sindex_name_t &name, const secondary_index_t &sindex);
+                         const sindex_name_t &name, const secondary_index_t &sindex,
+                         btree_sindex_cache_t *sindex_cache);
 
 /* Must be used to overwrite an already existing sindex. */
 void set_secondary_index(buf_lock_t *sindex_block, uuid_u id,
-                         const secondary_index_t &sindex);
+                         const secondary_index_t &sindex,
+                         btree_sindex_cache_t *sindex_cache);
 
 // XXX note this just drops the entry. It doesn't cleanup the btree that it points
 // to. `drop_sindex` Does both and should be used publicly.
-bool delete_secondary_index(buf_lock_t *sindex_block, const sindex_name_t &name);
+bool delete_secondary_index(buf_lock_t *sindex_block, const sindex_name_t &name,
+                            btree_sindex_cache_t *sindex_cache);
 
 #endif /* BTREE_SECONDARY_OPERATIONS_HPP_ */

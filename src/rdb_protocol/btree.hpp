@@ -3,6 +3,7 @@
 #define RDB_PROTOCOL_BTREE_HPP_
 
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <utility>
@@ -23,6 +24,7 @@ template <class> class promise_t;
 struct rdb_value_t;
 class refcount_superblock_t;
 struct sindex_disk_info_t;
+struct sindex_cached_info_t;
 
 class parallel_traversal_progress_t;
 
@@ -157,7 +159,7 @@ void rdb_rget_secondary_slice(
     const boost::optional<ql::terminal_variant_t> &terminal,
     const key_range_t &pk_range,
     sorting_t sorting,
-    const sindex_disk_info_t &sindex_info,
+    const std::shared_ptr<const sindex_cached_info_t> &sindex_info,
     rget_read_response_t *response,
     release_superblock_t release_superblock);
 
@@ -171,7 +173,7 @@ void rdb_get_intersecting_slice(
     const std::vector<ql::transform_variant_t> &transforms,
     const boost::optional<ql::terminal_variant_t> &terminal,
     const key_range_t &pk_range,
-    const sindex_disk_info_t &sindex_info,
+    const std::shared_ptr<const sindex_cached_info_t> &sindex_info,
     rget_read_response_t *response);
 
 void rdb_get_nearest_slice(
@@ -183,7 +185,7 @@ void rdb_get_nearest_slice(
     sindex_superblock_t *superblock,
     ql::env_t *ql_env,
     const key_range_t &pk_range,
-    const sindex_disk_info_t &sindex_info,
+    const std::shared_ptr<const sindex_cached_info_t> &sindex_info,
     nearest_geo_read_response_t *response);
 
 void rdb_distribution_get(int max_depth,

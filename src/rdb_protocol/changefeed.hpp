@@ -6,6 +6,7 @@
 #include <exception>
 #include <functional>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 #include <utility>
@@ -37,7 +38,7 @@ class namespace_interface_access_t;
 class real_superblock_t;
 class sindex_superblock_t;
 struct rdb_modification_report_t;
-struct sindex_disk_info_t;
+struct sindex_cached_info_t;
 
 typedef std::pair<ql::datum_t, boost::optional<uint64_t> > index_pair_t;
 typedef std::map<std::string, std::vector<index_pair_t> > index_vals_t;
@@ -345,7 +346,7 @@ struct primary_ref_t {
 struct sindex_ref_t {
     btree_slice_t *btree;
     sindex_superblock_t *superblock;
-    const sindex_disk_info_t *sindex_info;
+    const std::shared_ptr<const sindex_cached_info_t> sindex_info;
 };
 
 class server_t;
