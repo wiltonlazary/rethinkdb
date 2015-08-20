@@ -980,6 +980,7 @@ bool rdb_modification_report_cb_t::has_pkey_cfeeds(
     if (min != nullptr && max != nullptr) {
         key_range_t range(key_range_t::closed, *min,
                           key_range_t::closed, *max);
+        new_mutex_acq_t acq(&store_->changefeed_servers_mutex);
         for (auto &&pair : store_->changefeed_servers) {
             if (pair.first.inner.overlaps(range)
                 && pair.second->has_limit(boost::optional<std::string>())) {
@@ -992,6 +993,7 @@ bool rdb_modification_report_cb_t::has_pkey_cfeeds(
 
 void rdb_modification_report_cb_t::finish(
     btree_slice_t *btree, real_superblock_t *superblock) {
+    new_mutex_acq_t acq(&store_->changefeed_servers_mutex);
     for (auto &&pair : store_->changefeed_servers) {
         pair.second->foreach_limit(
             boost::optional<std::string>(),
@@ -1038,9 +1040,9 @@ void rdb_modification_report_cb_t::on_mod_report(
                       &sindexes_updated_cond,
                       &old_keys,
                       &new_keys));
-        auto *cserver = store_->changefeed_server(report.primary_key);
-        if (update_pkey_cfeeds && cserver != nullptr) {
-            cserver->foreach_limit(
+        auto cserver = store_->changefeed_server(report.primary_key);
+        if (update_pkey_cfeeds && cserver.first != nullptr) {
+            cserver.first->foreach_limit(
                 boost::optional<std::string>(),
                 &report.primary_key,
                 [&](rwlock_in_line_t *clients_spot,
@@ -1064,8 +1066,8 @@ void rdb_modification_report_cb_t::on_mod_report(
                 });
         }
         keys_available_cond.wait_lazily_unordered();
-        if (cserver != nullptr) {
-            cserver->send_all(
+        if (cserver.first != nullptr) {
+            cserver.first->send_all(
                 ql::changefeed::msg_t(
                     ql::changefeed::msg_t::change_t{
                         old_keys,
@@ -1327,15 +1329,7 @@ void rdb_update_single_sindex(
 
     sindex_superblock_t *superblock = sindex->superblock.get();
 
-    ql::changefeed::server_t *server = nullptr;
-    auto_drainer_t::lock_t changefeed_server_keepalive;
-    {
-        ASSERT_NO_CORO_WAITING;
-        server = store->changefeed_server(modification->primary_key);
-        if (server != nullptr) {
-           changefeed_server_keepalive = server->get_keepalive();
-        }
-    }
+    auto cserver = store->changefeed_server(modification->primary_key);
 
     if (modification->info.deleted.first.has()) {
         guarantee(!modification->info.deleted.second.empty());
@@ -1352,8 +1346,8 @@ void rdb_update_single_sindex(
                                 key_to_unescaped_str(pair.first)).tag_num));
                 }
             }
-            if (server != nullptr) {
-                server->foreach_limit(
+            if (cserver.first != nullptr) {
+                cserver.first->foreach_limit(
                     sindex->name.name,
                     &modification->primary_key,
                     [&](rwlock_in_line_t *clients_spot,
@@ -1432,8 +1426,8 @@ void rdb_update_single_sindex(
                     keys_available_cond->pulse();
                 }
             }
-            if (server != nullptr) {
-                server->foreach_limit(
+            if (cserver.first != nullptr) {
+                cserver.first->foreach_limit(
                     sindex->name.name,
                     &modification->primary_key,
                     [&](rwlock_in_line_t *clients_spot,
@@ -1503,8 +1497,8 @@ void rdb_update_single_sindex(
         }
     }
 
-    if (server != nullptr) {
-        server->foreach_limit(
+    if (cserver.first != nullptr) {
+        cserver.first->foreach_limit(
             sindex->name.name,
             &modification->primary_key,
             [&](rwlock_in_line_t *clients_spot,

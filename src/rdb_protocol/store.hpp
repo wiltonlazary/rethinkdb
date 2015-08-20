@@ -406,15 +406,35 @@ public:
     // future we may use these `region_t`s instead of the `uuid_u`s in the
     // changefeed server.
     std::map<region_t, scoped_ptr_t<ql::changefeed::server_t> > changefeed_servers;
-    ql::changefeed::server_t *changefeed_server(const region_t &region) {
+    new_mutex_t changefeed_servers_mutex;
+
+private:
+    std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t> changefeed_server(
+            const region_t &region,
+            const new_mutex_acq_t *acq) {
+        acq->guarantee_is_holding(&changefeed_servers_mutex);
         for (auto &&pair : changefeed_servers) {
             if (pair.first.inner.is_superset(region.inner)) {
-                return pair.second.get();
+                return std::make_pair(pair.second.get(), pair.second->get_keepalive());
             }
         }
-        return nullptr;
+        return std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t>(
+            nullptr, auto_drainer_t::lock_t());
     }
-    ql::changefeed::server_t *make_changefeed_server(const region_t &region) {
+
+public:
+    std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t> changefeed_server(
+            const region_t &region) {
+        new_mutex_acq_t acq(&changefeed_servers_mutex);
+        return changefeed_server(region, &acq);
+    }
+    std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t>
+            get_or_make_changefeed_server(const region_t &region) {
+        new_mutex_acq_t acq(&changefeed_servers_mutex);
+        auto existing = changefeed_server(region, &acq);
+        if (existing.first != nullptr) {
+            return existing;
+        }
         guarantee(ctx && ctx->manager);
         for (auto &&pair : changefeed_servers) {
             guarantee(!pair.first.inner.overlaps(region.inner));
@@ -423,15 +443,18 @@ public:
             std::make_pair(
                 region_t(region),
                 make_scoped<ql::changefeed::server_t>(ctx->manager, this))).first;
-        return it->second.get();
+        return std::make_pair(it->second.get(), it->second->get_keepalive());
     }
-    ql::changefeed::server_t *changefeed_server(const store_key_t &key) {
+    std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t> changefeed_server(
+            const store_key_t &key) {
+        new_mutex_acq_t acq(&changefeed_servers_mutex);
         for (auto &&pair : changefeed_servers) {
             if (pair.first.inner.contains_key(key)) {
-                return pair.second.get();
+                return std::make_pair(pair.second.get(), pair.second->get_keepalive());
             }
         }
-        return nullptr;
+        return std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t>(
+            nullptr, auto_drainer_t::lock_t());
     }
 
     // This report is used by the outdated index issue tracker, and should be updated
