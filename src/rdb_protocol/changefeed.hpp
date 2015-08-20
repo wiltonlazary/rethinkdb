@@ -452,6 +452,7 @@ public:
                                           rwlock_in_line_t *,
                                           limit_manager_t *)> f) THROWS_NOTHING;
     bool has_limit(const boost::optional<std::string> &s);
+    auto_drainer_t::lock_t get_keepalive();
 private:
     friend class limit_manager_t;
     void stop_mailbox_cb(signal_t *interruptor, client_t::addr_t addr);

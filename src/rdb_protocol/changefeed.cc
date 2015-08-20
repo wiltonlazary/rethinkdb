@@ -561,6 +561,10 @@ bool server_t::has_limit(const boost::optional<std::string> &sindex) {
     return false;
 }
 
+auto_drainer_t::lock_t server_t::get_keepalive() {
+    return drainer.lock();
+}
+
 void server_t::foreach_limit(const boost::optional<std::string> &sindex,
                              const store_key_t *pkey,
                              std::function<void(rwlock_in_line_t *,

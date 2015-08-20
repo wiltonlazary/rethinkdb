@@ -1312,8 +1312,8 @@ void rdb_update_single_sindex(
     // function.
     guarantee(modification->primary_key.size() != 0);
 
-    guarantee(old_keys_out == NULL || old_keys_out->size() == 0);
-    guarantee(new_keys_out == NULL || new_keys_out->size() == 0);
+    guarantee(old_keys_out == nullptr || old_keys_out->size() == 0);
+    guarantee(new_keys_out == nullptr || new_keys_out->size() == 0);
 
     sindex_disk_info_t sindex_info;
     try {
@@ -1327,8 +1327,15 @@ void rdb_update_single_sindex(
 
     sindex_superblock_t *superblock = sindex->superblock.get();
 
-    ql::changefeed::server_t *server
-        = store->changefeed_server(modification->primary_key);
+    ql::changefeed::server_t *server = nullptr;
+    auto_drainer_t::lock_t changefeed_server_keepalive;
+    {
+        ASSERT_NO_CORO_WAITING;
+        server = store->changefeed_server(modification->primary_key);
+        if (server != nullptr) {
+           changefeed_server_keepalive = server->get_keepalive();
+        }
+    }
 
     if (modification->info.deleted.first.has()) {
         guarantee(!modification->info.deleted.second.empty());
@@ -1337,7 +1344,7 @@ void rdb_update_single_sindex(
 
             std::vector<std::pair<store_key_t, ql::datum_t> > keys;
             compute_keys(modification->primary_key, deleted, sindex_info, &keys);
-            if (old_keys_out != NULL) {
+            if (old_keys_out != nullptr) {
                 for (const auto &pair : keys) {
                     old_keys_out->push_back(
                         std::make_pair(
@@ -1345,7 +1352,7 @@ void rdb_update_single_sindex(
                                 key_to_unescaped_str(pair.first)).tag_num));
                 }
             }
-            if (server != NULL) {
+            if (server != nullptr) {
                 server->foreach_limit(
                     sindex->name.name,
                     &modification->primary_key,
@@ -1383,7 +1390,7 @@ void rdb_update_single_sindex(
                             repli_timestamp_t::distant_past,
                             deletion_context,
                             delete_mode_t::REGULAR_QUERY,
-                            NULL);
+                            nullptr);
                     }
                     // The keyvalue location gets destroyed here.
                 }
@@ -1394,7 +1401,7 @@ void rdb_update_single_sindex(
             // Do nothing (it wasn't actually in the index).
 
             // See comment in `catch` below.
-            guarantee(old_keys_out == NULL || old_keys_out->size() == 0);
+            guarantee(old_keys_out == nullptr || old_keys_out->size() == 0);
         }
     }
 
@@ -1411,8 +1418,8 @@ void rdb_update_single_sindex(
             std::vector<std::pair<store_key_t, ql::datum_t> > keys;
 
             compute_keys(modification->primary_key, added, sindex_info, &keys);
-            if (new_keys_out != NULL) {
-                guarantee(keys_available_cond != NULL);
+            if (new_keys_out != nullptr) {
+                guarantee(keys_available_cond != nullptr);
                 for (const auto &pair : keys) {
                     new_keys_out->push_back(
                         std::make_pair(
@@ -1425,7 +1432,7 @@ void rdb_update_single_sindex(
                     keys_available_cond->pulse();
                 }
             }
-            if (server != NULL) {
+            if (server != nullptr) {
                 server->foreach_limit(
                     sindex->name.name,
                     &modification->primary_key,
@@ -1478,7 +1485,7 @@ void rdb_update_single_sindex(
             // can only be triggered by an exception thrown from `compute_keys`
             // (which begs the question of why so many other statements are
             // inside of it), so this guarantee should never trip.
-            if (keys_available_cond != NULL) {
+            if (keys_available_cond != nullptr) {
                 guarantee(!decremented_updates_left);
                 guarantee(new_keys_out->size() == 0);
                 guarantee(*updates_left > 0);
@@ -1488,7 +1495,7 @@ void rdb_update_single_sindex(
             }
         }
     } else {
-        if (keys_available_cond != NULL) {
+        if (keys_available_cond != nullptr) {
             guarantee(*updates_left > 0);
             if (--*updates_left == 0) {
                 keys_available_cond->pulse();
@@ -1496,7 +1503,7 @@ void rdb_update_single_sindex(
         }
     }
 
-    if (server != NULL) {
+    if (server != nullptr) {
         server->foreach_limit(
             sindex->name.name,
             &modification->primary_key,

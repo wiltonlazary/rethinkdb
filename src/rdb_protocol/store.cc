@@ -17,7 +17,16 @@
 #include "rdb_protocol/table_common.hpp"
 
 void store_t::note_reshard() {
-    changefeed_servers.clear();
+    // We remove servers from the map first, and then destruct them.
+    // The server_t destructor can block, and we could get into race conditions
+    // where someone looks up a server in the map that's already in the middle
+    // of being destructed (depending on how erasing from the std::map is implemented).
+    while (!changefeed_servers.empty()) {
+        scoped_ptr_t<ql::changefeed::server_t>
+            tmp(std::move(changefeed_servers.begin()->second));
+        changefeed_servers.erase(changefeed_servers.begin());
+        // The changefeed server is actually destructed here. This can block.
+    }
 }
 
 reql_version_t update_sindex_last_compatible_version(secondary_index_t *sindex,
