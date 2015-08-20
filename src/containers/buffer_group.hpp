@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <vector>
+#include <sys/types.h>
 
 #include "errors.hpp"
 
