@@ -174,8 +174,7 @@ public:
         THROWS_ONLY(interrupted_exc_t, no_such_table_exc_t);
 
     /* `set_config()` changes the configuration of the table with the given ID. It may
-    block. If it returns false the change could not be applied, but if it returns
-    successfully, the change will be visible in `find()`, etc. */
+    block. If it returns successfully, the change will be visible in `find()`, etc. */
     void set_config(
         const namespace_id_t &table_id,
         const table_config_and_shards_change_t &table_config_and_shards_change,

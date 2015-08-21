@@ -162,7 +162,7 @@ public:
     table_config_and_shards_change_t() { }
 
     template <typename T>
-    table_config_and_shards_change_t(T &&_change)
+    explicit table_config_and_shards_change_t(T &&_change)
         : change(std::forward<T>(_change)) { }
 
     table_config_and_shards_change_t(const table_config_and_shards_change_t &) = default;
@@ -198,7 +198,8 @@ private:
     class apply_change_visitor_t
         : public boost::static_visitor<bool> {
     public:
-        apply_change_visitor_t(table_config_and_shards_t *_table_config_and_shards)
+        explicit apply_change_visitor_t(
+                table_config_and_shards_t *_table_config_and_shards)
             : table_config_and_shards(_table_config_and_shards) { }
 
         result_type operator()(
