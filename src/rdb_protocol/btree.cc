@@ -983,7 +983,8 @@ bool rdb_modification_report_cb_t::has_pkey_cfeeds(
         auto cservers = store_->access_changefeed_servers();
         for (auto &&pair : *cservers.first) {
             if (pair.first.inner.overlaps(range)
-                && pair.second->has_limit(boost::optional<std::string>())) {
+                && pair.second->has_limit(boost::optional<std::string>(),
+                                          pair.second->get_keepalive())) {
                 return true;
             }
         }
@@ -1009,7 +1010,7 @@ void rdb_modification_report_cb_t::finish(
                     lm->commit(lm_spot,
                                ql::changefeed::primary_ref_t{btree, superblock});
                 }
-            });
+            }, pair.second->get_keepalive());
     }
 }
 
@@ -1063,7 +1064,7 @@ void rdb_modification_report_cb_t::on_mod_report(
                                     ql::datum_t::null(), report.info.added.first);
                         }
                     }
-                });
+                }, cserver.second);
         }
         keys_available_cond.wait_lazily_unordered();
         if (cserver.first != nullptr) {
@@ -1076,7 +1077,8 @@ void rdb_modification_report_cb_t::on_mod_report(
                             report.info.deleted.first,
                             report.info.added.first}),
                 report.primary_key,
-                cfeed_stamp_spot);
+                cfeed_stamp_spot,
+                cserver.second);
         }
         sindexes_updated_cond.wait_lazily_unordered();
     }
@@ -1359,7 +1361,7 @@ void rdb_update_single_sindex(
                         for (const auto &pair : keys) {
                             lm->del(lm_spot, pair.first, is_primary_t::NO);
                         }
-                    });
+                    }, cserver.second);
             }
             for (auto it = keys.begin(); it != keys.end(); ++it) {
                 promise_t<superblock_t *> return_superblock_local;
@@ -1440,7 +1442,7 @@ void rdb_update_single_sindex(
                             lm->add(lm_spot, pair.first, is_primary_t::NO,
                                     pair.second, added);
                         }
-                    });
+                    }, cserver.second);
             }
             for (auto it = keys.begin(); it != keys.end(); ++it) {
                 promise_t<superblock_t *> return_superblock_local;
@@ -1509,7 +1511,7 @@ void rdb_update_single_sindex(
                 guarantee(limit_clients_spot->read_signal()->is_pulsed());
                 lm->commit(lm_spot, ql::changefeed::sindex_ref_t{
                         sindex->btree, superblock, &sindex_info});
-            });
+            }, cserver.second);
     }
 }
 

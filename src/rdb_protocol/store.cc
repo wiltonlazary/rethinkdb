@@ -268,7 +268,7 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
     void operator()(const changefeed_subscribe_t &s) {
         auto cserver = store->get_or_make_changefeed_server(s.region);
         guarantee(cserver.first != nullptr);
-        cserver.first->add_client(s.addr, s.region);
+        cserver.first->add_client(s.addr, s.region, cserver.second);
         response->response = changefeed_subscribe_response_t();
         auto res = boost::get<changefeed_subscribe_response_t>(&response->response);
         guarantee(res != NULL);
@@ -338,7 +338,8 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
             s.uuid,
             s.spec,
             ql::changefeed::limit_order_t(s.spec.range.sorting),
-            std::move(lvec));
+            std::move(lvec),
+            cserver.second);
         auto addr = cserver.first->get_limit_stop_addr();
         std::vector<decltype(addr)> vec{addr};
         response->response = changefeed_limit_subscribe_response_t(1, std::move(vec));
@@ -347,7 +348,8 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
     changefeed_stamp_response_t do_stamp(const changefeed_stamp_t &s) {
         auto cserver = store->changefeed_server(s.region);
         if (cserver.first != nullptr) {
-            if (boost::optional<uint64_t> stamp = cserver.first->get_stamp(s.addr)) {
+            if (boost::optional<uint64_t> stamp
+                    = cserver.first->get_stamp(s.addr, cserver.second)) {
                 changefeed_stamp_response_t out;
                 out.stamps = std::map<uuid_u, uint64_t>();
                 (*out.stamps)[cserver.first->get_uuid()] = *stamp;
@@ -368,7 +370,8 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
         if (cserver.first != nullptr) {
             res->resp = changefeed_point_stamp_response_t::valid_response_t();
             auto *vres = &*res->resp;
-            if (boost::optional<uint64_t> stamp = cserver.first->get_stamp(s.addr)) {
+            if (boost::optional<uint64_t> stamp
+                    = cserver.first->get_stamp(s.addr, cserver.second)) {
                 vres->stamp = std::make_pair(cserver.first->get_uuid(), *stamp);
             } else {
                 // The client was removed, so no future messages are coming.
