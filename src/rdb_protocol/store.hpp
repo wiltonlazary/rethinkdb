@@ -415,7 +415,7 @@ private:
 public:
     // Returns a pointer to `changefeed_servers` together with a read acquisition
     // on `changefeed_servers_lock`.
-    std::pair<std::map<region_t, scoped_ptr_t<ql::changefeed::server_t> > *,
+    std::pair<const std::map<region_t, scoped_ptr_t<ql::changefeed::server_t> > *,
               scoped_ptr_t<rwlock_acq_t> > access_changefeed_servers();
     // Return a pointer to a specific changefeed server if it exists. These can
     // block.

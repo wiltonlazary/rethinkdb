@@ -860,7 +860,7 @@ std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t> store_t::changefee
         nullptr, auto_drainer_t::lock_t());
 }
 
-std::pair<std::map<region_t, scoped_ptr_t<ql::changefeed::server_t> > *,
+std::pair<const std::map<region_t, scoped_ptr_t<ql::changefeed::server_t> > *,
           scoped_ptr_t<rwlock_acq_t> > store_t::access_changefeed_servers() {
     return std::make_pair(&changefeed_servers,
                           make_scoped<rwlock_acq_t>(&changefeed_servers_lock,
