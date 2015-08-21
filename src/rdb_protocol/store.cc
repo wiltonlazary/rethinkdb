@@ -1,6 +1,8 @@
 // Copyright 2010-2014 RethinkDB, all rights reserved.
 #include "rdb_protocol/store.hpp"
 
+#include <list>
+
 #include "btree/backfill_debug.hpp"
 #include "btree/reql_specific.hpp"
 #include "btree/superblock.hpp"
@@ -17,11 +19,23 @@
 #include "rdb_protocol/table_common.hpp"
 
 void store_t::note_reshard() {
-    rwlock_acq_t acq(&changefeed_servers_lock, access_t::write);
-    // This can block, and we must make sure that nobody gets a changefeed server
-    // that's already getting destructed. This is the reason for why we have the
-    // `changefeed_servers_lock`.
-    changefeed_servers.clear();
+    // We acquire `changefeed_servers_lock` and move all pointers out of
+    // `changefeed_servers`. We then destruct the servers in a separate step,
+    // after releasing the lock.
+    // The reason we do this is to avoid deadlocks that could happen if someone
+    // was holding a lock on the drainer in one of the changefeed servers,
+    // and was at the same time trying to acquire the `changefeed_servers_lock`.
+    std::list<scoped_ptr_t<ql::changefeed::server_t> > to_destruct;
+    {
+        rwlock_acq_t acq(&changefeed_servers_lock, access_t::write);
+        ASSERT_NO_CORO_WAITING;
+        for (auto &pair : changefeed_servers) {
+            to_destruct.emplace_back(std::move(pair.second));
+        }
+        changefeed_servers.clear();
+    }
+    // The changefeed servers are actually getting destructed here. This might
+    // block.
 }
 
 reql_version_t update_sindex_last_compatible_version(secondary_index_t *sindex,
