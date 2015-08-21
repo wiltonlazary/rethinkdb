@@ -15,20 +15,21 @@ import driver, scenario_common, utils, vcoptparse
 opts = vcoptparse.OptParser()
 scenario_common.prepare_option_parser_mode_flags(opts)
 opts['random-seed'] = vcoptparse.FloatFlag('--random-seed', random.random())
-opts['num-tables'] = vcoptparse.IntFlag('--num-tables', 6) # Number of tables to create
-opts['table-scale'] = vcoptparse.IntFlag('--table-scale', 7) # Factor of increasing table size
-opts['duration'] = vcoptparse.IntFlag('--duration', 120) # Time to perform fuzzing in seconds
-opts['ignore-timeouts'] = vcoptparse.BoolFlag('--ignore-timeouts') # Ignore table_wait timeouts and continue
-opts['progress'] = vcoptparse.BoolFlag('--progress') # Write messages every 10 seconds with the time remaining
+opts['servers'] = vcoptparse.IntFlag('--servers', 1) # Number of tables to create
+opts['duration'] = vcoptparse.IntFlag('--duration', 900) # Time to perform fuzzing in seconds
+opts['progress'] = vcoptparse.BoolFlag('--progress', False) # Write messages every 10 seconds with the time remaining
+opts['threads'] = vcoptparse.IntFlag('--threads', 16) # Number of client threads to run (not counting changefeeds)
+opts['changefeeds'] = vcoptparse.BoolFlag('--changefeeds', False) # Whether or not to use changefeeds
 parsed_opts = opts.parse(sys.argv)
 _, command_prefix, serve_options = scenario_common.parse_mode_flags(parsed_opts)
 
 r = utils.import_python_driver()
 dbName, tableName = utils.get_test_db_table()
 
-num_threads = 1
+server_names = list(string.ascii_lowercase[:parsed_opts['servers']])
+
+# Global data used by query generators, and a lock to make it thread-safe
 data_lock = threading.Lock()
-server_names = [ 'War' ]
 dbs = set()
 tables = set()
 indexes = set()
@@ -41,7 +42,8 @@ class Db:
     def unlink(self):
         for table in list(self.tables):
             table.unlink()
-        dbs.remove(self)
+        if self in dbs:
+            dbs.remove(self)
 
 class Table:
     def __init__(self, db, name):
@@ -55,8 +57,10 @@ class Table:
     def unlink(self):
         for index in list(self.indexes):
             index.unlink()
-        self.db.tables.remove(self)
-        tables.remove(self)
+        if self in self.db.tables:
+            self.db.tables.remove(self)
+        if self in tables:
+            tables.remove(self)
 
 class Index:
     def __init__(self, table, name):
@@ -65,8 +69,10 @@ class Index:
         table.indexes.add(self)
         indexes.add(self)
     def unlink(self):
-        self.table.indexes.remove(self)
-        indexes.remove(self)
+        if self in self.table.indexes:
+            self.table.indexes.remove(self)
+        if self in indexes:
+            indexes.remove(self)
 
 def make_name():
     return ''.join(random.choice(string.ascii_lowercase) for i in xrange(4))
@@ -86,10 +92,17 @@ def rand_table():
 def rand_index():
     return random.sample(indexes, 1)[0]
 
+def accumulate(iterable):
+    it = iter(iterable)
+    total = next(it)
+    yield total
+    for element in it:
+        total = total + element
+        yield total
+
 def weighted_random(weighted_ops):
     ops, weights = zip(*weighted_ops)
     distribution = list(accumulate(weights))
-
     chosen_weight = random.random() * distribution[-1]
     return ops[bisect.bisect(distribution, chosen_weight)]
 
@@ -99,27 +112,33 @@ def run_random_query(conn, weighted_ops):
         try:
             weighted_ops = [x for x in weighted_ops if x[0].is_valid()]
             op_type = weighted_random(weighted_ops)
-            op = op_type()
+            op = op_type(conn)
         finally:
             data_lock.release()
 
-        print('Running op of type: %s' % str(op_type))
-        op.run_query(conn)
+        q = op.get_query()
+        q.run(conn)
+        sys.stdout.write('.')
+        sys.stdout.flush()
 
         data_lock.acquire()
         try:
             op.post_run()
         finally:
             data_lock.release()
-    except r.ReqlRuntimeError as ex:
-        print('Exception: %s' % repr(ex))
+    except r.ReqlAvailabilityError as ex:
+        pass # These are perfectly normal during fuzzing due to concurrent queries
+    except r.ReqlError as ex:
+        print('Query %s resulted in Exception: %s' % (str(q), repr(ex)))
 
 class Query:
     @staticmethod
     def is_valid():
         return True
-    def run_query(self, conn):
-        self.sub_query(r, conn)
+    def __init__(self, conn):
+        self.conn = conn
+    def get_query(self):
+        return self.sub_query(r)
     def post_run(self):
         pass
 
@@ -127,10 +146,11 @@ class DbQuery:
     @staticmethod
     def is_valid():
         return len(dbs) > 0
-    def __init__(self):
+    def __init__(self, conn):
+        self.conn = conn
         self.db = rand_db()
-    def run_query(self, conn):
-        self.sub_query(r.db(self.db.name), conn)
+    def get_query(self):
+        return self.sub_query(r.db(self.db.name))
     def post_run(self):
         pass
 
@@ -138,10 +158,11 @@ class TableQuery:
     @staticmethod
     def is_valid():
         return len(tables) > 0
-    def __init__(self):
+    def __init__(self, conn):
+        self.conn = conn
         self.table = rand_table()
-    def run_query(self, conn):
-        self.sub_query(r.db(self.table.db.name).table(self.table.name), conn)
+    def get_query(self):
+        return self.sub_query(r.db(self.table.db.name).table(self.table.name))
     def post_run(self):
         pass
 
@@ -149,96 +170,105 @@ class IndexQuery:
     @staticmethod
     def is_valid():
         return len(indexes) > 0
-    def __init__(self):
+    def __init__(self, conn):
+        self.conn = conn
         self.index = rand_index()
-    def run_query(self, conn):
-        self.sub_query(r.db(self.index.table.db.name).table(self.index.table.name), conn)
+    def get_query(self):
+        return self.sub_query(r.db(self.index.table.db.name).table(self.index.table.name))
     def post_run(self):
         pass
 
 # No requirements
 class db_create(Query):
-    def __init__(self):
+    def __init__(self, conn):
+        Query.__init__(self, conn)
         self.db = Db(make_name())
-    def sub_query(self, q, conn):
-        q.db_create(self.db.name).run(conn)
+    def sub_query(self, q):
+        return r.db_create(self.db.name)
+
+class system_table_read(Query):
+    def sub_query(self, q):
+        table = random.choice(['table_config',
+                               'server_config',
+                               'db_config',
+                               'cluster_config',
+                               'table_status',
+                               'server_status',
+                               'current_issues',
+                               'jobs',
+                               'stats',
+                               'logs',
+                               '_debug_table_status'])
+        return r.db('rethinkdb').table(table).coerce_to('array')
+        
 
 # Requires a DB
 class db_drop(DbQuery):
-    def run_query(self, conn):
-        r.db_drop(self.db.name).run(conn)
+    def sub_query(self, q):
+        return r.db_drop(self.db.name)
     def post_run(self):
         self.db.unlink()
 
 class table_create(DbQuery):
-    def __init__(self):
-        DbQuery.__init__(self)
+    def __init__(self, conn):
+        DbQuery.__init__(self, conn)
         self.table = Table(self.db, make_name())
-    def sub_query(self, q, conn):
-        q.table_create(self.table.name).run(conn)
+    def sub_query(self, q):
+        return q.table_create(self.table.name)
 
 # Requires a Table
-
 class wait(TableQuery):
-    def sub_query(self, q, conn):
+    def sub_query(self, q):
         wait_for = random.choice(['all_replicas_ready',
                                   'ready_for_writes',
                                   'ready_for_reads',
                                   'ready_for_outdated_reads'])
-        q.wait(wait_for=wait_for, timeout=30).run(conn)
+        return q.wait(wait_for=wait_for, timeout=30)
 
 class reconfigure(TableQuery):
-    def sub_query(self, q, conn):
-        q.reconfigure(shards=rand_shards(), replicas=rand_replicas()).run(conn)
+    def sub_query(self, q):
+        return q.reconfigure(shards=rand_shards(), replicas=rand_replicas())
 
 class rebalance(TableQuery):
-    def sub_query(self, q, conn):
-        q.rebalance().run(conn)
+    def sub_query(self, q):
+        return q.rebalance()
 
 class config_update(TableQuery):
-    def sub_query(self, q, conn):
+    def sub_query(self, q):
         shards = []
         for i in xrange(rand_shards()):
             shards.append({'replicas': random.sample(server_names, rand_replicas())})
             shards[-1]['primary_replica'] = random.choice(shards[-1]['replicas'])
-        q.config().update({'shards': shards}).run(conn)
+        return q.config().update({'shards': shards})
 
 class insert(TableQuery):
-    def __init__(self):
-        TableQuery.__init__(self)
+    def __init__(self, conn):
+        TableQuery.__init__(self, conn)
         self.start = self.table.count
         self.num_rows = random.randint(1, 500)
         self.table.count = self.start + self.num_rows
-    def sub_query(self, q, conn):
-        res = q.insert(r.range(self.start, self.start + self.num_rows).map(lambda x: {'id': x})).run(conn)
+    def sub_query(self, q):
+        return q.insert(r.range(self.start, self.start + self.num_rows).map(lambda x: {'id': x}))
 
 class table_drop(TableQuery):
-    def sub_query(self, q, conn):
-        q.config().delete().run(conn)
+    def sub_query(self, q):
+        return q.config().delete()
     def post_run(self):
         self.table.unlink()
 
 class index_create(TableQuery):
-    def __init__(self):
-        TableQuery.__init__(self)
+    def __init__(self, conn):
+        TableQuery.__init__(self, conn)
         self.index = Index(self.table, make_name())
-    def sub_query(self, q, conn):
-        q.index_create(self.index.name).run(conn)
+    def sub_query(self, q):
+        return q.index_create(self.index.name)
 
 # Requires an Index
 class index_drop(IndexQuery):
-    def sub_query(self, q, conn):
-        q.index_drop(self.index.name).run(conn)
+    def sub_query(self, q):
+        return q.index_drop(self.index.name)
     def post_run(self):
         self.index.unlink()
-
-#class index_rename(IndexQuery):
-#    def __init__(self):
-#        IndexQuery.__init__(self)
-#        self.old_name = self.index.name
-#        self.index.name = make_name()
-#    def sub_query(self, q, conn):
-#        q.index_rename(self.old_name, self.index.name).run(conn)
 
 class changefeed(IndexQuery):
     def thread_fn(self, host, port):
@@ -248,35 +278,32 @@ class changefeed(IndexQuery):
                     .table(self.index.table.name) \
                     .between(r.minval, r.maxval, index=self.index.name) \
                     .changes().run(conn)
-        except Exception as ex:
-            print('feed exception: %s' % repr(ex))
-    def sub_query(self, q, conn):
-        feed_thread = threading.Thread(target=self.thread_fn, args=(conn.host, conn.port))
+        except r.ReqlAvailabilityError as ex:
+            pass # These are perfectly normal during fuzzing due to concurrent queries
+        except r.ReqlError as ex:
+            print('Feed resulted in Exception: %s' % (str(q), repr(ex)))
+    def sub_query(self, q):
+        feed_thread = threading.Thread(target=self.thread_fn, args=(self.conn.host, self.conn.port))
         feed_thread.start()
-
-
-def accumulate(iterable):
-    it = iter(iterable)
-    total = next(it)
-    yield total
-    for element in it:
-        total = total + element
-        yield total
+        return r.expr(0) # dummy query for silly reasons
 
 def do_fuzz(cluster, stop_event, random_seed):
     random.seed(random_seed)
-    weighted_ops = [(db_create, 2),
-                    (db_drop, 1),
-                    (table_create, 4),
-                    (table_drop, 3),
+    weighted_ops = [(db_create, 4),
+                    (db_drop, 3),
+                    (table_create, 8),
+                    (table_drop, 6),
                     (index_create, 8),
-                    (index_drop, 2), #(index_rename, 4),
+                    (index_drop, 2),
                     (insert, 100),
                     (rebalance, 10),
                     (reconfigure, 10),
                     (config_update, 10),
-                    (changefeed, 10),
-                    (wait, 10)]
+                    (wait, 10),
+                    (system_table_read, 10)]
+
+    if parsed_opts['changefeeds']:
+        weighted_ops.append((changefeed, 10))
 
     try:
         server = random.choice(list(cluster.processes))
@@ -284,7 +311,7 @@ def do_fuzz(cluster, stop_event, random_seed):
 
         while not stop_event.is_set():
             run_random_query(conn, weighted_ops)
-        
+
     finally:
         stop_event.set()
 
@@ -295,31 +322,33 @@ with driver.Cluster(initial_servers=server_names, output_folder='.', command_pre
     random.seed(parsed_opts['random-seed'])
 
     print("Server driver ports: %s" % (str([x.driver_port for x in cluster])))
-    print("Fuzzing shards for %ds, random seed: %s (%.2fs)" %
+    print("Fuzzing for %ds, random seed: %s (%.2fs)" %
           (parsed_opts['duration'], repr(parsed_opts['random-seed']), time.time() - startTime))
     stop_event = threading.Event()
     fuzz_threads = []
-    for i in xrange(num_threads):
+    for i in xrange(parsed_opts['threads']):
         fuzz_threads.append(threading.Thread(target=do_fuzz, args=(cluster, stop_event, random.random())))
         fuzz_threads[-1].start()
 
     last_time = time.time()
     end_time = last_time + parsed_opts['duration']
-    while (time.time() < end_time) and not stop_event.is_set():
-        # TODO: random disconnections / kills during fuzzing
-        time.sleep(0.2)
-        current_time = time.time()
-        if parsed_opts['progress'] and int((end_time - current_time) / 10) < int((end_time - last_time) / 10):
-            print("%ds remaining (%.2fs)" % (int(end_time - current_time) + 1, time.time() - startTime))
-        last_time = current_time
-        if not all([x.is_alive() for x in fuzz_threads]):
-            stop_event.set()
+    try:
+        while (time.time() < end_time) and not stop_event.is_set():
+            # TODO: random disconnections / kills during fuzzing
+            time.sleep(0.2)
+            current_time = time.time()
+            if parsed_opts['progress'] and int((end_time - current_time) / 10) < int((end_time - last_time) / 10):
+                print("%ds remaining (%.2fs)" % (int(end_time - current_time) + 1, time.time() - startTime))
+            last_time = current_time
+            if not all([x.is_alive() for x in fuzz_threads]):
+                stop_event.set()
+    finally:
+        print("\nStopping fuzzing (%d of %d threads remain) (%.2fs)" %
+              (len(fuzz_threads), parsed_opts['threads'], time.time() - startTime))
+        stop_event.set()
+        for thread in fuzz_threads:
+            thread.join()
 
-    print("Stopping fuzzing (%d of %d threads remain) (%.2fs)" % (len(fuzz_threads), num_threads, time.time() - startTime))
-    stop_event.set()
-    for thread in fuzz_threads:
-        thread.join()
-
-    print("Cleaning up (%.2fs)" % (time.time() - startTime))
+    print("\nCleaning up (%.2fs)" % (time.time() - startTime))
 print("Done. (%.2fs)" % (time.time() - startTime))
 
