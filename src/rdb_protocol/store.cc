@@ -846,3 +846,58 @@ namespace_id_t const &store_t::get_table_id() const {
 store_t::sindex_context_map_t *store_t::get_sindex_context_map() {
     return &sindex_context;
 }
+
+std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t> store_t::changefeed_server(
+        const region_t &region,
+        const new_mutex_acq_t *acq) {
+    acq->guarantee_is_holding(&changefeed_servers_mutex);
+    for (auto &&pair : changefeed_servers) {
+        if (pair.first.inner.is_superset(region.inner)) {
+            return std::make_pair(pair.second.get(), pair.second->get_keepalive());
+        }
+    }
+    return std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t>(
+        nullptr, auto_drainer_t::lock_t());
+}
+
+std::pair<std::map<region_t, scoped_ptr_t<ql::changefeed::server_t> > *,
+          scoped_ptr_t<new_mutex_acq_t> > store_t::access_changefeed_servers() {
+    return std::make_pair(&changefeed_servers,
+                          make_scoped<new_mutex_acq_t>(&changefeed_servers_mutex));
+}
+
+std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t> store_t::changefeed_server(
+        const region_t &region) {
+    new_mutex_acq_t acq(&changefeed_servers_mutex);
+    return changefeed_server(region, &acq);
+}
+
+std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t> store_t::changefeed_server(
+        const store_key_t &key) {
+    new_mutex_acq_t acq(&changefeed_servers_mutex);
+    for (auto &&pair : changefeed_servers) {
+        if (pair.first.inner.contains_key(key)) {
+            return std::make_pair(pair.second.get(), pair.second->get_keepalive());
+        }
+    }
+    return std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t>(
+        nullptr, auto_drainer_t::lock_t());
+}
+
+std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t>
+        store_t::get_or_make_changefeed_server(const region_t &region) {
+    new_mutex_acq_t acq(&changefeed_servers_mutex);
+    guarantee(ctx && ctx->manager);
+    auto existing = changefeed_server(region, &acq);
+    if (existing.first != nullptr) {
+        return existing;
+    }
+    for (auto &&pair : changefeed_servers) {
+        guarantee(!pair.first.inner.overlaps(region.inner));
+    }
+    auto it = changefeed_servers.insert(
+        std::make_pair(
+            region_t(region),
+            make_scoped<ql::changefeed::server_t>(ctx->manager, this))).first;
+    return std::make_pair(it->second.get(), it->second->get_keepalive());
+}

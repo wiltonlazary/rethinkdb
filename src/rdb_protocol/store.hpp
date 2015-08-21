@@ -400,6 +400,7 @@ public:
     // `btree.cc`.
     rwlock_t cfeed_stamp_lock;
 
+private:
     rdb_context_t *ctx;
     // We store regions here even though we only really need the key ranges
     // because it's nice to have a unique identifier across `store_t`s.  In the
@@ -408,54 +409,23 @@ public:
     std::map<region_t, scoped_ptr_t<ql::changefeed::server_t> > changefeed_servers;
     new_mutex_t changefeed_servers_mutex;
 
-private:
     std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t> changefeed_server(
             const region_t &region,
-            const new_mutex_acq_t *acq) {
-        acq->guarantee_is_holding(&changefeed_servers_mutex);
-        for (auto &&pair : changefeed_servers) {
-            if (pair.first.inner.is_superset(region.inner)) {
-                return std::make_pair(pair.second.get(), pair.second->get_keepalive());
-            }
-        }
-        return std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t>(
-            nullptr, auto_drainer_t::lock_t());
-    }
-
+            const new_mutex_acq_t *acq);
 public:
+    // Returns a pointer to `changefeed_servers` together with a mutex acquisition
+    // on `changefeed_servers_mutex`.
+    std::pair<std::map<region_t, scoped_ptr_t<ql::changefeed::server_t> > *,
+              scoped_ptr_t<new_mutex_acq_t> > access_changefeed_servers();
+    // Return a pointer to a specific changefeed server if it exists. These can
+    // block.
     std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t> changefeed_server(
-            const region_t &region) {
-        new_mutex_acq_t acq(&changefeed_servers_mutex);
-        return changefeed_server(region, &acq);
-    }
+            const region_t &region);
+    std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t> changefeed_server(
+            const store_key_t &key);
+    // Like `changefeed_server()`, but creates the server if it doesn't exist.
     std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t>
-            get_or_make_changefeed_server(const region_t &region) {
-        new_mutex_acq_t acq(&changefeed_servers_mutex);
-        auto existing = changefeed_server(region, &acq);
-        if (existing.first != nullptr) {
-            return existing;
-        }
-        guarantee(ctx && ctx->manager);
-        for (auto &&pair : changefeed_servers) {
-            guarantee(!pair.first.inner.overlaps(region.inner));
-        }
-        auto it = changefeed_servers.insert(
-            std::make_pair(
-                region_t(region),
-                make_scoped<ql::changefeed::server_t>(ctx->manager, this))).first;
-        return std::make_pair(it->second.get(), it->second->get_keepalive());
-    }
-    std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t> changefeed_server(
-            const store_key_t &key) {
-        new_mutex_acq_t acq(&changefeed_servers_mutex);
-        for (auto &&pair : changefeed_servers) {
-            if (pair.first.inner.contains_key(key)) {
-                return std::make_pair(pair.second.get(), pair.second->get_keepalive());
-            }
-        }
-        return std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t>(
-            nullptr, auto_drainer_t::lock_t());
-    }
+            get_or_make_changefeed_server(const region_t &region);
 
     // This report is used by the outdated index issue tracker, and should be updated
     // any time the set of outdated indexes for this table changes

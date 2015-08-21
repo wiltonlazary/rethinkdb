@@ -980,8 +980,8 @@ bool rdb_modification_report_cb_t::has_pkey_cfeeds(
     if (min != nullptr && max != nullptr) {
         key_range_t range(key_range_t::closed, *min,
                           key_range_t::closed, *max);
-        new_mutex_acq_t acq(&store_->changefeed_servers_mutex);
-        for (auto &&pair : store_->changefeed_servers) {
+        auto cservers = store_->access_changefeed_servers();
+        for (auto &&pair : *cservers.first) {
             if (pair.first.inner.overlaps(range)
                 && pair.second->has_limit(boost::optional<std::string>())) {
                 return true;
@@ -993,8 +993,8 @@ bool rdb_modification_report_cb_t::has_pkey_cfeeds(
 
 void rdb_modification_report_cb_t::finish(
     btree_slice_t *btree, real_superblock_t *superblock) {
-    new_mutex_acq_t acq(&store_->changefeed_servers_mutex);
-    for (auto &&pair : store_->changefeed_servers) {
+    auto cservers = store_->access_changefeed_servers();
+    for (auto &&pair : *cservers.first) {
         pair.second->foreach_limit(
             boost::optional<std::string>(),
             nullptr,
