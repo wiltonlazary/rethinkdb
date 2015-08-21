@@ -17,10 +17,10 @@
 #include "rdb_protocol/table_common.hpp"
 
 void store_t::note_reshard() {
-    new_mutex_acq_t acq(&changefeed_servers_mutex);
+    rwlock_acq_t acq(&changefeed_servers_lock, access_t::write);
     // This can block, and we must make sure that nobody gets a changefeed server
     // that's already getting destructed. This is the reason for why we have the
-    // `changefeed_servers_mutex`.
+    // `changefeed_servers_lock`.
     changefeed_servers.clear();
 }
 
@@ -849,8 +849,8 @@ store_t::sindex_context_map_t *store_t::get_sindex_context_map() {
 
 std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t> store_t::changefeed_server(
         const region_t &region,
-        const new_mutex_acq_t *acq) {
-    acq->guarantee_is_holding(&changefeed_servers_mutex);
+        const rwlock_acq_t *acq) {
+    acq->guarantee_is_holding(&changefeed_servers_lock);
     for (auto &&pair : changefeed_servers) {
         if (pair.first.inner.is_superset(region.inner)) {
             return std::make_pair(pair.second.get(), pair.second->get_keepalive());
@@ -861,20 +861,21 @@ std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t> store_t::changefee
 }
 
 std::pair<std::map<region_t, scoped_ptr_t<ql::changefeed::server_t> > *,
-          scoped_ptr_t<new_mutex_acq_t> > store_t::access_changefeed_servers() {
+          scoped_ptr_t<rwlock_acq_t> > store_t::access_changefeed_servers() {
     return std::make_pair(&changefeed_servers,
-                          make_scoped<new_mutex_acq_t>(&changefeed_servers_mutex));
+                          make_scoped<rwlock_acq_t>(&changefeed_servers_lock,
+                                                    access_t::read));
 }
 
 std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t> store_t::changefeed_server(
         const region_t &region) {
-    new_mutex_acq_t acq(&changefeed_servers_mutex);
+    rwlock_acq_t acq(&changefeed_servers_lock, access_t::read);
     return changefeed_server(region, &acq);
 }
 
 std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t> store_t::changefeed_server(
         const store_key_t &key) {
-    new_mutex_acq_t acq(&changefeed_servers_mutex);
+    rwlock_acq_t acq(&changefeed_servers_lock, access_t::read);
     for (auto &&pair : changefeed_servers) {
         if (pair.first.inner.contains_key(key)) {
             return std::make_pair(pair.second.get(), pair.second->get_keepalive());
@@ -886,7 +887,7 @@ std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t> store_t::changefee
 
 std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t>
         store_t::get_or_make_changefeed_server(const region_t &region) {
-    new_mutex_acq_t acq(&changefeed_servers_mutex);
+    rwlock_acq_t acq(&changefeed_servers_lock, access_t::write);
     guarantee(ctx && ctx->manager);
     auto existing = changefeed_server(region, &acq);
     if (existing.first != nullptr) {

@@ -407,16 +407,16 @@ private:
     // future we may use these `region_t`s instead of the `uuid_u`s in the
     // changefeed server.
     std::map<region_t, scoped_ptr_t<ql::changefeed::server_t> > changefeed_servers;
-    new_mutex_t changefeed_servers_mutex;
+    rwlock_t changefeed_servers_lock;
 
     std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t> changefeed_server(
             const region_t &region,
-            const new_mutex_acq_t *acq);
+            const rwlock_acq_t *acq);
 public:
-    // Returns a pointer to `changefeed_servers` together with a mutex acquisition
-    // on `changefeed_servers_mutex`.
+    // Returns a pointer to `changefeed_servers` together with a read acquisition
+    // on `changefeed_servers_lock`.
     std::pair<std::map<region_t, scoped_ptr_t<ql::changefeed::server_t> > *,
-              scoped_ptr_t<new_mutex_acq_t> > access_changefeed_servers();
+              scoped_ptr_t<rwlock_acq_t> > access_changefeed_servers();
     // Return a pointer to a specific changefeed server if it exists. These can
     // block.
     std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t> changefeed_server(
