@@ -25,14 +25,11 @@ void store_t::note_reshard() {
     // The reason we do this is to avoid deadlocks that could happen if someone
     // was holding a lock on the drainer in one of the changefeed servers,
     // and was at the same time trying to acquire the `changefeed_servers_lock`.
-    std::list<scoped_ptr_t<ql::changefeed::server_t> > to_destruct;
+    std::map<region_t, scoped_ptr_t<ql::changefeed::server_t> > to_destruct;
     {
         rwlock_acq_t acq(&changefeed_servers_lock, access_t::write);
         ASSERT_NO_CORO_WAITING;
-        for (auto &pair : changefeed_servers) {
-            to_destruct.emplace_back(std::move(pair.second));
-        }
-        changefeed_servers.clear();
+        std::swap(changefeed_servers, to_destruct);
     }
     // The changefeed servers are actually getting destructed here. This might
     // block.
@@ -905,7 +902,8 @@ std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t> store_t::changefee
 std::pair<ql::changefeed::server_t *, auto_drainer_t::lock_t>
         store_t::get_or_make_changefeed_server(const region_t &region) {
     rwlock_acq_t acq(&changefeed_servers_lock, access_t::write);
-    guarantee(ctx && ctx->manager);
+    guarantee(ctx != nullptr);
+    guarantee(ctx->manager != nullptr);
     auto existing = changefeed_server(region, &acq);
     if (existing.first != nullptr) {
         return existing;
