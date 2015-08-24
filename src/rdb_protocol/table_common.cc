@@ -13,9 +13,8 @@ make_replacement_pair(ql::datum_t old_val, ql::datum_t new_val) {
     // stats_merge later can impose user preferences.
     ql::datum_array_builder_t values(ql::configured_limits_t::unlimited);
     ql::datum_object_builder_t value_pair;
-    bool conflict =
-        value_pair.add("old_val", old_val.has() ? old_val : ql::datum_t::null()) ||
-        value_pair.add("new_val", new_val.has() ? new_val : ql::datum_t::null());
+    bool conflict = value_pair.add("old_val", old_val)
+        || value_pair.add("new_val", new_val);
     guarantee(!conflict);
     values.add(std::move(value_pair).to_datum());
     return std::move(values).to_datum();
