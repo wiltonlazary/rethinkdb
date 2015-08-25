@@ -755,10 +755,10 @@ void query_server_t::handle(const http_req_t &req,
                                         drainer.get_drain_signal());
             ql::query_id_t query_id(conn->get_query_cache());
             try {
-                uint64_t start = get_ticks();
+                ticks_t start = get_ticks();
                 handler->run_query(std::move(query_id), query, &response,
                                    conn->get_query_cache(), &true_interruptor);
-                uint64_t ticks = get_ticks() - start;
+                ticks_t ticks = get_ticks() - start;
 
                 if (!response.has_profile()) {
                     ql::datum_array_builder_t array_builder(
