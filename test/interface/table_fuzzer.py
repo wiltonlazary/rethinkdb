@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 # Copyright 2014 RethinkDB, all rights reserved.
 
-'''This test randomly rebalances tables and shards to probabilistically find bugs in the system.'''
+'''This test randomly runs db, table, and index creates/drops, as well as reads, writes,
+and optionally changefeeds across any number of client threads and any number of servers
+in a cluster.'''
 
 from __future__ import print_function
 
@@ -28,12 +30,39 @@ dbName, tableName = utils.get_test_db_table()
 
 server_names = list(string.ascii_lowercase[:parsed_opts['servers']])
 
+system_tables = ['table_config',
+                 'server_config',
+                 'db_config',
+                 'cluster_config',
+                 'table_status',
+                 'server_status',
+                 'current_issues',
+                 'jobs',
+                 'stats',
+                 'logs',
+                 '_debug_table_status']
+
 # Global data used by query generators, and a lock to make it thread-safe
 data_lock = threading.Lock()
 dbs = set()
 tables = set()
 indexes = set()
 
+#   Db, Table, Index
+# ---------------------------------------------------------------------------------------
+# These classes are used to track which operations are currently legal.
+#
+# Each of them exists in the globally-accessible sets `dbs`, `tables`, and `indexes`, and will
+# reference their parent/children objects.  The `unlink` function is used once we no longer
+# need to remember the object (typically, after receiving a reply from the server when we
+# delete it).  The lifetime of these objects is specifially designed such that we can write
+# queries using them before they are constructed or after they are deleted and thus test for
+# racy behaviors in the server.
+#
+# Note that if we ever introduce tests that put the lifetime of these objects in an
+# indeterminate state, we may need a periodic 'resync' of the global tables to the current
+# state of the objects in the cluster.  This would necessarily lock out all queries while
+# going on.
 class Db:
     def __init__(self, name):
         self.name = name
@@ -74,6 +103,7 @@ class Index:
         if self in indexes:
             indexes.remove(self)
 
+# Utility functions for generating queries
 def make_name():
     return ''.join(random.choice(string.ascii_lowercase) for i in xrange(4))
 
@@ -92,6 +122,9 @@ def rand_table():
 def rand_index():
     return random.sample(indexes, 1)[0]
 
+def rand_bool():
+    return random.randint(0, 1) == 1
+
 def accumulate(iterable):
     it = iter(iterable)
     total = next(it)
@@ -100,12 +133,18 @@ def accumulate(iterable):
         total = total + element
         yield total
 
+# Performs a random choice of an operation to perform.  Input is an array of tuples:
+# (op_type, weight), where weight is a number.  The randomization is normalized based
+# on the sum of all weights in the set.
 def weighted_random(weighted_ops):
     ops, weights = zip(*weighted_ops)
     distribution = list(accumulate(weights))
     chosen_weight = random.random() * distribution[-1]
     return ops[bisect.bisect(distribution, chosen_weight)]
 
+# Performs a single operation chosen from the operations in `weighted_ops` which report
+# themselves to be valid based on the current state of `dbs`, `tables`, and `indexes`.
+# These global sets may be changed each before and after the operation is performed.
 def run_random_query(conn, weighted_ops):
     try:
         data_lock.acquire()
@@ -131,6 +170,16 @@ def run_random_query(conn, weighted_ops):
     except r.ReqlError as ex:
         print('Query %s resulted in Exception: %s' % (str(q), repr(ex)))
 
+# Query, DbQuery, TableQuery, IndexQuery
+# ---------------------------------------------------------------------------------------
+# Base classes for operation types - organized by what objects are required for the
+# operation to be valid.  A `Query` is always valid.  A `DbQuery` requires at least one
+# `Db` to exist.  A `TableQuery` requires at least one `Table` to exist.  An `IndexQuery`
+# requires at least one `Index` to exist.
+#
+# For succinctness, these may pass a pre-generated query stub to a child class's
+# `sub_query` method, which they can chain their query off of. A child class may instead
+# choose to overload `get_query` instead if it proves useful.
 class Query:
     @staticmethod
     def is_valid():
@@ -184,28 +233,25 @@ class db_create(Query):
         Query.__init__(self, conn)
         self.db = Db(make_name())
     def sub_query(self, q):
-        return r.db_create(self.db.name)
+        if rand_bool():
+            return r.db_create(self.db.name)
+        else:
+            return r.db('rethinkdb').table('db_config') \
+                    .insert({'name': self.db.name})
 
 class system_table_read(Query):
     def sub_query(self, q):
-        table = random.choice(['table_config',
-                               'server_config',
-                               'db_config',
-                               'cluster_config',
-                               'table_status',
-                               'server_status',
-                               'current_issues',
-                               'jobs',
-                               'stats',
-                               'logs',
-                               '_debug_table_status'])
+        table = random.choice(system_tables)
         return r.db('rethinkdb').table(table).coerce_to('array')
-        
 
 # Requires a DB
 class db_drop(DbQuery):
     def sub_query(self, q):
-        return r.db_drop(self.db.name)
+        if rand_bool():
+            return r.db_drop(self.db.name)
+        else:
+            return r.db('rethinkdb').table('db_config') \
+                    .filter(r.row['name'].eq(self.db.name)).delete()
     def post_run(self):
         self.db.unlink()
 
@@ -214,7 +260,11 @@ class table_create(DbQuery):
         DbQuery.__init__(self, conn)
         self.table = Table(self.db, make_name())
     def sub_query(self, q):
-        return q.table_create(self.table.name)
+        if rand_bool():
+            return q.table_create(self.table.name)
+        else:
+            return r.db('rethinkdb').table('table_config') \
+                    .insert({'name': self.table.name, 'db': self.db.name})
 
 # Requires a Table
 class wait(TableQuery):
@@ -252,7 +302,11 @@ class insert(TableQuery):
 
 class table_drop(TableQuery):
     def sub_query(self, q):
-        return q.config().delete()
+        if rand_bool():
+            return q.config().delete()
+        else:
+            return r.db('rethinkdb').table('table_config') \
+                    .filter(r.row['name'].eq(self.table.name)).delete()
     def post_run(self):
         self.table.unlink()
 
@@ -270,30 +324,50 @@ class index_drop(IndexQuery):
     def post_run(self):
         self.index.unlink()
 
-class changefeed(IndexQuery):
+# Changefeeds
+def run_changefeed(query, host, port):
     def thread_fn(self, host, port):
+        duration = 10
+        end_time = time.time() + duration
         try:
             conn = r.connect(host, port)
-            feed = r.db(self.index.table.db.name) \
-                    .table(self.index.table.name) \
-                    .between(r.minval, r.maxval, index=self.index.name) \
-                    .changes().run(conn)
+            feed = query.changes().run(conn)
+            while time.time() < end_time:
+                try:
+                    feed.next(wait=duration)
+                except r.ReqlTimeoutError:
+                    pass
         except r.ReqlAvailabilityError as ex:
             pass # These are perfectly normal during fuzzing due to concurrent queries
         except r.ReqlError as ex:
-            print('Feed resulted in Exception: %s' % (str(q), repr(ex)))
+            print('Feed resulted in Exception: %s' % repr(ex))
+    feed_thread = threading.Thread(target=thread_fn, args=(query, host, port))
+    feed_thread.start()
+
+class changefeed(IndexQuery):
     def sub_query(self, q):
-        feed_thread = threading.Thread(target=self.thread_fn, args=(self.conn.host, self.conn.port))
-        feed_thread.start()
+        run_changefeed(r.db(self.index.table.db.name) \
+                        .table(self.index.table.name) \
+                        .between(r.minval, r.maxval, index=self.index.name),
+                       self.conn.host, self.conn.port)
+        return r.expr(0) # dummy query for silly reasons
+
+class system_changefeed(Query):
+    def sub_query(self, q):
+        run_changefeed(r.db('rethinkdb').table(random.choice(system_tables)),
+                       self.conn.host, self.conn.port)
         return r.expr(0) # dummy query for silly reasons
 
 def do_fuzz(cluster, stop_event, random_seed):
     random.seed(random_seed)
     weighted_ops = [(db_create, 4),
+                    # (db_rename, 3), # Renames are racy and so currently omitted
                     (db_drop, 3),
                     (table_create, 8),
+                    # (table_rename, 6), # Renames are racy and so currently omitted
                     (table_drop, 6),
                     (index_create, 8),
+                    # (index_rename, 4), # Renames are racy and so currently omitted
                     (index_drop, 2),
                     (insert, 100),
                     (rebalance, 10),
@@ -304,6 +378,7 @@ def do_fuzz(cluster, stop_event, random_seed):
 
     if parsed_opts['changefeeds']:
         weighted_ops.append((changefeed, 10))
+        weighted_ops.append((system_changefeed, 10))
 
     try:
         server = random.choice(list(cluster.processes))
@@ -334,7 +409,6 @@ with driver.Cluster(initial_servers=server_names, output_folder='.', command_pre
     end_time = last_time + parsed_opts['duration']
     try:
         while (time.time() < end_time) and not stop_event.is_set():
-            # TODO: random disconnections / kills during fuzzing
             time.sleep(0.2)
             current_time = time.time()
             if parsed_opts['progress'] and int((end_time - current_time) / 10) < int((end_time - last_time) / 10):
