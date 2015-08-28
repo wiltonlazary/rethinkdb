@@ -117,9 +117,12 @@ public:
 
     /* Calls `callable` for each active table, it must have a signature of:
            void(const namespace_id_t &table_id, multistore_ptr_t *, table_manager_t *)
+    `access` must be `access_t::write` if you change the state or configuration of
+    the table in the callback (but not for running queries). Otherwise
+    `access_t::read` is sufficient.
      */
     template <typename F>
-    void visit_tables(signal_t *interruptor, const F &callable) {
+    void visit_tables(signal_t *interruptor, access_t access, const F &callable) {
         /* Fetch information for all tables that we know about. First we get in line for
         each rwlock, then we release the global mutex assertion, then we wait for each
         rwlock acquisition to be ready and copy out its data. */
@@ -128,11 +131,20 @@ public:
             table_lock_in_lines;
         for (const auto &pair : tables) {
             table_lock_in_lines[pair.first] =
-                make_scoped<rwlock_in_line_t>(&pair.second->rwlock, access_t::read);
+                make_scoped<rwlock_in_line_t>(&pair.second->rwlock, access);
         }
         global_mutex_acq.reset();
         for (const auto &pair : table_lock_in_lines) {
-            wait_interruptible(pair.second->read_signal(), interruptor);
+            switch (access) {
+            case access_t::read:
+                wait_interruptible(pair.second->read_signal(), interruptor);
+                break;
+            case access_t::write:
+                wait_interruptible(pair.second->write_signal(), interruptor);
+                break;
+            default:
+                unreachable();
+            }
             auto it = tables.find(pair.first);
             guarantee(it != tables.end());
             if (it->second->status == table_t::status_t::ACTIVE) {
@@ -147,10 +159,14 @@ public:
     must be:
         void(multistore_ptr_t *, table_manager_t *)
     If the table doesn't exist or is not active on this server, calls `callable` with
-    null pointers. */
+    null pointers.
+    `access` must be `access_t::write` if you change the state or configuration of
+    the table in the callback (but not for running queries). Otherwise
+    `access_t::read` is sufficient.*/
     template <typename F>
     void visit_table(
-            const namespace_id_t &table_id, signal_t *interruptor, const F &callable) {
+            const namespace_id_t &table_id, signal_t *interruptor, access_t access,
+            const F &callable) {
         mutex_assertion_t::acq_t global_mutex_acq(&mutex);
         auto it = tables.find(table_id);
         if (it == tables.end()) {
@@ -158,9 +174,18 @@ public:
             return;
         }
         table_t *table = it->second.get();
-        rwlock_in_line_t lock_in_line(&table->rwlock, access_t::read);
+        rwlock_in_line_t lock_in_line(&table->rwlock, access);
         global_mutex_acq.reset();
-        wait_interruptible(lock_in_line.read_signal(), interruptor);
+        switch (access) {
+        case access_t::read:
+            wait_interruptible(lock_in_line.read_signal(), interruptor);
+            break;
+        case access_t::write:
+            wait_interruptible(lock_in_line.write_signal(), interruptor);
+            break;
+        default:
+            unreachable();
+        }
         if (table->status == table_t::status_t::ACTIVE) {
             callable(table->multistore_ptr.get(), &table->active->manager);
         } else {
