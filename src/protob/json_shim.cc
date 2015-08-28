@@ -52,12 +52,9 @@ extract(const Value *, const Value &field, T *dest) {
 template<class T>
 void safe_extract(const Value *key, const Value &val, T *t) {
     if (t != nullptr) {
-        call_with_enough_stack(std::bind(
-                &extract<T>,
-                key,
-                std::cref(val),
-                t),
-            MIN_EXTRACT_STACK_SPACE);
+        call_with_enough_stack([&] () {
+                extract<T>(key, std::cref(val), t);
+            }, MIN_EXTRACT_STACK_SPACE);
     }
 }
 

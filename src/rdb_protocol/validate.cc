@@ -132,9 +132,9 @@ void validate_pb_datum(const Datum &d) {
 }
 
 void validate_pb(const Datum &d) {
-    call_with_enough_stack(
-        std::bind(&validate_pb_datum, std::cref(d)),
-        MIN_VALIDATE_STACK_SPACE);
+    call_with_enough_stack([&] () {
+            validate_pb_datum(d);
+        }, MIN_VALIDATE_STACK_SPACE);
 }
 
 void validate_pb(const Datum::AssocPair &ap) {
@@ -184,9 +184,9 @@ void validate_pb_term(const Term &t) {
 }
 
 void validate_pb(const Term &t) {
-    call_with_enough_stack(
-        std::bind(&validate_pb_term, std::cref(t)),
-        MIN_VALIDATE_STACK_SPACE);
+    call_with_enough_stack([&] () {
+            validate_pb_term(t);
+        }, MIN_VALIDATE_STACK_SPACE);
 }
 
 void validate_pb(const Term::AssocPair &ap) {

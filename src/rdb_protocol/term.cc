@@ -215,9 +215,9 @@ counted_t<const term_t> compile_on_current_stack(
 }
 
 counted_t<const term_t> compile_term(compile_env_t *env, const protob_t<const Term> t) {
-    return call_with_enough_stack<counted_t<const term_t> >(
-        std::bind(&compile_on_current_stack, env, std::move(t)),
-        MIN_COMPILE_STACK_SPACE);
+    return call_with_enough_stack<counted_t<const term_t> >([&] () {
+            return compile_on_current_stack(env, std::move(t));
+        }, MIN_COMPILE_STACK_SPACE);
 }
 
 // If the query wants a reply, we can release the query id, which is
@@ -364,9 +364,9 @@ scoped_ptr_t<val_t> runtime_term_t::eval_on_current_stack(
 scoped_ptr_t<val_t> runtime_term_t::eval(
         scope_env_t *env,
         eval_flags_t eval_flags) const {
-    return call_with_enough_stack<scoped_ptr_t<val_t> >(
-        std::bind(&runtime_term_t::eval_on_current_stack, this, env, std::move(eval_flags)),
-        MIN_EVAL_STACK_SPACE);
+    return call_with_enough_stack<scoped_ptr_t<val_t> >([&] () {
+            return eval_on_current_stack(env, std::move(eval_flags));
+        }, MIN_EVAL_STACK_SPACE);
 }
 
 } // namespace ql

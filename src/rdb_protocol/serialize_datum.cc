@@ -487,12 +487,11 @@ size_t datum_serialized_size(const datum_t &datum,
     switch (datum.get_type()) {
     case datum_t::MINVAL: break; // No data aside from the type
     case datum_t::R_ARRAY: {
-        sz += call_with_enough_stack<size_t>(std::bind(
-                &datum_array_serialized_size,
-                std::cref(datum),
-                check_errors,
-                child_sizes_out),
-            MIN_DATUM_SERIALIZATION_STACK_SPACE);
+        sz += call_with_enough_stack<size_t>([&] () {
+                return datum_array_serialized_size(datum,
+                                                   check_errors,
+                                                   child_sizes_out);
+            }, MIN_DATUM_SERIALIZATION_STACK_SPACE);
     } break;
     case datum_t::R_BINARY: {
         sz += datum_serialized_size(datum.as_binary());
@@ -511,12 +510,11 @@ size_t datum_serialized_size(const datum_t &datum,
         }
     } break;
     case datum_t::R_OBJECT: {
-        sz += call_with_enough_stack<size_t>(std::bind(
-                &datum_object_serialized_size,
-                std::cref(datum),
-                check_errors,
-                child_sizes_out),
-            MIN_DATUM_SERIALIZATION_STACK_SPACE);
+        sz += call_with_enough_stack<size_t>([&] () {
+                return datum_object_serialized_size(datum,
+                                                    check_errors,
+                                                    child_sizes_out);
+            }, MIN_DATUM_SERIALIZATION_STACK_SPACE);
     } break;
     case datum_t::R_STR: {
         sz += datum_serialized_size(datum.as_str());
@@ -549,13 +547,12 @@ serialization_result_t datum_serialize(
         if (datum.arr_size() > 100000) {
             res = res | serialization_result_t::ARRAY_TOO_BIG;
         }
-        res = res | call_with_enough_stack<serialization_result_t>(std::bind(
-                &datum_array_serialize,
-                wm,
-                std::cref(datum),
-                check_errors,
-                std::cref(precomputed_size)),
-            MIN_DATUM_SERIALIZATION_STACK_SPACE);
+        res = res | call_with_enough_stack<serialization_result_t>([&] () {
+                return datum_array_serialize(wm,
+                                             datum,
+                                             check_errors,
+                                             precomputed_size);
+            }, MIN_DATUM_SERIALIZATION_STACK_SPACE);
     } break;
     case datum_t::R_BINARY: {
         datum_serialize(wm, datum_serialized_type_t::R_BINARY);
@@ -592,13 +589,12 @@ serialization_result_t datum_serialize(
     } break;
     case datum_t::R_OBJECT: {
         res = res | datum_serialize(wm, datum_serialized_type_t::BUF_R_OBJECT);
-        res = res | call_with_enough_stack<serialization_result_t>(std::bind(
-                &datum_object_serialize,
-                wm,
-                std::cref(datum),
-                check_errors,
-                std::cref(precomputed_size)),
-            MIN_DATUM_SERIALIZATION_STACK_SPACE);
+        res = res | call_with_enough_stack<serialization_result_t>([&] () {
+                return datum_object_serialize(wm,
+                                              datum,
+                                              check_errors,
+                                              precomputed_size);
+            }, MIN_DATUM_SERIALIZATION_STACK_SPACE);
     } break;
     case datum_t::R_STR: {
         res = res | datum_serialize(wm, datum_serialized_type_t::R_STR);
@@ -654,11 +650,9 @@ archive_result_t datum_deserialize(read_stream_t *s, datum_t *datum) {
     } break;
     case datum_serialized_type_t::R_ARRAY: {
         std::vector<datum_t> value;
-        res = call_with_enough_stack<archive_result_t>(std::bind(
-                &datum_deserialize_array,
-                s,
-                &value),
-            MIN_DATUM_SERIALIZATION_STACK_SPACE);
+        res = call_with_enough_stack<archive_result_t>([&] () {
+                return datum_deserialize_array(s, &value);
+            }, MIN_DATUM_SERIALIZATION_STACK_SPACE);
         if (bad(res)) {
             return res;
         }
@@ -733,11 +727,9 @@ archive_result_t datum_deserialize(read_stream_t *s, datum_t *datum) {
     } break;
     case datum_serialized_type_t::R_OBJECT: {
         std::vector<std::pair<datum_string_t, datum_t> > value;
-        res = call_with_enough_stack<archive_result_t>(std::bind(
-                &datum_deserialize_object,
-                s,
-                &value),
-            MIN_DATUM_SERIALIZATION_STACK_SPACE);
+        res = call_with_enough_stack<archive_result_t>([&] () {
+                return datum_deserialize_object(s, &value);
+            }, MIN_DATUM_SERIALIZATION_STACK_SPACE);
         if (bad(res)) {
             return res;
         }

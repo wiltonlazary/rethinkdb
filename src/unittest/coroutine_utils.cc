@@ -25,7 +25,7 @@ TEST(CoroutineUtilsTest, WithEnoughStackNoSpawn) {
     run_in_coro([&]() {
         // This should execute directly
         ASSERT_NO_CORO_WAITING;
-        res = call_with_enough_stack<int>([]() {
+        res = call_with_enough_stack<int>([] () {
             return 5;
         }, 1);
     });
@@ -37,7 +37,7 @@ TEST(CoroutineUtilsTest, WithEnoughStackNonBlocking) {
     run_in_coro([&]() {
         ASSERT_FINITE_CORO_WAITING;
         // `COROUTINE_STACK_SIZE` forces a coroutine to be spawned
-        res = call_with_enough_stack<int>([]() {
+        res = call_with_enough_stack<int>([] () {
             return 5;
         }, COROUTINE_STACK_SIZE);
     });
@@ -48,7 +48,7 @@ TEST(CoroutineUtilsTest, WithEnoughStackBlocking) {
     int res = 0;
     run_in_coro([&]() {
         // `COROUTINE_STACK_SIZE` forces a coroutine to be spawned
-        res = call_with_enough_stack<int>([]() {
+        res = call_with_enough_stack<int>([] () {
             nap(5);
             return 5;
         }, COROUTINE_STACK_SIZE);
@@ -64,7 +64,7 @@ TEST(CoroutineUtilsTest, WithEnoughStackNoCoro) {
         struct test_message_t : public linux_thread_message_t {
             void on_thread_switch() {
                 ASSERT_EQ(coro_t::self(), nullptr);
-                *out = call_with_enough_stack<int>([]() {
+                *out = call_with_enough_stack<int>([] () {
                     return 5;
                 }, 1);
                 done_cond.pulse();
@@ -85,7 +85,7 @@ TEST(CoroutineUtilsTest, WithEnoughStackException) {
     run_in_coro([&]() {
         try {
             // `COROUTINE_STACK_SIZE` forces a coroutine to be spawned
-            call_with_enough_stack([]() {
+            call_with_enough_stack([] () {
                 throw std::runtime_error("This is a test exception");
             }, COROUTINE_STACK_SIZE);
         } catch (const std::exception &) {
@@ -133,9 +133,9 @@ TEST(CoroutineUtilsTest, WithEnoughStackBenchmark) {
             sum = 0;
             start_ticks = get_ticks();
             for(int i = 0; i < NUM_REPETITIONS; ++i) {
-                // Use std::bind because that's what we're usually going to use in
+                // Use lambdas because that's what we're usually going to use in
                 // our code.
-                sum += call_with_enough_stack<int>(std::bind(&test_function), 1);
+                sum += call_with_enough_stack<int>(test_function, 1);
             }
             double dur = ticks_to_secs(get_ticks() - start_ticks);
             EXPECT_EQ(sum, NUM_REPETITIONS);
@@ -147,9 +147,9 @@ TEST(CoroutineUtilsTest, WithEnoughStackBenchmark) {
             sum = 0;
             start_ticks = get_ticks();
             for(int i = 0; i < NUM_REPETITIONS; ++i) {
-                // Use std::bind because that's what we're usually going to use in
+                // Use lambdas because that's what we're usually going to use in
                 // our code.
-                sum += call_with_enough_stack<int>(std::bind(&test_function),
+                sum += call_with_enough_stack<int>(test_function,
                                                    COROUTINE_STACK_SIZE);
             }
             double dur = ticks_to_secs(get_ticks() - start_ticks);
@@ -162,9 +162,9 @@ TEST(CoroutineUtilsTest, WithEnoughStackBenchmark) {
             sum = 0;
             start_ticks = get_ticks();
             for(int i = 0; i < NUM_REPETITIONS; ++i) {
-                // Use std::bind because that's what we're usually going to use in
+                // Use lambdas because that's what we're usually going to use in
                 // our code.
-                sum += call_with_enough_stack<int>(std::bind(&test_function_blocking),
+                sum += call_with_enough_stack<int>(test_function_blocking,
                                                    COROUTINE_STACK_SIZE);
             }
             double dur = ticks_to_secs(get_ticks() - start_ticks);

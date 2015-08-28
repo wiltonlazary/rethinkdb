@@ -74,12 +74,9 @@ public:
     };
 
     void walk(Term *t, frame_t *this_frame) {
-        call_with_enough_stack(std::bind(
-                &term_walker_t::walk_stack_unchecked,
-                this,
-                t,
-                this_frame),
-            MIN_WALK_STACK_SPACE);
+        call_with_enough_stack([&] () {
+                return walk_stack_unchecked(t, this_frame);
+            }, MIN_WALK_STACK_SPACE);
     }
 
 private:
