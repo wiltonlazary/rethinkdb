@@ -41,7 +41,7 @@ multi_table_manager_t::multi_table_manager_t(
             guarantee(tables.count(table_id) == 0);
             table_t *table;
             tables[table_id].init(table = new table_t);
-            rwlock_acq_t table_lock_acq(&table->rwlock, access_t::write);
+            rwlock_acq_t table_lock_acq(&table->access_rwlock, access_t::write);
             perfmon_collection_repo_t::collections_t *perfmon_collections =
                 perfmon_collection_repo->get_perfmon_collections_for_namespace(table_id);
             table->status = table_t::status_t::ACTIVE;
@@ -58,7 +58,7 @@ multi_table_manager_t::multi_table_manager_t(
             guarantee(tables.count(table_id) == 0);
             table_t *table;
             tables[table_id].init(table = new table_t);
-            rwlock_acq_t table_lock_acq(&table->rwlock, access_t::write);
+            rwlock_acq_t table_lock_acq(&table->access_rwlock, access_t::write);
             table->status = table_t::status_t::INACTIVE;
             table->basic_configs_entry.create(&table_basic_configs, table_id,
                 std::make_pair(state.second_hand_config, state.timestamp));
@@ -102,7 +102,7 @@ multi_table_manager_t::~multi_table_manager_t() {
     /* Next, destroy all of the `active_table_t`s. This is important because otherwise
     `active_table_t` can call `schedule_sync()`. */
     for (auto &&pair : tables) {
-        rwlock_acq_t lock_acq(&pair.second->rwlock, access_t::write);
+        rwlock_acq_t lock_acq(&pair.second->access_rwlock, access_t::write);
         pair.second->status = table_t::status_t::SHUTTING_DOWN;
         pair.second->active.reset();
         pair.second->multistore_ptr.reset();
@@ -294,7 +294,7 @@ void multi_table_manager_t::on_action(
     } else {
         table = tables.at(table_id).get();
     }
-    rwlock_in_line_t table_lock_in_line(&table->rwlock, access_t::write);
+    rwlock_in_line_t table_lock_in_line(&table->access_rwlock, access_t::write);
     global_mutex_acq.reset();
     wait_interruptible(table_lock_in_line.write_signal(), interruptor);
 
@@ -513,7 +513,7 @@ void multi_table_manager_t::on_get_status(
         mutex_assertion_t::acq_t global_mutex_acq(&mutex);
         auto it = tables.find(table_id);
         if (it != tables.end()) {
-            rwlock_in_line_t table_lock_in_line(&it->second->rwlock, access_t::read);
+            rwlock_in_line_t table_lock_in_line(&it->second->access_rwlock, access_t::read);
             global_mutex_acq.reset();
             wait_interruptible(table_lock_in_line.read_signal(), interruptor);
             if (it->second->status == table_t::status_t::ACTIVE) {
@@ -633,7 +633,7 @@ void multi_table_manager_t::schedule_sync(
             while (!table->to_sync_set.empty()) {
                 std::set<peer_id_t> to_sync_set;
                 std::swap(table->to_sync_set, to_sync_set);
-                rwlock_in_line_t table_lock_in_line(&table->rwlock, access_t::write);
+                rwlock_in_line_t table_lock_in_line(&table->access_rwlock, access_t::write);
                 global_mutex_acq.reset();
                 wait_interruptible(table_lock_in_line.write_signal(),
                     keepalive.get_drain_signal());

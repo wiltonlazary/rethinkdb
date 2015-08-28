@@ -131,7 +131,7 @@ public:
             table_lock_in_lines;
         for (const auto &pair : tables) {
             table_lock_in_lines[pair.first] =
-                make_scoped<rwlock_in_line_t>(&pair.second->rwlock, access);
+                make_scoped<rwlock_in_line_t>(&pair.second->access_rwlock, access);
         }
         global_mutex_acq.reset();
         for (const auto &pair : table_lock_in_lines) {
@@ -174,7 +174,7 @@ public:
             return;
         }
         table_t *table = it->second.get();
-        rwlock_in_line_t lock_in_line(&table->rwlock, access);
+        rwlock_in_line_t lock_in_line(&table->access_rwlock, access);
         global_mutex_acq.reset();
         switch (access) {
         case access_t::read:
@@ -293,7 +293,7 @@ private:
 
         /* You must hold this lock to access the other fields of the `table_t` except
         for `to_sync_set` and `sync_coro_running` */
-        rwlock_t rwlock;
+        rwlock_t access_rwlock;
 
         status_t status;
 
