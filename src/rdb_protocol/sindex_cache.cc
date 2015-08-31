@@ -12,7 +12,7 @@ std::shared_ptr<const sindex_cached_info_t> sindex_cache_t::get_sindex_info(
     if (it == cached_sindex_infos.end()) {
         try {
             sindex_cached_info_t info;
-            deserialize_sindex_info(sindex_mapping_data, &info);
+            deserialize_sindex_info_or_crash(sindex_mapping_data, &info);
             info.compiled_mapping = info.mapping.compile_wire_func();
             cached_sindex_infos[index_id] = std::shared_ptr<const sindex_cached_info_t>(
                 new sindex_cached_info_t(std::move(info)));

@@ -1,4 +1,4 @@
-// Copyright 2010-2014 RethinkDB, all rights reserved.
+// Copyright 2010-2015 RethinkDB, all rights reserved.
 #include "rdb_protocol/term.hpp"
 
 #include "arch/address.hpp"
@@ -19,16 +19,12 @@ namespace ql {
 
 // The minimum amount of stack space we require to be available on a coroutine
 // before attempting to compile or evaluate a term.
+const size_t MIN_COMPILE_STACK_SPACE = 16 * KILOBYTE;
 const size_t MIN_EVAL_STACK_SPACE = 16 * KILOBYTE;
 
-counted_t<const term_t> compile_term(compile_env_t *env, const protob_t<const Term> t) {
-    // Check that we have enough stack space available to evaluate the term
-    rcheck_toplevel(
-        has_n_bytes_free_stack_space(MIN_EVAL_STACK_SPACE),
-        base_exc_t::RESOURCE,
-        "Insufficient stack space available to compile query.  This is usually "
-        "caused by running a very deeply-nested query.");
-
+counted_t<const term_t> compile_on_current_stack(
+        compile_env_t *env,
+        const protob_t<const Term> t) {
     // HACK: per @srh, use unlimited array size at compile time
     ql::configured_limits_t limits = ql::configured_limits_t::unlimited;
     switch (t->type()) {
@@ -217,6 +213,12 @@ counted_t<const term_t> compile_term(compile_env_t *env, const protob_t<const Te
     unreachable();
 }
 
+counted_t<const term_t> compile_term(compile_env_t *env, const protob_t<const Term> t) {
+    return call_with_enough_stack<counted_t<const term_t> >([&] () {
+            return compile_on_current_stack(env, std::move(t));
+        }, MIN_COMPILE_STACK_SPACE);
+}
+
 // If the query wants a reply, we can release the query id, which is
 // only used for tracking the ordering of noreply queries for the
 // purpose of noreply_wait.
@@ -231,6 +233,7 @@ void run(query_id_t &&query_id,
          protob_t<Query> q,
          Response *res,
          query_cache_t *query_cache,
+         new_semaphore_acq_t *throttler,
          signal_t *interruptor) {
     try {
         validate_pb(*q);
@@ -266,13 +269,13 @@ void run(query_id_t &&query_id,
             maybe_release_query_id(std::move(query_id), q);
             scoped_ptr_t<query_cache_t::ref_t> query_ref =
                 query_cache->create(token, q, use_json, interruptor);
-            query_ref->fill_response(res);
+            query_ref->fill_response(res, throttler);
         } break;
         case Query_QueryType_CONTINUE: {
             maybe_release_query_id(std::move(query_id), q);
             scoped_ptr_t<query_cache_t::ref_t> query_ref =
                 query_cache->get(token, use_json, interruptor);
-            query_ref->fill_response(res);
+            query_ref->fill_response(res, throttler);
         } break;
         case Query_QueryType_STOP: {
             query_cache->terminate_query(token);
@@ -323,7 +326,9 @@ protob_t<const Term> term_t::get_src() const {
     return src;
 }
 
-scoped_ptr_t<val_t> runtime_term_t::eval(scope_env_t *env, eval_flags_t eval_flags) const {
+scoped_ptr_t<val_t> runtime_term_t::eval_on_current_stack(
+        scope_env_t *env,
+        eval_flags_t eval_flags) const {
     // This is basically a hook for unit tests to change things mid-query
     profile::starter_t starter(strprintf("Evaluating %s.", name()), env->env->trace);
     env->env->do_eval_callback();
@@ -337,15 +342,6 @@ scoped_ptr_t<val_t> runtime_term_t::eval(scope_env_t *env, eval_flags_t eval_fla
 #ifdef INSTRUMENT
     try {
 #endif // INSTRUMENT
-        // Check that we have enough stack space available to evaluate the term
-        rcheck(
-            has_n_bytes_free_stack_space(MIN_EVAL_STACK_SPACE),
-            base_exc_t::RESOURCE,
-            strprintf(
-                "Insufficient stack space available to evaluate `%s`.  This is usually "
-                "caused by running a very deeply-nested query.",
-                name()));
-
         try {
             scoped_ptr_t<val_t> ret = term_eval(env, eval_flags);
             DEC_DEPTH;
@@ -363,6 +359,14 @@ scoped_ptr_t<val_t> runtime_term_t::eval(scope_env_t *env, eval_flags_t eval_fla
         throw;
     }
 #endif // INSTRUMENT
+}
+
+scoped_ptr_t<val_t> runtime_term_t::eval(
+        scope_env_t *env,
+        eval_flags_t eval_flags) const {
+    return call_with_enough_stack<scoped_ptr_t<val_t> >([&] () {
+            return eval_on_current_stack(env, std::move(eval_flags));
+        }, MIN_EVAL_STACK_SPACE);
 }
 
 } // namespace ql
