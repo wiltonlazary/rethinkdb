@@ -1060,7 +1060,7 @@ bool real_reql_cluster_interface_t::sindex_list(
     } CATCH_NAME_ERRORS(db->name, table_name, error_out)
       CATCH_OP_ERRORS(db->name, table_name, error_out,
         "Failed to retrieve all secondary indexes.",
-        "May or may not have failed to retrieve all secondary indexes.")
+        "Failed to retrieve all secondary indexes.")
 }
 
 /* Checks that divisor is indeed a divisor of multiple. */
