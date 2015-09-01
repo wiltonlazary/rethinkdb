@@ -419,9 +419,32 @@ struct rdb_r_shard_visitor_t : public boost::static_visitor<bool> {
     }
 
     bool operator()(const rget_read_t &rg) const {
-        bool do_read = rangey_read(rg);
+        bool do_read;
+        if (rg.hints) {
+            auto it = rg.hints->find(*region);
+            if (it != rg.hints->end()) {
+                do_read = rangey_read(rg);
+                auto *rr = boost::get<rget_read_t>(payload_out);
+                guarantee(rr);
+                if (do_read) {
+                    // TODO: We could avoid an `std::map` copy by making
+                    // `rangey_read` smarter.
+                    rr->hints = boost::none;
+                    if (!reversed(rg.sorting)) {
+                        rr->region.inner.left = it->second;
+                    } else {
+                        rr->region.inner.right = key_range_t::right_bound_t(it->second);
+                    }
+                }
+            } else {
+                do_read = false;
+            }
+        } else {
+            do_read = rangey_read(rg);
+        }
         if (do_read) {
             auto rg_out = boost::get<rget_read_t>(payload_out);
+            rg_out->current_shard = *region;
             rg_out->batchspec = rg_out->batchspec.scale_down(CPU_SHARDING_FACTOR);
             if (rg_out->stamp) {
                 rg_out->stamp->region = rg_out->region;
@@ -691,13 +714,11 @@ void rdb_r_unshard_visitor_t::unshard_range_batch(const query_t &q, sorting_t so
     // Initialize response.
     response_out->response = query_response_t();
     query_response_t *out = boost::get<query_response_t>(&response_out->response);
-    out->truncated = false;
     out->skey_version = ql::skey_version_t::pre_1_16;
 
     // Fill in `truncated` and `last_key`, get responses, abort if there's an error.
     std::vector<ql::result_t *> results(count);
     std::vector<changefeed_stamp_response_t *> stamp_resps(count);
-    store_key_t *best = NULL;
     key_le_t key_le(sorting);
     for (size_t i = 0; i < count; ++i) {
         auto resp = boost::get<query_response_t>(&responses[i].response);
@@ -725,19 +746,12 @@ void rdb_r_unshard_visitor_t::unshard_range_batch(const query_t &q, sorting_t so
             }
 #endif // NDEBUG
         }
-        if (resp->truncated) {
-            out->truncated = true;
-            if (best == NULL || key_le.is_le(resp->last_key, *best)) {
-                best = &resp->last_key;
-            }
-        }
         results[i] = &resp->result;
         if (q.stamp) {
             guarantee(resp->stamp_response);
             stamp_resps[i] = &*resp->stamp_response;
         }
     }
-    out->last_key = (best != NULL) ? std::move(*best) : key_max(sorting);
     if (q.stamp) {
         out->stamp_response = changefeed_stamp_response_t();
         unshard_stamps(stamp_resps, &*out->stamp_response);
@@ -747,8 +761,8 @@ void rdb_r_unshard_visitor_t::unshard_range_batch(const query_t &q, sorting_t so
     try {
         scoped_ptr_t<ql::accumulator_t> acc(q.terminal
             ? ql::make_terminal(*q.terminal)
-            : ql::make_append(sorting, NULL));
-        acc->unshard(&env, out->last_key, results);
+            : ql::make_unsharding_append());
+        acc->unshard(&env, results);
         acc->finish(&out->result);
     } catch (const ql::exc_t &ex) {
         *out = query_response_t(ex);
@@ -1186,8 +1200,8 @@ RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(point_read_response_t, data);
 ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(
     ql::skey_version_t, int8_t,
     ql::skey_version_t::pre_1_16, ql::skey_version_t::post_1_16);
-RDB_IMPL_SERIALIZABLE_5_FOR_CLUSTER(
-    rget_read_response_t, stamp_response, result, skey_version, truncated, last_key);
+RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(
+    rget_read_response_t, stamp_response, result, skey_version);
 RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(nearest_geo_read_response_t, results_or_error);
 RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(distribution_read_response_t, region, key_counts);
 RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(
@@ -1211,9 +1225,10 @@ RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(sindex_rangespec_t, id, region, original_ran
 ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(
         sorting_t, int8_t,
         sorting_t::UNORDERED, sorting_t::DESCENDING);
-RDB_IMPL_SERIALIZABLE_9_FOR_CLUSTER(rget_read_t,
-                                    stamp, region, optargs, table_name, batchspec,
-                                    transforms, terminal, sindex, sorting);
+RDB_IMPL_SERIALIZABLE_11_FOR_CLUSTER(
+    rget_read_t,
+    stamp, region, current_shard, hints, optargs, table_name, batchspec,
+    transforms, terminal, sindex, sorting);
 RDB_IMPL_SERIALIZABLE_8_FOR_CLUSTER(
         intersecting_geo_read_t, region, optargs, table_name, batchspec, transforms,
         terminal, sindex, query_geometry);

@@ -136,6 +136,7 @@ void rdb_delete(const store_key_t &key, btree_slice_t *slice, repli_timestamp_t
 
 void rdb_rget_slice(
     btree_slice_t *slice,
+    const region_t &shard,
     const key_range_t &range,
     superblock_t *superblock,
     ql::env_t *ql_env,
@@ -148,8 +149,9 @@ void rdb_rget_slice(
 
 void rdb_rget_secondary_slice(
     btree_slice_t *slice,
-    const ql::datum_range_t &datum_range,
-    const region_t &sindex_region,
+    const region_t &shard,
+    const ql::datum_range_t &sindex_datum_range,
+    const key_range_t &sindex_range,
     sindex_superblock_t *superblock,
     ql::env_t *ql_env,
     const ql::batchspec_t &batchspec,
@@ -163,8 +165,9 @@ void rdb_rget_secondary_slice(
 
 void rdb_get_intersecting_slice(
     btree_slice_t *slice,
+    const region_t &shard,
     const ql::datum_t &query_geometry,
-    const region_t &sindex_region,
+    const key_range_t &sindex_range,
     sindex_superblock_t *superblock,
     ql::env_t *ql_env,
     const ql::batchspec_t &batchspec,

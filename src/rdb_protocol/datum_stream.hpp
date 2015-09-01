@@ -77,7 +77,7 @@ public:
     virtual std::vector<changespec_t> get_changespecs() = 0;
     virtual void add_transformation(transform_variant_t &&tv, backtrace_id_t bt) = 0;
     virtual bool add_stamp(changefeed_stamp_t stamp);
-    virtual boost::optional<active_state_t> get_active_state() const;
+    virtual boost::optional<active_state_t> truncate_and_get_active_state();
     void add_grouping(transform_variant_t &&tv,
                       backtrace_id_t bt);
 
@@ -389,6 +389,27 @@ private:
     std::vector<datum_t> args;
 };
 
+enum class range_state_t { ACTIVE, SATURATED, EXHAUSTED };
+struct hash_range_with_cache_t {
+    key_range_t key_range;
+    raw_stream_t cache; // Entries we weren't able to unshard.
+    range_state_t state;
+    // No data in the cache and nothing to read from the shards.
+    bool totally_exhausted() const;
+};
+
+struct hash_ranges_t {
+    std::map<hash_range_t, hash_range_with_cache_t> hash_ranges;
+    // Composite state of all hash shards.
+    range_state_t state() const;
+    // True if all hash shards are totally exhausted.
+    bool totally_exhausted() const;
+};
+
+struct active_ranges_t {
+    std::map<key_range_t, hash_ranges_t> ranges;
+};
+
 // This class generates the `read_t`s used in range reads.  It's used by
 // `reader_t` below.  Its subclasses are the different types of range reads we
 // need to do.
@@ -411,17 +432,7 @@ public:
     virtual void sindex_sort(std::vector<rget_item_t> *vec) const = 0;
 
     virtual read_t next_read(
-        const boost::optional<key_range_t> &active_range,
-        boost::optional<changefeed_stamp_t> stamp,
-        std::vector<transform_variant_t> transform,
-        const batchspec_t &batchspec) const = 0;
-    // This generates a read that will read as many rows as we need to be able
-    // to do an sindex sort, or nothing if no such read is necessary.  Such a
-    // read should only be necessary when we're ordering by a secondary index
-    // and the last element read has a truncated value for that secondary index.
-    virtual boost::optional<read_t> sindex_sort_read(
-        const key_range_t &active_range,
-        const std::vector<rget_item_t> &items,
+        const boost::optional<active_ranges_t> &active_ranges,
         boost::optional<changefeed_stamp_t> stamp,
         std::vector<transform_variant_t> transform,
         const batchspec_t &batchspec) const = 0;
@@ -430,14 +441,11 @@ public:
     virtual key_range_t sindex_keyrange(skey_version_t skey_version) const = 0;
     virtual boost::optional<std::string> sindex_name() const = 0;
 
-    // Returns `true` if there is no more to read.
-    bool update_range(key_range_t *active_range,
-                      const store_key_t &last_key) const;
-
     virtual changefeed::keyspec_t::range_t get_range_spec(
         std::vector<transform_variant_t>) const = 0;
 
     const std::string &get_table_name() const { return table_name; }
+    sorting_t get_sorting() const { return sorting; }
 protected:
     const std::map<std::string, wire_func_t> global_optargs;
     const std::string table_name;
@@ -462,7 +470,7 @@ public:
         const batchspec_t &batchspec) const;
 
     virtual read_t next_read(
-        const boost::optional<key_range_t> &active_range,
+        const boost::optional<active_ranges_t> &active_ranges,
         boost::optional<changefeed_stamp_t> stamp,
         std::vector<transform_variant_t> transform,
         const batchspec_t &batchspec) const;
@@ -474,7 +482,7 @@ public:
     }
 private:
     virtual rget_read_t next_read_impl(
-        const boost::optional<key_range_t> &active_range,
+        const boost::optional<active_ranges_t> &active_ranges,
         boost::optional<changefeed_stamp_t> stamp,
         std::vector<transform_variant_t> transform,
         const batchspec_t &batchspec) const = 0;
@@ -500,13 +508,7 @@ private:
                       read_mode_t read_mode,
                       sorting_t sorting);
     virtual rget_read_t next_read_impl(
-        const boost::optional<key_range_t> &active_range,
-        boost::optional<changefeed_stamp_t> stamp,
-        std::vector<transform_variant_t> transform,
-        const batchspec_t &batchspec) const;
-    virtual boost::optional<read_t> sindex_sort_read(
-        const key_range_t &active_range,
-        const std::vector<rget_item_t> &items,
+        const boost::optional<active_ranges_t> &active_ranges,
         boost::optional<changefeed_stamp_t> stamp,
         std::vector<transform_variant_t> transform,
         const batchspec_t &batchspec) const;
@@ -526,12 +528,6 @@ public:
         datum_range_t range = datum_range_t::universe(),
         sorting_t sorting = sorting_t::UNORDERED);
 
-    virtual boost::optional<read_t> sindex_sort_read(
-        const key_range_t &active_range,
-        const std::vector<rget_item_t> &items,
-        boost::optional<changefeed_stamp_t> stamp,
-        std::vector<transform_variant_t> transform,
-        const batchspec_t &batchspec) const;
     virtual void sindex_sort(std::vector<rget_item_t> *vec) const;
     virtual boost::optional<key_range_t> original_keyrange() const;
     virtual key_range_t sindex_keyrange(skey_version_t skey_version) const;
@@ -546,7 +542,7 @@ private:
         read_mode_t read_mode,
         sorting_t sorting);
     virtual rget_read_t next_read_impl(
-        const boost::optional<key_range_t> &active_range,
+        const boost::optional<active_ranges_t> &active_ranges,
         boost::optional<changefeed_stamp_t> stamp,
         std::vector<transform_variant_t> transform,
         const batchspec_t &batchspec) const;
@@ -571,17 +567,11 @@ public:
         const batchspec_t &batchspec) const;
 
     virtual read_t next_read(
-        const boost::optional<key_range_t> &active_range,
+        const boost::optional<active_ranges_t> &active_ranges,
         boost::optional<changefeed_stamp_t> stamp,
         std::vector<transform_variant_t> transform,
         const batchspec_t &batchspec) const;
 
-    virtual boost::optional<read_t> sindex_sort_read(
-        const key_range_t &active_range,
-        const std::vector<rget_item_t> &items,
-        boost::optional<changefeed_stamp_t> stamp,
-        std::vector<transform_variant_t> transform,
-        const batchspec_t &batchspec) const;
     virtual void sindex_sort(std::vector<rget_item_t> *vec) const;
     virtual boost::optional<key_range_t> original_keyrange() const;
     virtual key_range_t sindex_keyrange(skey_version_t skey_version) const;
@@ -605,7 +595,7 @@ private:
     // Analogue to rget_readgen_t::next_read_impl(), but generates an intersecting
     // geo read.
     intersecting_geo_read_t next_read_impl(
-        const boost::optional<key_range_t> &active_range,
+        const boost::optional<active_ranges_t> &active_ranges,
         boost::optional<changefeed_stamp_t> stamp,
         std::vector<transform_variant_t> transforms,
         const batchspec_t &batchspec) const;
@@ -619,12 +609,12 @@ public:
     virtual ~reader_t() { }
     virtual void add_transformation(transform_variant_t &&tv) = 0;
     virtual bool add_stamp(changefeed_stamp_t stamp) = 0;
-    virtual boost::optional<active_state_t> get_active_state() const = 0;
+    virtual boost::optional<active_state_t> truncate_and_get_active_state() = 0;
     virtual void accumulate(env_t *env, eager_acc_t *acc,
                             const terminal_variant_t &tv) = 0;
     virtual void accumulate_all(env_t *env, eager_acc_t *acc) = 0;
-    virtual std::vector<datum_t> next_batch(env_t *env,
-                                            const batchspec_t &batchspec) = 0;
+    virtual std::vector<datum_t> next_batch(
+        env_t *env, const batchspec_t &batchspec) = 0;
     virtual bool is_finished() const = 0;
 
     virtual changefeed::keyspec_t get_changespec() const = 0;
@@ -638,7 +628,7 @@ public:
         scoped_ptr_t<readgen_t> &&readgen);
     virtual void add_transformation(transform_variant_t &&tv);
     virtual bool add_stamp(changefeed_stamp_t stamp);
-    virtual boost::optional<active_state_t> get_active_state() const;
+    virtual boost::optional<active_state_t> truncate_and_get_active_state();
     virtual void accumulate(env_t *env, eager_acc_t *acc, const terminal_variant_t &tv);
     virtual void accumulate_all(env_t *env, eager_acc_t *acc) = 0;
     virtual std::vector<datum_t> next_batch(env_t *env, const batchspec_t &batchspec);
@@ -664,7 +654,7 @@ protected:
     bool started, shards_exhausted;
     const scoped_ptr_t<const readgen_t> readgen;
     store_key_t last_read_start;
-    boost::optional<key_range_t> active_range;
+    boost::optional<active_ranges_t> active_ranges;
     boost::optional<skey_version_t> skey_version;
     std::map<uuid_u, uint64_t> shard_stamps;
 
@@ -729,8 +719,8 @@ public:
     virtual bool add_stamp(changefeed_stamp_t stamp) {
         return reader->add_stamp(std::move(stamp));
     }
-    virtual boost::optional<active_state_t> get_active_state() const {
-        return reader->get_active_state();
+    virtual boost::optional<active_state_t> truncate_and_get_active_state() {
+        return reader->truncate_and_get_active_state();
     }
 
 private:
