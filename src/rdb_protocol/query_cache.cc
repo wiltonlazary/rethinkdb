@@ -329,9 +329,21 @@ void query_cache_t::ref_t::serve(env_t *env, Response *res) {
     std::vector<datum_t> ds = entry->stream->next_batch(
             env, batchspec_t::user(batch_type, env));
     entry->has_sent_batch = true;
-    for (auto d = ds.begin(); d != ds.end(); ++d) {
-        d->write_to_protobuf(res->add_response(), use_json);
+
+    // Ugly work-around for setting the `response` field to the given size.
+    res->mutable_response()->Reserve(ds.size());
+    for (size_t i = 0; i < ds.size(); ++i) {
+        res->add_response();
     }
+    guarantee(static_cast<size_t>(res->response_size()) == ds.size());
+    // For performance reasons, we parallelize the JSON encoding
+    const int num_threads = get_num_db_threads();
+    pmap(static_cast<int64_t>(num_threads), [&] (int64_t m) {
+        on_thread_t switcher((threadnum_t(static_cast<int32_t>(m))));
+        for (size_t i = m; i < ds.size(); i += num_threads) {
+            ds[i].write_to_protobuf(res->mutable_response(i), use_json);
+        }
+    });
 
     // Note that `SUCCESS_SEQUENCE` is possible for feeds if you call `.limit`
     // after the feed.
