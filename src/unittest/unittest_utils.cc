@@ -43,7 +43,8 @@ struct make_sindex_read_t {
                 boost::optional<ql::terminal_variant_t>(),
                 sindex_rangespec_t(id, boost::none, rng),
                 sorting_t::UNORDERED),
-            profile_bool_t::PROFILE);
+            profile_bool_t::PROFILE,
+            read_mode_t::SINGLE);
     }
 };
 
@@ -92,6 +93,23 @@ serializer_filepath_t temp_file_t::name() const {
     return manual_serializer_filepath(filename, filename + temp_file_create_suffix);
 }
 
+temp_directory_t::temp_directory_t() {
+    char tmpl[] = "/tmp/rdb_unittest.XXXXXX";
+    char *res = mkdtemp(tmpl);
+    guarantee_err(res != nullptr, "Couldn't create a temporary directory");
+    directory = base_path_t(std::string(res));
+
+    // Some usages of this directory may require an internal temporary directory
+    recreate_temporary_directory(directory);
+}
+
+temp_directory_t::~temp_directory_t() {
+    remove_directory_recursive(directory.path().c_str());
+}
+
+base_path_t temp_directory_t::path() const {
+    return directory;
+}
 
 void let_stuff_happen() {
 #ifdef VALGRIND
@@ -108,6 +126,34 @@ std::set<ip_address_t> get_unittest_addresses() {
 
 void run_in_thread_pool(const std::function<void()> &fun, int num_workers) {
     ::run_in_thread_pool(fun, num_workers);
+}
+
+key_range_t quick_range(const char *bounds) {
+    guarantee(strlen(bounds) == 3);
+    char left = bounds[0];
+    guarantee(bounds[1] == '-');
+    char right = bounds[2];
+    if (left != '*' && right != '*') {
+        guarantee(left <= right);
+    }
+    key_range_t r;
+    r.left = (left == '*')
+        ? store_key_t()
+        : store_key_t(std::string(1, left));
+    r.right = (right == '*')
+        ? key_range_t::right_bound_t()
+        : key_range_t::right_bound_t(store_key_t(std::string(1, right+1)));
+    return r;
+}
+
+region_t quick_region(const char *bounds) {
+    return region_t(quick_range(bounds));
+}
+
+state_timestamp_t make_state_timestamp(int n) {
+    state_timestamp_t t;
+    t.num = n;
+    return t;
 }
 
 }  // namespace unittest

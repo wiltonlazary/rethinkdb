@@ -1,14 +1,24 @@
 // Copyright 2010-2015 RethinkDB, all rights reserved.
-#include "protob/protob.hpp"
 
-#include <google/protobuf/stubs/common.h>
+// We need to include `openssl/evp.h` first, since it declares a function with the
+// name `final`.
+// Because of missing support for the `final` annotation in older GCC versions,
+// we redefine final to the empty string in `errors.hpp`. So we must make
+// sure that we haven't included `errors.hpp` by the time we include `evp.h`.
+#include <openssl/evp.h> // NOLINT(build/include_order)
 
-#include <set>
-#include <string>
-#include <limits>
+#include "protob/protob.hpp" // NOLINT(build/include_order)
 
-#include "errors.hpp"
-#include <boost/lexical_cast.hpp>
+#include <google/protobuf/stubs/common.h> // NOLINT(build/include_order)
+
+#include <array> // NOLINT(build/include_order)
+#include <random> // NOLINT(build/include_order)
+#include <set> // NOLINT(build/include_order)
+#include <string> // NOLINT(build/include_order)
+#include <limits> // NOLINT(build/include_order)
+
+#include "errors.hpp" // NOLINT(build/include_order)
+#include <boost/lexical_cast.hpp> // NOLINT(build/include_order)
 
 #include "arch/arch.hpp"
 #include "arch/io/network.hpp"
@@ -21,9 +31,10 @@
 #include "protob/json_shim.hpp"
 #include "rapidjson/stringbuffer.h"
 #include "rdb_protocol/backtrace.hpp"
+#include "rdb_protocol/base64.hpp"
 #include "rdb_protocol/env.hpp"
 #include "rpc/semilattice/view.hpp"
-#include "utils.hpp"
+#include "time.hpp"
 
 #include "rdb_protocol/ql2.pb.h"
 #include "rdb_protocol/query_server.hpp"
@@ -59,9 +70,28 @@ time_t http_conn_cache_t::http_conn_t::last_accessed_time() const {
 }
 
 http_conn_cache_t::http_conn_cache_t(uint32_t _http_timeout_sec) :
-    next_id(0),
     http_timeout_timer(TIMER_RESOLUTION_MS, this),
-    http_timeout_sec(_http_timeout_sec) { }
+    http_timeout_sec(_http_timeout_sec) {
+
+    // Seed the random number generator from a true random source.
+    // Note1: On some platforms std::random_device might not actually be
+    //   non-deterministic, and it seems that there is no reliable way to tell.
+    //   On major platforms it should be fine.
+    // Note2: std::random_device() might block for a while. Since we only create
+    //   http_conn_cache_t once at startup, that should be fine. But it's something
+    //   to keep in mind.
+
+    // Seed with an amount of bits equal to the state size of key_generator.
+    static_assert(std::mt19937::word_size == 32,
+                  "std::mt19937's word size doesn't match what we expected.");
+    std::array<uint32_t, std::mt19937::state_size> seed_data;
+    std::random_device rd;
+    for (size_t i = 0; i < seed_data.size(); ++i) {
+        seed_data[i] = rd();
+    }
+    std::seed_seq seed_seq(seed_data.begin(), seed_data.end());
+    key_generator.seed(seed_seq);
+}
 
 http_conn_cache_t::~http_conn_cache_t() {
     for (auto &pair : cache) pair.second->pulse();
@@ -76,23 +106,36 @@ bool http_conn_cache_t::is_expired(const http_conn_t &conn) const {
     return difftime(time(0), conn.last_accessed_time()) > http_timeout_sec;
 }
 
-counted_t<http_conn_cache_t::http_conn_t> http_conn_cache_t::find(int32_t key) {
+counted_t<http_conn_cache_t::http_conn_t> http_conn_cache_t::find(
+        const conn_key_t &key) {
     assert_thread();
     auto conn_it = cache.find(key);
     if (conn_it == cache.end()) return counted_t<http_conn_t>();
     return conn_it->second;
 }
 
-int32_t http_conn_cache_t::create(rdb_context_t *rdb_ctx,
-                                  ip_and_port_t client_addr_port) {
+http_conn_cache_t::conn_key_t http_conn_cache_t::create(
+        rdb_context_t *rdb_ctx,
+        ip_and_port_t client_addr_port) {
     assert_thread();
-    int32_t key = next_id++;
+    // Generate a 128 bit random key to avoid XSS attacks where someone
+    // could run queries by guessing the connection ID.
+    // The same origin policy of browsers will stop attackers from seeing
+    // the response of the connection setup, so the attacker will have no chance
+    // of getting a valid connection ID.
+    uint32_t key_buf[4];
+    for(size_t i = 0; i < 4; ++i) {
+        key_buf[i] = key_generator();
+    }
+    conn_key_t key = encode_base64(reinterpret_cast<const char *>(key_buf),
+                                   sizeof(key_buf));
+
     cache.insert(
         std::make_pair(key, make_counted<http_conn_t>(rdb_ctx, client_addr_port)));
     return key;
 }
 
-void http_conn_cache_t::erase(int32_t key) {
+void http_conn_cache_t::erase(const conn_key_t &key) {
     assert_thread();
     auto it = cache.find(key);
     if (it != cache.end()) {
@@ -122,6 +165,19 @@ void http_conn_cache_t::on_ring() {
             guarantee(!conn);
         }
     }
+}
+
+size_t http_conn_cache_t::sha_hasher_t::operator()(const conn_key_t &x) const {
+    EVP_MD_CTX c;
+    EVP_DigestInit(&c, EVP_sha256());
+    EVP_DigestUpdate(&c, x.data(), x.size());
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int digest_size = 0;
+    EVP_DigestFinal(&c, digest, &digest_size);
+    rassert(digest_size >= sizeof(size_t));
+    size_t res = 0;
+    memcpy(&res, digest, std::min(sizeof(size_t), static_cast<size_t>(digest_size)));
+    return res;
 }
 
 struct protob_server_exc_t : public std::exception {
@@ -250,13 +306,14 @@ void query_server_t::handle_conn(const scoped_ptr_t<tcp_conn_descriptor_t> &ncon
                                               ql::return_empty_normal_batches_t::NO);
 
         switch (wire_protocol) {
-            case VersionDummy::JSON: break;
+            case VersionDummy::JSON:
+                break;
             case VersionDummy::PROTOBUF:
-                throw protob_server_exc_t("The PROTOBUF protocol version is "
-                                          "no longer supported");
+                throw protob_server_exc_t(
+                    "The PROTOBUF protocol version is no longer supported");
             default:
-                throw protob_server_exc_t(strprintf("Unrecognized protocol specified: '%d'",
-                                                    wire_protocol));
+                throw protob_server_exc_t(
+                    strprintf("Unrecognized protocol specified: '%d'", wire_protocol));
         }
 
         if (!pre_2) {
@@ -296,20 +353,23 @@ void query_server_t::make_error_response(bool is_draining,
                                          const tcp_conn_t &conn,
                                          const std::string &err_str,
                                          ql::response_t *response_out) {
-    // Best guess at the error that occurred
+    // Best guess at the error that occurred.
     if (!conn.is_write_open()) {
         // The other side closed it's socket - it won't get this message
         response_out->fill_error(Response::RUNTIME_ERROR,
+                                 Response::OP_INDETERMINATE,
                                  "Client closed the connection.",
                                  ql::backtrace_registry_t::EMPTY_BACKTRACE);
     } else if (is_draining) {
         // The query_server_t is being destroyed so this won't actually be written
         response_out->fill_error(Response::RUNTIME_ERROR,
+                                 Response::OP_INDETERMINATE,
                                  "Server is shutting down.",
                                  ql::backtrace_registry_t::EMPTY_BACKTRACE);
     } else {
         // Sort of a catch-all - there could be other reasons for this
-        response_out->fill_error(Response::RUNTIME_ERROR,
+        response_out->fill_error(
+            Response::RUNTIME_ERROR, Response::OP_INDETERMINATE,
             strprintf("Fatal error on another query: %s", err_str.c_str()),
             ql::backtrace_registry_t::EMPTY_BACKTRACE);
     }
@@ -350,85 +410,48 @@ void query_server_t::connection_loop(tcp_conn_t *conn,
     wait_any_t interruptor(drain_signal, &abort);
 #endif  // __linux
 
-    // The nascent_query_list_t exists to guarantee that ql::query_param_ts (which are
-    // RAII) are allocated and destroyed properly.  When we read a query off of the
-    // wire, it needs to be allocated a query_id_t immediately, because we then put it
-    // into the coro pool.  Once it is in the coro pool, all ordering guarantees are
-    // lost, so it must be done as soon as we receive the query.
-    //
-    // The nascent_query_list_t holds ownership of the ql::query_param_t until it is
-    // successfully handed over to the coroutine that will run the query.  This allows us
-    // to guarantee proper destruction of query_id_ts in exceptional interruption or
-    // error cases.
-    //
-    // A ql::query_id_t is used to provide an absolute ordering of queries, and is
-    // necessary for proper NOREPLY_WAIT semantics.
-    typedef std::list<scoped_ptr_t<ql::query_params_t> > nascent_query_list_t;
-    nascent_query_list_t query_list;
+    new_semaphore_t sem(max_concurrent_queries);
+    auto_drainer_t coro_drainer;
+    while (!err) {
+        scoped_ptr_t<ql::query_params_t> query =
+            protocol_t::parse_query(conn, &interruptor, query_cache);
+        if (query.has()) {
+            auto outer_acq = make_scoped<new_semaphore_acq_t>(&sem, 1);
+            wait_interruptible(outer_acq->acquisition_signal(), &interruptor);
+            coro_t::spawn_now_dangerously([&]() {
+                // We grab these right away while they're still valid.
+                scoped_ptr_t<new_semaphore_acq_t> acq = std::move(outer_acq);
+                scoped_ptr_t<ql::query_params_t> q = std::move(query);
+                // Since we `spawn_now_dangerously` it's always safe to acquire this.
+                auto_drainer_t::lock_t coro_drainer_lock(&coro_drainer);
+                ql::query_id_t query_id(query_cache);
+                wait_any_t cb_interruptor(coro_drainer_lock.get_drain_signal(),
+                                          &interruptor);
+                ql::response_t response;
+                bool replied = false;
 
-
-    std_function_callback_t<nascent_query_list_t::iterator> callback(
-        [&](nascent_query_list_t::iterator query_it,
-            signal_t *pool_interruptor) {
-
-            scoped_ptr_t<ql::query_params_t> q(std::move(*query_it));
-            query_list.erase(query_it);
-            wait_any_t cb_interruptor(pool_interruptor, &interruptor);
-            ql::response_t response;
-            bool replied = false;
-
-            save_exception(&err, &err_str, &abort, [&]() {
-                    handler->run_query(q.get(), &response, &cb_interruptor);
+                save_exception(&err, &err_str, &abort, [&]() {
+                    handler->run_query(std::move(query_id), query_pb, &response,
+                                       query_cache, acq.get(), &cb_interruptor);
                     if (!q->noreply) {
+                        response.set_token(query_pb->token());
                         new_mutex_acq_t send_lock(&send_mutex, &cb_interruptor);
                         protocol_t::send_response(&response, q->token,
                                                   conn, &cb_interruptor);
                         replied = true;
-                    }
+                        }
                 });
-
-            if (!replied && !q->noreply) {
                 save_exception(&err, &err_str, &abort, [&]() {
+                    if (!replied && !q->noreply) {
                         make_error_response(drain_signal->is_pulsed(), *conn,
                                             err_str, &response);
                         new_mutex_acq_t send_lock(&send_mutex, drain_signal);
-                        protocol_t::send_response(&response, q->token, conn, drain_signal);
-                    });
-            }
-        });
-
-    {
-        // Pick a small limit so queries back up on the TCP connection.
-        limited_fifo_queue_t<nascent_query_list_t::iterator> coro_queue(4);
-        coro_pool_t<nascent_query_list_t::iterator> coro_pool(max_concurrent_queries,
-                                                                    &coro_queue,
-                                                                    &callback);
-
-        while (!err) {
-            save_exception(&err, &err_str, &abort, [&]() {
-                    scoped_ptr_t<ql::query_params_t> q =
-                        protocol_t::parse_query(conn, &interruptor, query_cache);
-                    if (q.has()) {
-                        query_list.push_front(std::move(q));
-                        coro_queue.push(query_list.begin());
+                        protocol_t::send_response(&response, q->token,
+                                                  conn, &cb_interruptor);
                     }
                 });
-        }
-
-        // Stop processing queries here, so we don't get into race conditions
-        // with the loop over `query_list` below.
-    }
-
-    // Respond to any queries still in the run queue
-    for (auto const &q : query_list) {
-        if (!q->noreply) {
-            ql::response_t response;
-            save_exception(&err, &err_str, &abort, [&]() {
-                    make_error_response(drain_signal->is_pulsed(), *conn,
-                                        err_str, &response);
-                    new_mutex_acq_t send_lock(&send_mutex, drain_signal);
-                    protocol_t::send_response(&response, q->token, conn, drain_signal);
-                });
+            });
+            guarantee(!outer_acq.has());
         }
     }
 
@@ -443,11 +466,10 @@ void query_server_t::handle(const http_req_t &req,
     auto_drainer_t::lock_t auto_drainer_lock(&drainer);
     if (req.method == http_method_t::POST &&
         req.resource.as_string().find("open-new-connection") != std::string::npos) {
-        int32_t conn_id = http_conn_cache.create(rdb_ctx, req.peer);
+        http_conn_cache_t::conn_key_t conn_id
+            = http_conn_cache.create(rdb_ctx, req.peer);
 
-        std::string body_data;
-        body_data.assign(reinterpret_cast<char *>(&conn_id), sizeof(conn_id));
-        result->set_body("application/octet-stream", body_data);
+        result->set_body("text/plain", conn_id);
         result->code = http_status_code_t::OK;
         return;
     }
@@ -459,8 +481,7 @@ void query_server_t::handle(const http_req_t &req,
         return;
     }
 
-    std::string string_conn_id = *optional_conn_id;
-    int32_t conn_id = boost::lexical_cast<int32_t>(string_conn_id);
+    http_conn_cache_t::conn_key_t conn_id = *optional_conn_id;
 
     if (req.method == http_method_t::POST &&
         req.resource.as_string().find("close-connection") != std::string::npos) {
@@ -479,7 +500,7 @@ void query_server_t::handle(const http_req_t &req,
     ql::response_t response;
     counted_t<http_conn_cache_t::http_conn_t> conn = http_conn_cache.find(conn_id);
     if (!conn.has()) {
-        response.fill_error(Response::CLIENT_ERROR,
+        response.fill_error(Response::CLIENT_ERROR, Response::INTERNAL,
                             "This HTTP connection is not open.",
                             ql::backtrace_registry_t::EMPTY_BACKTRACE);
     } else {
@@ -497,7 +518,7 @@ void query_server_t::handle(const http_req_t &req,
             std::move(body_buf), sizeof(token), conn->get_query_cache(), token);
 
         if (!q.has()) {
-            response.fill_error(Response::CLIENT_ERROR,
+            response.fill_error(Response::CLIENT_ERROR, Response::QUERY_LOGIC,
                                 wire_protocol_t::unparseable_query_message,
                                 ql::backtrace_registry_t::EMPTY_BACKTRACE);
         } else {
@@ -514,22 +535,42 @@ void query_server_t::handle(const http_req_t &req,
                                         drainer.get_drain_signal());
 
             try {
-                handler->run_query(q.get(), &response, &true_interruptor);
+                ticks_t start = get_ticks();
+                // We don't throttle HTTP queries.
+                new_semaphore_acq_t dummy_throttler;
+                handler->run_query(q.get(), &response,
+                                   &dummy_throttler, &true_interruptor);
+                ticks_t ticks = get_ticks() - start;
+
+                if (!response.has_profile()) {
+                    ql::datum_array_builder_t array_builder(
+                        ql::configured_limits_t::unlimited);
+                    ql::datum_object_builder_t object_builder;
+                    object_builder.overwrite("duration(ms)",
+                        ql::datum_t(static_cast<double>(ticks) / MILLION));
+                    array_builder.add(std::move(object_builder).to_datum());
+                    std::move(array_builder).to_datum().write_to_protobuf(
+                        response.mutable_profile(), ql::use_json_t::YES);
+                }
             } catch (const interrupted_exc_t &ex) {
                 if (http_conn_cache.is_expired(*conn)) {
                     response.fill_error(Response::RUNTIME_ERROR,
+                                        Response::OP_INDETERMINATE,
                                         http_conn_cache.expired_error_message(),
                                         ql::backtrace_registry_t::EMPTY_BACKTRACE);
                 } else if (interruptor->is_pulsed()) {
                     response.fill_error(Response::RUNTIME_ERROR,
+                                        Response::OP_INDETERMINATE,
                                         "This ReQL connection has been terminated.",
                                         ql::backtrace_registry_t::EMPTY_BACKTRACE);
                 } else if (drainer.is_draining()) {
                     response.fill_error(Response::RUNTIME_ERROR,
+                                        Response::OP_INDETERMINATE,
                                         "Server is shutting down.",
                                         ql::backtrace_registry_t::EMPTY_BACKTRACE);
                 } else if (conn->get_interruptor()->is_pulsed()) {
                     response.fill_error(Response::RUNTIME_ERROR,
+                                        Response::OP_INDETERMINATE,
                                         "This ReQL connection has been terminated.",
                                         ql::backtrace_registry_t::EMPTY_BACKTRACE);
                 } else {

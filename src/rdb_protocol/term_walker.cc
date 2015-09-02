@@ -13,6 +13,10 @@ namespace ql {
 bool term_is_write_or_meta(Term::TermType type);
 bool term_forbids_writes(Term::TermType type);
 
+// The minimum amount of stack space we require to be available on a coroutine
+// before attempting to walk into another term.
+const size_t MIN_WALK_STACK_SPACE = 16 * KILOBYTE;
+
 // Walk the raw JSON term tree, editing it along the way - adding
 // backtraces, rewriting certain terms, and verifying correct placement
 // of some terms.
@@ -118,14 +122,14 @@ private:
             if (type == Term::ASC || type == Term::DESC) {
                 rcheck_src(bt,
                     prev_frame == nullptr || prev_frame->type == Term::ORDER_BY,
-                    base_exc_t::GENERIC,
+                    base_exc_t::LOGIC,
                     strprintf("%s may only be used as an argument to ORDER_BY.",
                               (type == Term::ASC ? "ASC" : "DESC")));
             }
 
             rcheck_src(bt,
                 !term_is_write_or_meta(type) || writes_legal,
-                base_exc_t::GENERIC,
+                base_exc_t::LOGIC,
                 strprintf("Cannot nest writes or meta ops in stream operations.  Use "
                           "FOR_EACH instead."));
 
@@ -135,7 +139,9 @@ private:
                     backtrace_id_t child_bt 
                         = parent->bt_reg->new_frame(bt, datum_t(static_cast<double>(i)));
                     walker_frame_t child_frame(parent, i == 0, this);
-                    child_frame.walk(&(*args)[i], child_bt);
+                    call_with_enough_stack([&] () {
+                            child_frame.walk(&(*args)[i], child_bt);
+                        }, MIN_WALK_STACK_SPACE);
                 }
             }
 
@@ -146,7 +152,9 @@ private:
                     backtrace_id_t child_bt = parent->bt_reg->new_frame(bt,
                         datum_t(it->key.GetString(), it->key.GetStringLength()));
                     walker_frame_t child_frame(parent, false, this);
-                    child_frame.walk(&it->value, child_bt);
+                    call_with_enough_stack([&] () {
+                            child_frame.walk(&it->value, child_bt);
+                        }, MIN_WALK_STACK_SPACE);
                 }
             }
         }

@@ -177,13 +177,6 @@
 #define COROS_PER_THREAD_WARN_LEVEL               10000
 
 
-// Minimal time we nap before re-checking if a goal is satisfied in the reactor (in ms).
-// This is an optimization to save CPU time. Checking for whether the goal is
-// satisfied can be an expensive operation. By napping we increase our chances
-// that the event we are waiting for has occurred in the meantime.
-#define REACTOR_RUN_UNTIL_SATISFIED_NAP           100
-
-
 /**
  * Message scheduler configuration
  */
@@ -218,7 +211,6 @@
 #define CORO_PRIORITY_BACKFILL_SENDER           (-2)
 #define CORO_PRIORITY_BACKFILL_RECEIVER         (-2)
 #define CORO_PRIORITY_RESET_DATA                (-2)
-#define CORO_PRIORITY_REACTOR                   (-1)
 #define CORO_PRIORITY_DIRECTORY_CHANGES         (-2)
 #define CORO_PRIORITY_LBA_GC                    (-2)
 

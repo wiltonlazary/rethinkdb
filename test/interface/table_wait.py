@@ -46,12 +46,8 @@ def spawn_table_wait(port, tbl):
             if tbl is None:
                 r.db(db).wait().run(conn)
             else:
-                old_status = r.db(db).table(tbl).status().run(conn)
                 res = r.db(db).table(tbl).wait().run(conn)
-                new_status = r.db(db).table(tbl).status().run(conn)
                 assert res["ready"] == 1
-                assert res["status_changes"] == \
-                    [{'old_val': old_status, 'new_val': new_status}]
         finally:
             done_event.set()
 
@@ -117,7 +113,7 @@ with driver.Cluster(initial_servers=['a', 'b'], output_folder='.', command_prefi
         try:
             r.db(db).table(table).wait().run(c)
             raise RuntimeError("`table_wait` did not error when waiting on a deleted table.")
-        except r.RqlRuntimeError as ex:
+        except r.ReqlRuntimeError as ex:
             assert ex.message == "Table `%s.%s` does not exist." % (db, table), \
                 "Unexpected error when waiting for a deleted table: %s" % ex.message
 

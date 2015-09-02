@@ -15,7 +15,7 @@
 #include "concurrency/watchable_map.hpp"
 #include "containers/archive/tcp_conn_stream.hpp"
 #include "containers/map_sentries.hpp"
-#include "concurrency/throttled_committer.hpp"
+#include "concurrency/pump_coro.hpp"
 #include "perfmon/perfmon.hpp"
 #include "rpc/connectivity/peer_id.hpp"
 #include "utils.hpp"
@@ -24,9 +24,20 @@ namespace boost {
 template <class> class optional;
 }
 
-class co_semaphore_t;
-
 class cluster_message_handler_t;
+class co_semaphore_t;
+class heartbeat_semilattice_metadata_t;
+template <class> class semilattice_read_view_t;
+
+/* Uncomment this to enable message profiling. Message profiling will keep track of how
+many messages of each type are sent over the network; it will dump the results to a file
+named `msg_profiler_out_PID.txt` on shutdown. Each line of that file will be of the
+following form:
+    <# messages> <# bytes> <source>
+where `<# messages>` is the total number of messages sent by that source, `<# bytes>` is
+the combined size of all of those messages in bytes, and `<source>` is a string
+describing the type of message. */
+// #define ENABLE_MESSAGE_PROFILER
 
 class cluster_send_message_write_callback_t {
 public:
@@ -34,6 +45,13 @@ public:
     // write() doesn't take a version argument because the version is always
     // cluster_version_t::CLUSTER for cluster messages.
     virtual void write(write_stream_t *stream) = 0;
+
+#ifdef ENABLE_MESSAGE_PROFILER
+    /* This should return a string that describes the type of message being sent for
+    profiling purposes. The returned string must be statically allocated (i.e. valid
+    indefinitely). */
+    virtual const char *message_profiler_tag() const = 0;
+#endif
 };
 
 /* `connectivity_cluster_t` is responsible for establishing connections with other
@@ -130,7 +148,7 @@ public:
 
         /* Calls `conn->flush_buffer()`. Can be used for making sure that a
         buffered write makes it to the TCP stack. */
-        throttled_committer_t flusher;
+        pump_coro_t flusher;
 
         perfmon_collection_t pm_collection;
         perfmon_sampler_t pm_bytes_sent;
@@ -154,7 +172,10 @@ public:
         run_t(connectivity_cluster_t *parent,
               const std::set<ip_address_t> &local_addresses,
               const peer_address_t &canonical_addresses,
-              int port, int client_port)
+              int port,
+              int client_port,
+              boost::shared_ptr<semilattice_read_view_t<
+                  heartbeat_semilattice_metadata_t> > heartbeat_sl_view)
             THROWS_ONLY(address_in_use_exc_t, tcp_socket_exc_t);
 
         ~run_t();
@@ -261,6 +282,9 @@ public:
         /* For picking random threads */
         rng_t rng;
 
+        boost::shared_ptr<semilattice_read_view_t<heartbeat_semilattice_metadata_t> >
+            heartbeat_sl_view;
+
         auto_drainer_t drainer;
 
         /* This must be destroyed before `drainer` is. */
@@ -316,6 +340,13 @@ private:
     rng_t debug_rng;
 #endif
 
+#ifdef ENABLE_MESSAGE_PROFILER
+    /* The key is the string passed to `send_message()`. The value is a pair of (number
+    of individual messages, total number of bytes). */
+    one_per_thread_t<std::map<std::string, std::pair<uint64_t, uint64_t> > >
+        message_profiler_counts;
+#endif
+
     run_t *current_run;
 
     perfmon_collection_t connectivity_collection;
@@ -334,6 +365,10 @@ public:
         return connectivity_cluster;
     }
     connectivity_cluster_t::message_tag_t get_message_tag() { return tag; }
+
+    peer_id_t get_me() {
+        return connectivity_cluster->get_me();
+    }
 
 protected:
     /* Registers the message handler with the cluster */

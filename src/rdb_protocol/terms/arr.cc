@@ -104,7 +104,7 @@ scoped_ptr_t<val_t> nth_term_direct_impl(const term_t *term,
         }
         rcheck_target(term,
                       n >= -1,
-                      base_exc_t::GENERIC,
+                      base_exc_t::LOGIC,
                       strprintf("Cannot use an index < -1 (%d) on a stream.", n));
 
         batchspec_t batchspec = batchspec_t::user(batch_type_t::TERMINAL, env->env);
@@ -185,7 +185,8 @@ public:
         : op_term_t(env, term, argspec_t(1)) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
-        batchspec_t batchspec = batchspec_t::user(batch_type_t::NORMAL, env->env);
+        batchspec_t batchspec =
+            batchspec_t::user(batch_type_t::NORMAL, env->env).with_at_most(1);
         bool is_empty = !args->arg(env, 0)->as_seq(env->env)->next(env->env, batchspec).has();
         return new_val(datum_t::boolean(is_empty));
     }
@@ -270,7 +271,7 @@ private:
             } else if (d.get_type() == datum_t::R_BINARY) {
                 return slice_binary(d, left_open, fake_l, right_open, fake_r);
             } else {
-                rfail_target(v, base_exc_t::GENERIC,
+                rfail_target(v, base_exc_t::LOGIC,
                              "Expected ARRAY or BINARY, but found %s.",
                              d.get_type_name().c_str());
             }
@@ -285,7 +286,7 @@ private:
                 seq = v->as_seq(env->env);
             }
 
-            rcheck(fake_l >= 0, base_exc_t::GENERIC,
+            rcheck(fake_l >= 0, base_exc_t::LOGIC,
                    "Cannot use a negative left index on a stream.");
             uint64_t real_l = fake_l;
             if (left_open) {
@@ -293,10 +294,10 @@ private:
             }
             uint64_t real_r = fake_r;
             if (fake_r < -1) {
-                rfail(base_exc_t::GENERIC,
+                rfail(base_exc_t::LOGIC,
                       "Cannot use a right index < -1 on a stream.");
             } else if (fake_r == -1) {
-                rcheck(!right_open, base_exc_t::GENERIC,
+                rcheck(!right_open, base_exc_t::LOGIC,
                        "Cannot slice to an open right index of -1 on a stream.");
                 real_r = std::numeric_limits<uint64_t>::max();
             } else if (!right_open) {
@@ -332,7 +333,7 @@ private:
             ds = v->as_seq(env->env);
         }
         int32_t r = args->arg(env, 1)->as_int<int32_t>();
-        rcheck(r >= 0, base_exc_t::GENERIC,
+        rcheck(r >= 0, base_exc_t::LOGIC,
                strprintf("LIMIT takes a non-negative argument (got %d)", r));
         counted_t<datum_stream_t> new_ds = ds->slice(0, r);
         return t.has()

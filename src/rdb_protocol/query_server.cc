@@ -31,23 +31,26 @@ int rdb_query_server_t::get_port() const {
 namespace ql {
     void run(query_params_t *query_params,
              response_t *response_out,
+             new_semaphore_acq_t *throttler,
              signal_t *interruptor);
 }
 
 void rdb_query_server_t::run_query(ql::query_params_t *query_params,
                                    ql::response_t *response_out,
+                                   new_semaphore_acq_t *throttler,
                                    signal_t *interruptor) {
     guarantee(interruptor != nullptr);
     guarantee(rdb_ctx->cluster_interface != nullptr);
     try {
         scoped_perfmon_counter_t client_active(&rdb_ctx->stats.clients_active); // TODO: make this correct for parallelized queries
         // `ql::run` will set the status code
-        ql::run(query_params, response_out, interruptor);
+        ql::run(query_params, response_out, throttler, interruptor);
     } catch (const interrupted_exc_t &ex) {
         throw; // Interruptions should be handled by our caller, who can provide context
 #ifdef NDEBUG // In debug mode we crash, in release we send an error.
     } catch (const std::exception &e) {
         response_out->fill_error(Response::RUNTIME_ERROR,
+                                 Response::INTERNAL,
                                  strprintf("Unexpected exception: %s\n", e.what()),
                                  ql::backtrace_registry_t::EMPTY_BACKTRACE);
 #endif // NDEBUG

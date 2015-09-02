@@ -38,7 +38,7 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(query_params_t *query_p
     guarantee(this == query_params->query_cache);
     query_params->maybe_release_query_id();
     if (queries.find(query_params->token) != queries.end()) {
-        throw bt_exc_t(Response::CLIENT_ERROR,
+        throw bt_exc_t(Response::CLIENT_ERROR, Response::QUERY_LOGIC,
             strprintf("ERROR: duplicate token %" PRIi64, query_params->token),
             backtrace_registry_t::EMPTY_BACKTRACE);
     }
@@ -57,10 +57,14 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(query_params_t *query_p
         compile_env_t compile_env((var_visibility_t()));
         root_term = compile_term(&compile_env, term_storage->root_term());
     } catch (const exc_t &e) {
-        throw bt_exc_t(Response::COMPILE_ERROR, e.what(),
+        throw bt_exc_t(Response::COMPILE_ERROR,
+                       e.get_error_type(),
+                       e.what(),
                        bt_reg.datum_backtrace(e));
     } catch (const datum_exc_t &e) {
-        throw bt_exc_t(Response::COMPILE_ERROR, e.what(),
+        throw bt_exc_t(Response::COMPILE_ERROR,
+                       e.get_error_type(),
+                       e.what(),
                        backtrace_registry_t::EMPTY_BACKTRACE);
     }
 
@@ -85,7 +89,7 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::get(query_params_t *query_para
     query_params->maybe_release_query_id();
     auto it = queries.find(query_params->token);
     if (it == queries.end()) {
-        throw bt_exc_t(Response::CLIENT_ERROR,
+        throw bt_exc_t(Response::CLIENT_ERROR, Response::QUERY_LOGIC,
             strprintf("Token %" PRIi64 " not in stream cache.", query_params->token),
             backtrace_registry_t::EMPTY_BACKTRACE);
     }
@@ -101,7 +105,7 @@ void query_cache_t::noreply_wait(const query_params_t &query_params,
     guarantee(this == query_params.query_cache);
     auto it = queries.find(query_params.token);
     if (it != queries.end()) {
-        throw bt_exc_t(Response::CLIENT_ERROR,
+        throw bt_exc_t(Response::CLIENT_ERROR, Response::QUERY_LOGIC,
             strprintf("ERROR: duplicate token %" PRIi64, query_params.token),
             backtrace_registry_t::EMPTY_BACKTRACE);
     }
@@ -174,7 +178,9 @@ void query_cache_t::ref_t::fill_response(response_t *res) {
         // This should only happen if the client recycled a token before
         // getting the response for the last use of the token.
         // In this case, just pretend it's a duplicate token issue
-        throw bt_exc_t(Response::CLIENT_ERROR,
+        throw bt_exc_t(
+            Response::CLIENT_ERROR,
+            Response::QUERY_LOGIC,
             strprintf("ERROR: duplicate token %" PRIi64, token),
             backtrace_registry_t::EMPTY_BACKTRACE);
     }
@@ -194,65 +200,71 @@ void query_cache_t::ref_t::fill_response(response_t *res) {
         }
 
         if (entry->state == entry_t::state_t::STREAM) {
-            serve(&env, res);
+            serve(&env, res, throttler);
         }
 
         if (trace.has()) {
             res->set_profile(trace->as_datum());
         }
     } catch (const interrupted_exc_t &ex) {
+        query_cache->terminate_internal(entry);
         if (entry->persistent_interruptor.is_pulsed()) {
-            if (entry->state != entry_t::state_t::DONE) {
-                throw bt_exc_t(Response::RUNTIME_ERROR,
-                    "Query terminated by the `rethinkdb.jobs` table.",
-                    backtrace_registry_t::EMPTY_BACKTRACE);
-            }
-            // For compatibility, we return a SUCCESS_SEQUENCE in this case
-            res->clear();
-            res->set_type(Response::SUCCESS_SEQUENCE);
-        } else {
-            query_cache->terminate_internal(entry);
-            throw;
+            throw bt_exc_t(
+                Response::RUNTIME_ERROR,
+                Response::OP_INDETERMINATE,
+                "Query terminated by the `rethinkdb.jobs` table.",
+                backtrace_registry_t::EMPTY_BACKTRACE);
         }
+        throw;
     } catch (const exc_t &ex) {
         query_cache->terminate_internal(entry);
-        throw bt_exc_t(Response::RUNTIME_ERROR, ex.what(),
+        throw bt_exc_t(Response::RUNTIME_ERROR,
+                       ex.get_error_type(),
+                       ex.what(),
                        entry->bt_reg.datum_backtrace(ex));
+    } catch (const datum_exc_t &ex) {
+        query_cache->terminate_internal(entry);
+        throw bt_exc_t(Response::RUNTIME_ERROR,
+                       ex.get_error_type(),
+                       ex.what(),
+                       entry->bt_reg.datum_backtrace(backtrace_id_t::empty(), 0));
     } catch (const std::exception &ex) {
         query_cache->terminate_internal(entry);
-        throw bt_exc_t(Response::RUNTIME_ERROR, ex.what(),
+        throw bt_exc_t(Response::RUNTIME_ERROR,
+                       Response::INTERNAL,
+                       strprintf("Unexpected exception: %s", ex.what()).c_str(),
                        backtrace_registry_t::EMPTY_BACKTRACE);
     }
 }
 
-void query_cache_t::ref_t::run(env_t *env, response_t *res) {
-    // The state will be overwritten if we end up with a stream
-    entry->state = entry_t::state_t::DONE;
-
+void query_cache_t::ref_t::run(env_t *env, Response *res) {
     scope_env_t scope_env(env, var_scope_t());
-
     scoped_ptr_t<val_t> val = entry->root_term->eval(&scope_env);
+
     if (val->get_type().is_convertible(val_t::type_t::DATUM)) {
         res->set_type(Response::SUCCESS_ATOM);
         res->set_data(val->as_datum());
+        entry->state = entry_t::state_t::DONE;
     } else if (counted_t<grouped_data_t> gd =
             val->maybe_as_promiscuous_grouped_data(scope_env.env)) {
         datum_t d = to_datum_for_client_serialization(std::move(*gd), env->limits());
         res->set_type(Response::SUCCESS_ATOM);
         res->set_data(d);
+        entry->state = entry_t::state_t::DONE;
     } else if (val->get_type().is_convertible(val_t::type_t::SEQUENCE)) {
         counted_t<datum_stream_t> seq = val->as_seq(env);
         const datum_t arr = seq->as_array(env);
         if (arr.has()) {
             res->set_type(Response::SUCCESS_ATOM);
             res->set_data(arr);
+            entry->state = entry_t::state_t::DONE;
         } else {
             entry->stream = seq;
             entry->has_sent_batch = false;
             entry->state = entry_t::state_t::STREAM;
         }
     } else {
-        rfail_toplevel(base_exc_t::GENERIC,
+        rfail_toplevel(base_exc_t::LOGIC,
                        "Query result must be of type "
                        "DATUM, GROUPED_DATA, or STREAM (got %s).",
                        val->get_type().name());
@@ -261,6 +273,12 @@ void query_cache_t::ref_t::run(env_t *env, response_t *res) {
 
 void query_cache_t::ref_t::serve(env_t *env, response_t *res) {
     guarantee(entry->stream.has());
+
+    feed_type_t cfeed_type = entry->stream->cfeed_type();
+    if (cfeed_type != feed_type_t::not_feed) {
+        // We don't throttle changefeed queries because they can block forever.
+        throttler->reset();
+    }
 
     batch_type_t batch_type = entry->has_sent_batch
                                   ? batch_type_t::NORMAL
@@ -280,7 +298,7 @@ void query_cache_t::ref_t::serve(env_t *env, response_t *res) {
         res->set_type(Response::SUCCESS_PARTIAL);
     }
 
-    switch (entry->stream->cfeed_type()) {
+    switch (cfeed_type) {
     case feed_type_t::not_feed:
         // If we don't have a feed, then a 0-size response means there's no more
         // data.  The reason this `if` statement is only in this branch of the

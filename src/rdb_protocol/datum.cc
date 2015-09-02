@@ -8,11 +8,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <iterator>
 
 #include "errors.hpp"
 #include <boost/detail/endian.hpp>
 
+#include "arch/runtime/coroutines.hpp"
 #include "cjson/json.hpp"
 #include "containers/archive/stl_types.hpp"
 #include "containers/scoped.hpp"
@@ -32,6 +34,10 @@
 #include "stl_utils.hpp"
 
 namespace ql {
+
+// The minimum amount of stack space we require to be available on a coroutine
+// before attempting to recurse into a nested datum.
+const size_t MIN_DATUM_RECURSION_STACK_SPACE = 16 * KILOBYTE;
 
 const size_t tag_size = 8;
 
@@ -294,7 +300,7 @@ datum_t::datum_t(construct_binary_t dummy, datum_string_t _data)
     : data(dummy, std::move(_data)) { }
 
 datum_t::datum_t(double _num) : data(_num) {
-    rcheck(risfinite(data.r_num), base_exc_t::GENERIC,
+    rcheck(risfinite(data.r_num), base_exc_t::LOGIC,
            strprintf("Non-finite number: %" PR_RECONSTRUCTABLE_DOUBLE, data.r_num));
 }
 
@@ -307,7 +313,7 @@ datum_t::datum_t(const char *cstr) : data(cstr) { }
 datum_t::datum_t(std::vector<datum_t> &&_array,
                  const configured_limits_t &limits)
     : data(std::move(_array)) {
-    rcheck_array_size(*data.r_array, limits, base_exc_t::GENERIC);
+    rcheck_array_size(*data.r_array, limits);
 }
 
 datum_t::datum_t(std::vector<datum_t> &&_array,
@@ -413,7 +419,7 @@ inline void fail_if_invalid(reql_version_t reql_version, const std::string &stri
             utf8::reason_t reason;
             if (!utf8::is_valid(string, &reason)) {
                 int truncation_length = std::min<size_t>(reason.position, 20);
-                rfail_datum(base_exc_t::GENERIC,
+                rfail_datum(base_exc_t::LOGIC,
                             "String `%.*s` (truncated) is not a UTF-8 string; "
                             "%s at position %zu.",
                             truncation_length, string.c_str(), reason.explanation,
@@ -438,7 +444,7 @@ inline void fail_if_invalid(
             utf8::reason_t reason;
             if (!utf8::is_valid(string, string + string_length, &reason)) {
                 int truncation_length = std::min<size_t>(reason.position, 20);
-                rfail_datum(base_exc_t::GENERIC,
+                rfail_datum(base_exc_t::LOGIC,
                             "String `%.*s` (truncated) is not a UTF-8 string; "
                             "%s at position %zu.",
                             truncation_length, string, reason.explanation,
@@ -473,7 +479,7 @@ datum_t to_datum(const rapidjson::Value &json, const configured_limits_t &limits
             bool dup = builder.add(datum_string_t(it->name.GetStringLength(),
                                                   it->name.GetString()),
                                    to_datum(it->value, limits, reql_version));
-            rcheck_datum(!dup, base_exc_t::GENERIC,
+            rcheck_datum(!dup, base_exc_t::LOGIC,
                          strprintf("Duplicate key `%s` in JSON.",
                                    it->name.GetString()));
         }
@@ -504,12 +510,13 @@ datum_t to_datum(const rapidjson::Value &json, const configured_limits_t &limits
 
 void check_str_validity(const char *bytes, size_t count) {
     const char *pos = static_cast<const char *>(memchr(bytes, 0, count));
-    rcheck_datum(pos == NULL,
-                 base_exc_t::GENERIC,
-                 // We truncate because lots of other places can call `c_str` on the
-                 // error message.
-                 strprintf("String `%.20s` (truncated) contains NULL byte at offset %zu.",
-                           bytes, pos - bytes));
+    rcheck_datum(
+        pos == NULL,
+        base_exc_t::LOGIC,
+        // We truncate because lots of other places can call `c_str` on the
+        // error message.
+        strprintf("String `%.20s` (truncated) contains NULL byte at offset %zu.",
+                  bytes, pos - bytes));
 }
 
 void datum_t::check_str_validity(const datum_string_t &str) {
@@ -545,7 +552,7 @@ std::string datum_t::get_reql_type() const {
     datum_t maybe_reql_type = get_field(reql_type_string, NOTHROW);
     r_sanity_check(maybe_reql_type.has());
     rcheck(maybe_reql_type.get_type() == R_STR,
-           base_exc_t::GENERIC,
+           base_exc_t::LOGIC,
            strprintf("Error: Field `%s` must be a string (got `%s` of type %s):\n%s",
                      reql_type_string.to_std().c_str(),
                      maybe_reql_type.trunc_print().c_str(),
@@ -612,11 +619,11 @@ void datum_t::pt_to_str_key(std::string *str_out) const {
     if (get_reql_type() == pseudo::time_string) {
         pseudo::time_to_str_key(*this, str_out);
     } else if (get_reql_type() == pseudo::geometry_string) {
-        rfail(base_exc_t::GENERIC,
+        rfail(base_exc_t::LOGIC,
               "Cannot use a geometry value as a key value in a primary or "
               "non-geospatial secondary index.");
     } else {
-        rfail(base_exc_t::GENERIC,
+        rfail(base_exc_t::LOGIC,
               "Cannot use pseudotype %s as a primary or secondary key value .",
               get_type_name().c_str());
     }
@@ -761,7 +768,7 @@ int datum_t::pseudo_cmp(const datum_t &rhs) const {
         return pseudo::time_cmp(*this, rhs);
     }
 
-    rfail(base_exc_t::GENERIC, "Incomparable type %s.", get_type_name().c_str());
+    rfail(base_exc_t::LOGIC, "Incomparable type %s.", get_type_name().c_str());
 }
 
 bool datum_t::pseudo_compares_as_obj() const {
@@ -784,7 +791,7 @@ void datum_t::maybe_sanitize_ptype(const std::set<std::string> &allowed_pts) {
         }
         if (s == pseudo::literal_string) {
             rcheck(std_contains(allowed_pts, pseudo::literal_string),
-                   base_exc_t::GENERIC,
+                   base_exc_t::LOGIC,
                    "Stray literal keyword found: literal is only legal inside of "
                    "the object passed to merge or update and cannot nest inside "
                    "other literals.");
@@ -806,13 +813,13 @@ void datum_t::maybe_sanitize_ptype(const std::set<std::string> &allowed_pts) {
                                   pseudo::decode_base64_ptype(*data.r_object));
             return;
         }
-        rfail(base_exc_t::GENERIC,
+        rfail(base_exc_t::LOGIC,
               "Unknown $reql_type$ `%s`.", get_type_name().c_str());
     }
 }
 
 void datum_t::rcheck_is_ptype(const std::string s) const {
-    rcheck(is_ptype(), base_exc_t::GENERIC,
+    rcheck(is_ptype(), base_exc_t::LOGIC,
            (s == ""
             ? strprintf("Not a pseudotype: `%s`.", trunc_print().c_str())
             : strprintf("Not a %s pseudotype: `%s`.",
@@ -820,7 +827,7 @@ void datum_t::rcheck_is_ptype(const std::string s) const {
                         trunc_print().c_str())));
 }
 
-datum_t datum_t::drop_literals(bool *encountered_literal_out) const {
+datum_t datum_t::drop_literals_unchecked_stack(bool *encountered_literal_out) const {
     // drop_literals will never create arrays larger than those in the
     // existing datum; so checking (and thus threading the limits
     // parameter) is unnecessary here.
@@ -919,11 +926,18 @@ datum_t datum_t::drop_literals(bool *encountered_literal_out) const {
     }
 }
 
+datum_t datum_t::drop_literals(bool *encountered_literal_out) const {
+    return call_with_enough_stack<datum_t>([&] {
+            return this->drop_literals_unchecked_stack(
+                encountered_literal_out);
+        }, MIN_DATUM_RECURSION_STACK_SPACE);
+}
+
 void datum_t::rcheck_valid_replace(datum_t old_val,
                                    datum_t orig_key,
                                    const datum_string_t &pkey) const {
     datum_t pk = get_field(pkey, NOTHROW);
-    rcheck(pk.has(), base_exc_t::GENERIC,
+    rcheck(pk.has(), base_exc_t::LOGIC,
            strprintf("Inserted object must have primary key `%s`:\n%s",
                      pkey.to_std().c_str(), print().c_str()));
     if (old_val.has()) {
@@ -933,7 +947,7 @@ void datum_t::rcheck_valid_replace(datum_t old_val,
             r_sanity_check(old_pk.has());
         }
         if (old_pk.has()) {
-            rcheck(old_pk == pk, base_exc_t::GENERIC,
+            rcheck(old_pk == pk, base_exc_t::LOGIC,
                    strprintf("Primary key `%s` cannot be changed (`%s` -> `%s`).",
                              pkey.to_std().c_str(), old_val.print().c_str(),
                              print().c_str()));
@@ -975,7 +989,7 @@ std::string datum_t::print_primary_internal() const {
 std::string datum_t::print_primary() const {
     std::string s = print_primary_internal();
     if (s.size() > rdb_protocol::MAX_PRIMARY_KEY_SIZE) {
-        rfail(base_exc_t::GENERIC,
+        rfail(base_exc_t::LOGIC,
               "Primary key too long (max %zu characters): %s",
               rdb_protocol::MAX_PRIMARY_KEY_SIZE - 1, print().c_str());
     }
@@ -1035,7 +1049,7 @@ std::string datum_t::compose_secondary(
 
     std::string primary_key_string = key_to_unescaped_str(primary_key);
     rcheck_toplevel(primary_key_string.length() <= rdb_protocol::MAX_PRIMARY_KEY_SIZE,
-        base_exc_t::GENERIC, strprintf("Primary key too long (max %zu characters): %s",
+        base_exc_t::LOGIC, strprintf("Primary key too long (max %zu characters): %s",
                                        rdb_protocol::MAX_PRIMARY_KEY_SIZE - 1,
                                        key_to_debug_str(primary_key).c_str()));
 
@@ -1196,7 +1210,7 @@ store_key_t datum_t::truncated_secondary(skey_version_t skey_version, extrema_ok
     } else if (get_type() == R_OBJECT && is_ptype()) {
         pt_to_str_key(&s);
     } else if (get_type() == MINVAL || get_type() == MAXVAL) {
-        rcheck_datum(extrema_ok == extrema_ok_t::OK, base_exc_t::GENERIC,
+        rcheck_datum(extrema_ok == extrema_ok_t::OK, base_exc_t::LOGIC,
                      "Cannot use `r.minval` or `r.maxval` in a secondary index key.");
         extrema_to_str_key(&s);
     } else {
@@ -1259,7 +1273,7 @@ int64_t checked_convert_to_int(const rcheckable_t *target, double d) {
     if (number_as_integer(d, &i)) {
         return i;
     } else {
-        rfail_target(target, base_exc_t::GENERIC,
+        rfail_target(target, base_exc_t::LOGIC,
                      "Number not an integer%s: %" PR_RECONSTRUCTABLE_DOUBLE,
                      d < min_dbl_int ? " (<-2^53)" :
                          d > max_dbl_int ? " (>2^53)" : "",
@@ -1383,10 +1397,10 @@ datum_t datum_t::get_field(const char *key, throw_bool_t throw_bool) const {
 }
 
 template <class json_writer_t>
-void datum_t::write_json(json_writer_t *writer) const {
+void datum_t::write_json_unchecked_stack(json_writer_t *writer) const {
     switch (get_type()) {
-    case MINVAL: rfail_datum(base_exc_t::GENERIC, "Cannot convert `r.minval` to JSON.");
-    case MAXVAL: rfail_datum(base_exc_t::GENERIC, "Cannot convert `r.maxval` to JSON.");
+    case MINVAL: rfail_datum(base_exc_t::LOGIC, "Cannot convert `r.minval` to JSON.");
+    case MAXVAL: rfail_datum(base_exc_t::LOGIC, "Cannot convert `r.maxval` to JSON.");
     case R_NULL: writer->Null(); break;
     case R_BINARY: pseudo::encode_base64_ptype(as_binary(), writer); break;
     case R_BOOL: writer->Bool(as_bool()); break;
@@ -1426,6 +1440,13 @@ void datum_t::write_json(json_writer_t *writer) const {
     }
 }
 
+template <class json_writer_t>
+void datum_t::write_json(json_writer_t *writer) const {
+    call_with_enough_stack([&] {
+            return this->write_json_unchecked_stack<json_writer_t>(writer);
+        }, MIN_DATUM_RECURSION_STACK_SPACE);
+}
+
 // Explicit instantiation
 template void datum_t::write_json(
     rapidjson::Writer<rapidjson::StringBuffer> *writer) const;
@@ -1455,8 +1476,8 @@ template void datum_t::to_json(rapidjson::Value *val_out,
 
 cJSON *datum_t::as_json_raw() const {
     switch (get_type()) {
-    case MINVAL: rfail_datum(base_exc_t::GENERIC, "Cannot convert `r.minval` to JSON.");
-    case MAXVAL: rfail_datum(base_exc_t::GENERIC, "Cannot convert `r.maxval` to JSON.");
+    case MINVAL: rfail_datum(base_exc_t::LOGIC, "Cannot convert `r.minval` to JSON.");
+    case MAXVAL: rfail_datum(base_exc_t::LOGIC, "Cannot convert `r.maxval` to JSON.");
     case R_NULL: return cJSON_CreateNull();
     case R_BINARY: return pseudo::encode_base64_ptype(as_binary()).release();
     case R_BOOL: return cJSON_CreateBool(as_bool());
@@ -1532,7 +1553,7 @@ void datum_t::replace_field(const datum_string_t &key, datum_t val) {
     it->second = val;
 }
 
-datum_t datum_t::merge(const datum_t &rhs) const {
+datum_t datum_t::default_merge_unchecked_stack(const datum_t &rhs) const {
     if (get_type() != R_OBJECT || rhs.get_type() != R_OBJECT) {
         return rhs;
     }
@@ -1569,7 +1590,13 @@ datum_t datum_t::merge(const datum_t &rhs) const {
     return std::move(d).to_datum();
 }
 
-datum_t datum_t::merge(const datum_t &rhs,
+datum_t datum_t::merge(const datum_t &rhs) const {
+    return call_with_enough_stack<datum_t>([&] {
+            return this->default_merge_unchecked_stack(rhs);
+        }, MIN_DATUM_RECURSION_STACK_SPACE);
+}
+
+datum_t datum_t::custom_merge_unchecked_stack(const datum_t &rhs,
                        merge_resoluter_t f,
                        const configured_limits_t &limits,
                        std::set<std::string> *conditions_out) const {
@@ -1588,13 +1615,23 @@ datum_t datum_t::merge(const datum_t &rhs,
     return std::move(d).to_datum();
 }
 
+datum_t datum_t::merge(const datum_t &rhs,
+                       merge_resoluter_t f,
+                       const configured_limits_t &limits,
+                       std::set<std::string> *conditions_out) const {
+    return call_with_enough_stack<datum_t>([&] {
+            return this->custom_merge_unchecked_stack(
+                rhs, std::move(f), limits, conditions_out);
+        }, MIN_DATUM_RECURSION_STACK_SPACE);
+}
+
 template<class T>
 int derived_cmp(T a, T b) {
     if (a == b) return 0;
     return a < b ? -1 : 1;
 }
 
-int datum_t::cmp(const datum_t &rhs) const {
+int datum_t::cmp_unchecked_stack(const datum_t &rhs) const {
     bool lhs_ptype = is_ptype() && !pseudo_compares_as_obj();
     bool rhs_ptype = rhs.is_ptype() && !rhs.pseudo_compares_as_obj();
     if (lhs_ptype && rhs_ptype) {
@@ -1658,6 +1695,12 @@ int datum_t::cmp(const datum_t &rhs) const {
     }
 }
 
+int datum_t::cmp(const datum_t &rhs) const {
+    return call_with_enough_stack<int>([&] {
+            return this->cmp_unchecked_stack(rhs);
+        }, MIN_DATUM_RECURSION_STACK_SPACE);
+}
+
 bool datum_t::operator==(const datum_t &rhs) const { return cmp(rhs) == 0; }
 bool datum_t::operator!=(const datum_t &rhs) const { return cmp(rhs) != 0; }
 bool datum_t::operator<(const datum_t &rhs) const { return cmp(rhs) < 0; }
@@ -1717,7 +1760,7 @@ datum_t to_datum(const Datum *d, const configured_limits_t &limits,
             auto res = map.insert(std::make_pair(key,
                                                  to_datum(&ap->val(), limits,
                                                           reql_version)));
-            rcheck_datum(res.second, base_exc_t::GENERIC,
+            rcheck_datum(res.second, base_exc_t::LOGIC,
                          strprintf("Duplicate key %s in object.", key.to_std().c_str()));
         }
         const std::set<std::string> pts = { pseudo::literal_string };
@@ -1760,7 +1803,7 @@ datum_t to_datum(cJSON *json, const configured_limits_t &limits,
         while (cJSON *item = it.next()) {
             fail_if_invalid(reql_version, item->string);
             bool dup = builder.add(item->string, to_datum(item, limits, reql_version));
-            rcheck_datum(!dup, base_exc_t::GENERIC,
+            rcheck_datum(!dup, base_exc_t::LOGIC,
                          strprintf("Duplicate key `%s` in JSON.", item->string));
         }
         const std::set<std::string> pts = { pseudo::literal_string };
@@ -1838,7 +1881,7 @@ datum_t stats_merge(UNUSED const datum_string_t &key,
     // Merging a string is left-preferential, which is just a no-op.
     rcheck_datum(
         l.get_type() == datum_t::R_STR && r.get_type() == datum_t::R_STR,
-        base_exc_t::GENERIC,
+        base_exc_t::LOGIC,
         strprintf("Cannot merge statistics `%s` (type %s) and `%s` (type %s).",
                   l.trunc_print().c_str(), l.get_type_name().c_str(),
                   r.trunc_print().c_str(), r.get_type_name().c_str()));
@@ -1886,8 +1929,10 @@ void datum_object_builder_t::add_warning(const char *msg, const configured_limit
             if (warnings_entry->get(i).as_str() == msg) return;
         }
         rcheck_datum(warnings_entry_sz + 1 <= limits.array_size_limit(),
-            base_exc_t::GENERIC,
-            strprintf("Warnings would exceed array size limit %zu; increase it to see warnings", limits.array_size_limit()));
+            base_exc_t::RESOURCE,
+            strprintf("Warnings would exceed array size limit %zu; "
+                      "increase it to see warnings",
+                      limits.array_size_limit()));
         datum_array_builder_t out(*warnings_entry, limits);
         out.add(datum_t(msg));
         *warnings_entry = std::move(out).to_datum();
@@ -1902,9 +1947,12 @@ void datum_object_builder_t::add_warnings(const std::set<std::string> &msgs, con
     if (msgs.empty()) return;
     datum_t *warnings_entry = &map[warnings_field];
     if (warnings_entry->has()) {
-        rcheck_datum(warnings_entry->arr_size() + msgs.size() <= limits.array_size_limit(),
-            base_exc_t::GENERIC,
-            strprintf("Warnings would exceed array size limit %zu; increase it to see warnings", limits.array_size_limit()));
+        rcheck_datum(
+            warnings_entry->arr_size() + msgs.size() <= limits.array_size_limit(),
+            base_exc_t::RESOURCE,
+            strprintf("Warnings would exceed array size limit %zu; "
+                      "increase it to see warnings",
+                      limits.array_size_limit()));
         datum_array_builder_t out(*warnings_entry, limits);
         for (auto const & msg : msgs) {
             bool seen = false;
@@ -1975,14 +2023,14 @@ datum_array_builder_t::datum_array_builder_t(const datum_t &copy_from,
     for (size_t i = 0; i < copy_from_sz; ++i) {
         vector.push_back(copy_from.get(i));
     }
-    rcheck_array_size_datum(vector, limits, base_exc_t::GENERIC);
+    rcheck_array_size_datum(vector, limits);
 }
 
 void datum_array_builder_t::reserve(size_t n) { vector.reserve(n); }
 
 void datum_array_builder_t::add(datum_t val) {
     vector.push_back(std::move(val));
-    rcheck_array_size_datum(vector, limits, base_exc_t::GENERIC);
+    rcheck_array_size_datum(vector, limits);
 }
 
 void datum_array_builder_t::change(size_t index, datum_t val) {
@@ -1999,7 +2047,7 @@ void datum_array_builder_t::insert(size_t index, datum_t val) {
                  strprintf("Index `%zu` out of bounds for array of size: `%zu`.",
                            index, vector.size()));
     vector.insert(vector.begin() + index, std::move(val));
-    rcheck_array_size_datum(vector, limits, base_exc_t::GENERIC);
+    rcheck_array_size_datum(vector, limits);
 }
 
 void datum_array_builder_t::splice(size_t index, datum_t values) {
@@ -2020,7 +2068,7 @@ void datum_array_builder_t::splice(size_t index, datum_t values) {
                   std::make_move_iterator(arr.begin()),
                   std::make_move_iterator(arr.end()));
 
-    rcheck_array_size_datum(vector, limits, base_exc_t::GENERIC);
+    rcheck_array_size_datum(vector, limits);
 }
 
 void datum_array_builder_t::erase_range(size_t start, size_t end) {
@@ -2033,7 +2081,7 @@ void datum_array_builder_t::erase_range(size_t start, size_t end) {
                  strprintf("Index `%zu` out of bounds for array of size: `%zu`.",
                            end, vector.size()));
     rcheck_datum(start <= end,
-                 base_exc_t::GENERIC,
+                 base_exc_t::LOGIC,
                  strprintf("Start index `%zu` is greater than end index `%zu`.",
                            start, end));
     vector.erase(vector.begin() + start, vector.begin() + end);
@@ -2189,7 +2237,7 @@ void debug_print(printf_buffer_t *buf, const datum_t &d) {
         buf->appendf("d/buf_r_object(...)");
         break;
     default:
-        buf->appendf("datum/garbage{internal_type=%d}", d.data.get_internal_type());
+        buf->appendf("datum/garbage{internal_type=%d}", static_cast<int>(d.data.get_internal_type()));
         break;
     }
 }

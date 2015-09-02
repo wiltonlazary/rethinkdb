@@ -30,9 +30,8 @@ class runtime_term_t : public slow_atomic_countable_t<runtime_term_t>,
                        public bt_rcheckable_t {
 public:
     virtual ~runtime_term_t();
-
     scoped_ptr_t<val_t> eval(scope_env_t *env, eval_flags_t eval_flags = NO_FLAGS) const;
-
+    virtual bool is_deterministic() const = 0;
     virtual const char *name() const = 0;
 
     // Allocates a new value in the current environment.
@@ -46,8 +45,11 @@ public:
 
 protected:
     explicit runtime_term_t(backtrace_id_t bt);
-
 private:
+    scoped_ptr_t<val_t> eval_on_current_stack(
+            scope_env_t *env,
+            eval_flags_t eval_flags) const;
+
     virtual scoped_ptr_t<val_t> term_eval(scope_env_t *env, eval_flags_t) const = 0;
 };
 
@@ -55,17 +57,10 @@ class term_t : public runtime_term_t {
 public:
     explicit term_t(const raw_term_t *_src);
     virtual ~term_t();
-
-
-    virtual bool is_deterministic() const = 0;
-
     const raw_term_t *get_src() const;
-
     virtual void accumulate_captures(var_captures_t *captures) const = 0;
-
 private:
     const raw_term_t *src;
-
     DISABLE_COPYING(term_t);
 };
 

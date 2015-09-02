@@ -10,7 +10,6 @@
 #include "errors.hpp"
 #include <boost/optional.hpp>
 
-#include "btree/backfill.hpp"
 #include "btree/concurrent_traversal.hpp"
 #include "btree/get_distribution.hpp"
 #include "btree/operations.hpp"
@@ -110,6 +109,7 @@ void kv_location_delete(keyvalue_location_t *kv_location,
                         const store_key_t &key,
                         repli_timestamp_t timestamp,
                         const deletion_context_t *deletion_context,
+                        delete_mode_t delete_mode,
                         rdb_modification_info_t *mod_info_out) {
     // Notice this also implies that buf is valid.
     guarantee(kv_location->value.has());
@@ -134,7 +134,7 @@ void kv_location_delete(keyvalue_location_t *kv_location,
     rdb_value_sizer_t sizer(block_size);
     null_key_modification_callback_t null_cb;
     apply_keyvalue_change(&sizer, kv_location, key.btree_key(), timestamp,
-            deletion_context->balancing_detacher(), &null_cb);
+            deletion_context->balancing_detacher(), &null_cb, delete_mode);
 }
 
 MUST_USE ql::serialization_result_t
@@ -180,7 +180,8 @@ kv_location_set(keyvalue_location_t *kv_location,
     rdb_value_sizer_t sizer(block_size);
     apply_keyvalue_change(&sizer, kv_location, key.btree_key(),
                           timestamp,
-                          deletion_context->balancing_detacher(), &null_cb);
+                          deletion_context->balancing_detacher(), &null_cb,
+                          delete_mode_t::REGULAR_QUERY);
     return ql::serialization_result_t::SUCCESS;
 }
 
@@ -205,7 +206,8 @@ kv_location_set(keyvalue_location_t *kv_location,
     null_key_modification_callback_t null_cb;
     rdb_value_sizer_t sizer(kv_location->buf.cache()->max_block_size());
     apply_keyvalue_change(&sizer, kv_location, key.btree_key(), timestamp,
-                          deletion_context->balancing_detacher(), &null_cb);
+                          deletion_context->balancing_detacher(), &null_cb,
+                          delete_mode_t::REGULAR_QUERY);
     return ql::serialization_result_t::SUCCESS;
 }
 
@@ -264,7 +266,8 @@ batched_replace_response_t rdb_replace_and_return_superblock(
             /* Now that the change has passed validation, write it to disk */
             if (new_val.get_type() == ql::datum_t::R_NULL) {
                 kv_location_delete(&kv_location, *info.key, info.btree->timestamp,
-                                   deletion_context, mod_info_out);
+                                   deletion_context, delete_mode_t::REGULAR_QUERY,
+                                   mod_info_out);
             } else {
                 r_sanity_check(new_val.get_field(primary_key, ql::NOTHROW).has());
                 ql::serialization_result_t res =
@@ -337,16 +340,14 @@ void do_a_replace_from_batched_replace(
     rdb_modification_report_cb_t *mod_cb,
     bool update_pkey_cfeeds,
     batched_replace_response_t *stats_out,
-    profile::sampler_t *sampler,
     profile::trace_t *trace,
     std::set<std::string> *conditions) {
 
-    sampler->new_sample();
     fifo_enforcer_sink_t::exit_write_t exiter(
         batched_replaces_fifo_sink, batched_replaces_fifo_token);
     // We need to get in line for this while still holding the superblock so
     // that stamp read operations can't queue-skip.
-    rwlock_in_line_t stamp_spot = mod_cb->get_in_line_for_stamp();
+    rwlock_in_line_t stamp_spot = mod_cb->get_in_line_for_cfeed_stamp();
 
     rdb_live_deletion_context_t deletion_context;
     rdb_modification_report_t mod_report(*info.key);
@@ -384,6 +385,13 @@ batched_replace_response_t rdb_batched_replace(
     // We have to drain write operations before destructing everything above us,
     // because the coroutines being drained use them.
     {
+        // We must disable profiler events for subtasks, because multiple instances
+        // of `handle_pair`are going to run in parallel which  would otherwise corrupt
+        // the sequence of events in the profiler trace.
+        // Instead we add a single event for the whole batched replace.
+        sampler->new_sample();
+        profile::starter_t profile_starter("Perform parallel replaces.", trace);
+        profile::disabler_t trace_disabler(trace);
         unlimited_fifo_queue_t<std::function<void()> > coro_queue;
         struct callback_t : public coro_pool_callback_t<std::function<void()> > {
             virtual void coro_pool_callback(std::function<void()> f, signal_t *) {
@@ -396,7 +404,7 @@ batched_replace_response_t rdb_batched_replace(
         // We release the superblock either before or after draining on all the
         // write operations depending on the presence of limit changefeeds.
         scoped_ptr_t<real_superblock_t> current_superblock(superblock->release());
-        bool update_pkey_cfeeds = sindex_cb->has_pkey_cfeeds();
+        bool update_pkey_cfeeds = sindex_cb->has_pkey_cfeeds(keys);
         {
             auto_drainer_t drainer;
             for (size_t i = 0; i < keys.size(); ++i) {
@@ -414,7 +422,6 @@ batched_replace_response_t rdb_batched_replace(
                         sindex_cb,
                         update_pkey_cfeeds,
                         &stats,
-                        sampler,
                         trace,
                         &conditions));
                 current_superblock.init(
@@ -483,98 +490,20 @@ void rdb_set(const store_key_t &key,
         (had_value ? point_write_result_t::DUPLICATE : point_write_result_t::STORED);
 }
 
-class agnostic_rdb_backfill_callback_t : public agnostic_backfill_callback_t {
-public:
-    agnostic_rdb_backfill_callback_t(rdb_backfill_callback_t *cb,
-                                     const key_range_t &kr,
-                                     btree_slice_t *slice) :
-        cb_(cb), kr_(kr), slice_(slice) { }
-
-    void on_delete_range(const key_range_t &range, signal_t *interruptor) THROWS_ONLY(interrupted_exc_t) {
-        rassert(kr_.is_superset(range));
-        cb_->on_delete_range(range, interruptor);
-    }
-
-    void on_deletion(const btree_key_t *key, repli_timestamp_t recency, signal_t *interruptor) THROWS_ONLY(interrupted_exc_t) {
-        rassert(kr_.contains_key(key->contents, key->size));
-        cb_->on_deletion(key, recency, interruptor);
-    }
-
-    void on_pairs(buf_parent_t leaf_node,
-                  const std::vector<repli_timestamp_t> &recencies,
-                  const std::vector<const btree_key_t *> &keys,
-                  const std::vector<const void *> &vals,
-                  signal_t *interruptor) THROWS_ONLY(interrupted_exc_t) {
-
-        std::vector<backfill_atom_t> chunk_atoms;
-        chunk_atoms.reserve(keys.size());
-        size_t current_chunk_size = 0;
-
-        for (size_t i = 0; i < keys.size(); ++i) {
-            rassert(kr_.contains_key(keys[i]->contents, keys[i]->size));
-            const rdb_value_t *value = static_cast<const rdb_value_t *>(vals[i]);
-
-            backfill_atom_t atom;
-            atom.key.assign(keys[i]->size, keys[i]->contents);
-            atom.value = get_data(value, leaf_node);
-            atom.recency = recencies[i];
-            chunk_atoms.push_back(atom);
-            current_chunk_size += static_cast<size_t>(atom.key.size())
-                + serialized_size<cluster_version_t::CLUSTER>(atom.value);
-
-            if (current_chunk_size >= BACKFILL_MAX_KVPAIRS_SIZE) {
-                // To avoid flooding the receiving node with overly large chunks
-                // (which could easily make it run out of memory in extreme
-                // cases), pass on what we have got so far. Then continue
-                // with the remaining values.
-                slice_->stats.pm_keys_read.record(chunk_atoms.size());
-                slice_->stats.pm_total_keys_read += chunk_atoms.size();
-                cb_->on_keyvalues(std::move(chunk_atoms), interruptor);
-                chunk_atoms = std::vector<backfill_atom_t>();
-                chunk_atoms.reserve(keys.size() - (i+1));
-                current_chunk_size = 0;
-            }
-        }
-        if (!chunk_atoms.empty()) {
-            // Pass on the final chunk
-            slice_->stats.pm_keys_read.record(chunk_atoms.size());
-            slice_->stats.pm_total_keys_read += chunk_atoms.size();
-            cb_->on_keyvalues(std::move(chunk_atoms), interruptor);
-        }
-    }
-
-    void on_sindexes(const std::map<std::string, secondary_index_t> &sindexes, signal_t *interruptor) THROWS_ONLY(interrupted_exc_t) {
-        cb_->on_sindexes(sindexes, interruptor);
-    }
-
-    rdb_backfill_callback_t *cb_;
-    key_range_t kr_;
-    btree_slice_t *slice_;
-};
-
-void rdb_backfill(btree_slice_t *slice, const key_range_t& key_range,
-                  repli_timestamp_t since_when, rdb_backfill_callback_t *callback,
-                  refcount_superblock_t *superblock,
-                  buf_lock_t *sindex_block,
-                  parallel_traversal_progress_t *p, signal_t *interruptor)
-    THROWS_ONLY(interrupted_exc_t) {
-    agnostic_rdb_backfill_callback_t agnostic_cb(callback, key_range, slice);
-    rdb_value_sizer_t sizer(superblock->cache()->max_block_size());
-    do_agnostic_btree_backfill(&sizer, key_range, since_when, &agnostic_cb,
-                               superblock, sindex_block, p, interruptor);
-}
-
 void rdb_delete(const store_key_t &key, btree_slice_t *slice,
                 repli_timestamp_t timestamp,
                 real_superblock_t *superblock,
                 const deletion_context_t *deletion_context,
+                delete_mode_t delete_mode,
                 point_delete_response_t *response,
                 rdb_modification_info_t *mod_info,
-                profile::trace_t *trace) {
+                profile::trace_t *trace,
+                promise_t<superblock_t *> *pass_back_superblock) {
     keyvalue_location_t kv_location;
     rdb_value_sizer_t sizer(superblock->cache()->max_block_size());
     find_keyvalue_location_for_write(&sizer, superblock, key.btree_key(), timestamp,
-            deletion_context->balancing_detacher(), &kv_location, trace);
+            deletion_context->balancing_detacher(), &kv_location, trace,
+            pass_back_superblock);
     slice->stats.pm_keys_set.record();
     slice->stats.pm_total_keys_set += 1;
     bool exists = kv_location.value.has();
@@ -583,7 +512,8 @@ void rdb_delete(const store_key_t &key, btree_slice_t *slice,
     if (exists) {
         mod_info->deleted.first = get_data(kv_location.value_as<rdb_value_t>(),
                                            buf_parent_t(&kv_location.buf));
-        kv_location_delete(&kv_location, key, timestamp, deletion_context, mod_info);
+        kv_location_delete(&kv_location, key, timestamp, deletion_context,
+            delete_mode, mod_info);
         guarantee(!mod_info->deleted.second.empty() && mod_info->added.second.empty());
     }
     response->result = (exists ? point_delete_result_t::DELETED : point_delete_result_t::MISSING);
@@ -671,7 +601,7 @@ public:
               boost::optional<rget_sindex_data_t> &&_sindex,
               const key_range_t &range);
 
-    virtual done_traversing_t handle_pair(
+    virtual continue_bool_t handle_pair(
         scoped_key_value_t &&keyvalue,
         concurrent_traversal_fifo_enforcer_signal_t waiter)
         THROWS_ONLY(interrupted_exc_t);
@@ -697,7 +627,10 @@ rget_cb_t::rget_cb_t(rget_io_data_t &&_io,
       bad_init(false) {
     io.response->last_key = !reversed(job.sorting)
         ? range.left
-        : (!range.right.unbounded ? range.right.key : store_key_t::max());
+        : (!range.right.unbounded ? range.right.key() : store_key_t::max());
+    // We must disable profiler events for subtasks, because multiple instances
+    // of `handle_pair`are going to run in parallel which  would otherwise corrupt
+    // the sequence of events in the profiler trace.
     disabler.init(new profile::disabler_t(job.env->trace));
     sampler.init(new profile::sampler_t("Range traversal doc evaluation.",
                                         job.env->trace));
@@ -711,20 +644,20 @@ void rget_cb_t::finish() THROWS_ONLY(interrupted_exc_t) {
 }
 
 // Handle a keyvalue pair.  Returns whether or not we're done early.
-done_traversing_t rget_cb_t::handle_pair(
+continue_bool_t rget_cb_t::handle_pair(
     scoped_key_value_t &&keyvalue,
     concurrent_traversal_fifo_enforcer_signal_t waiter)
     THROWS_ONLY(interrupted_exc_t) {
     sampler->new_sample();
 
     if (bad_init || boost::get<ql::exc_t>(&io.response->result) != NULL) {
-        return done_traversing_t::YES;
+        return continue_bool_t::ABORT;
     }
 
     // Load the key and value.
     store_key_t key(keyvalue.key());
     if (sindex && !sindex->pkey_range.contains_key(ql::datum_t::extract_primary(key))) {
-        return done_traversing_t::NO;
+        return continue_bool_t::CONTINUE;
     }
 
     lazy_json_t row(static_cast<const rdb_value_t *>(keyvalue.value()),
@@ -769,7 +702,7 @@ done_traversing_t rget_cb_t::handle_pair(
                 guarantee(sindex_val.has());
             }
             if (!sindex->range.contains(sindex_val)) {
-                return done_traversing_t::NO;
+                return continue_bool_t::CONTINUE;
             }
         }
 
@@ -788,13 +721,13 @@ done_traversing_t rget_cb_t::handle_pair(
                                   std::move(sindex_val)); // NULL if no sindex
     } catch (const ql::exc_t &e) {
         io.response->result = e;
-        return done_traversing_t::YES;
+        return continue_bool_t::ABORT;
     } catch (const ql::datum_exc_t &e) {
 #ifndef NDEBUG
         unreachable();
 #else
         io.response->result = ql::exc_t(e, ql::backtrace_id_t::empty());
-        return done_traversing_t::YES;
+        return continue_bool_t::ABORT;
 #endif // NDEBUG
     }
 }
@@ -908,7 +841,8 @@ void rdb_get_nearest_slice(
     nearest_geo_read_response_t *response) {
 
     guarantee(sindex_info.geo == sindex_geo_bool_t::GEO);
-    profile::starter_t starter("Do nearest traversal on geospatial index.", ql_env->trace);
+    profile::starter_t starter("Do nearest traversal on geospatial index.",
+                               ql_env->trace);
 
     const reql_version_t sindex_func_reql_version =
         sindex_info.mapping_version_info.latest_compatible_reql_version;
@@ -934,7 +868,7 @@ void rdb_get_nearest_slice(
             callback.finish(&partial_response);
         } catch (const geo_exception_t &e) {
             partial_response.results_or_error =
-                ql::exc_t(ql::base_exc_t::GENERIC, e.what(),
+                ql::exc_t(ql::base_exc_t::LOGIC, e.what(),
                           ql::backtrace_id_t::empty());
         }
         if (boost::get<ql::exc_t>(&partial_response.results_or_error)) {
@@ -949,7 +883,7 @@ void rdb_get_nearest_slice(
             std::move(partial_res->begin(), partial_res->end(),
                       std::back_inserter(*full_res));
         }
-    } while (state.proceed_to_next_batch() == done_traversing_t::NO);
+    } while (state.proceed_to_next_batch() == continue_bool_t::CONTINUE);
 }
 
 void rdb_distribution_get(int max_depth,
@@ -1036,33 +970,55 @@ rdb_modification_report_cb_t::rdb_modification_report_cb_t(
 
 rdb_modification_report_cb_t::~rdb_modification_report_cb_t() { }
 
-bool rdb_modification_report_cb_t::has_pkey_cfeeds() {
-    return store_->changefeed_server->has_limit(boost::optional<std::string>());
+bool rdb_modification_report_cb_t::has_pkey_cfeeds(
+    const std::vector<store_key_t> &keys) {
+    const store_key_t *min = nullptr, *max = nullptr;
+    for (const auto &key : keys) {
+        if (min == nullptr || key < *min) min = &key;
+        if (max == nullptr || key > *max) max = &key;
+    }
+    if (min != nullptr && max != nullptr) {
+        key_range_t range(key_range_t::closed, *min,
+                          key_range_t::closed, *max);
+        auto cservers = store_->access_changefeed_servers();
+        for (auto &&pair : *cservers.first) {
+            if (pair.first.inner.overlaps(range)
+                && pair.second->has_limit(boost::optional<std::string>(),
+                                          pair.second->get_keepalive())) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 void rdb_modification_report_cb_t::finish(
     btree_slice_t *btree, real_superblock_t *superblock) {
-    store_->changefeed_server->foreach_limit(
-        boost::optional<std::string>(),
-        nullptr,
-        [&](rwlock_in_line_t *clients_spot,
-            rwlock_in_line_t *limit_clients_spot,
-            rwlock_in_line_t *lm_spot,
-            ql::changefeed::limit_manager_t *lm) {
-            if (!lm->drainer.is_draining()) {
-                auto lock = lm->drainer.lock();
-                guarantee(clients_spot->read_signal()->is_pulsed());
-                guarantee(limit_clients_spot->read_signal()->is_pulsed());
-                lm->commit(lm_spot, ql::changefeed::primary_ref_t{btree, superblock});
-            }
-        });
+    auto cservers = store_->access_changefeed_servers();
+    for (auto &&pair : *cservers.first) {
+        pair.second->foreach_limit(
+            boost::optional<std::string>(),
+            nullptr,
+            [&](rwlock_in_line_t *clients_spot,
+                rwlock_in_line_t *limit_clients_spot,
+                rwlock_in_line_t *lm_spot,
+                ql::changefeed::limit_manager_t *lm) {
+                if (!lm->drainer.is_draining()) {
+                    auto lock = lm->drainer.lock();
+                    guarantee(clients_spot->read_signal()->is_pulsed());
+                    guarantee(limit_clients_spot->read_signal()->is_pulsed());
+                    lm->commit(lm_spot,
+                               ql::changefeed::primary_ref_t{btree, superblock});
+                }
+            }, pair.second->get_keepalive());
+    }
 }
 
 new_mutex_in_line_t rdb_modification_report_cb_t::get_in_line_for_sindex() {
     return store_->get_in_line_for_sindex_queue(sindex_block_);
 }
-rwlock_in_line_t rdb_modification_report_cb_t::get_in_line_for_stamp() {
-    return store_->changefeed_server->get_in_line_for_stamp(access_t::write);
+rwlock_in_line_t rdb_modification_report_cb_t::get_in_line_for_cfeed_stamp() {
+    return store_->get_in_line_for_cfeed_stamp(access_t::write);
 }
 
 void rdb_modification_report_cb_t::on_mod_report(
@@ -1085,9 +1041,9 @@ void rdb_modification_report_cb_t::on_mod_report(
                       &sindexes_updated_cond,
                       &old_keys,
                       &new_keys));
-        guarantee(store_->changefeed_server.has());
-        if (update_pkey_cfeeds) {
-            store_->changefeed_server->foreach_limit(
+        auto cserver = store_->changefeed_server(report.primary_key);
+        if (update_pkey_cfeeds && cserver.first != nullptr) {
+            cserver.first->foreach_limit(
                 boost::optional<std::string>(),
                 &report.primary_key,
                 [&](rwlock_in_line_t *clients_spot,
@@ -1108,19 +1064,22 @@ void rdb_modification_report_cb_t::on_mod_report(
                                     ql::datum_t::null(), report.info.added.first);
                         }
                     }
-                });
+                }, cserver.second);
         }
         keys_available_cond.wait_lazily_unordered();
-        store_->changefeed_server->send_all(
-            ql::changefeed::msg_t(
-                ql::changefeed::msg_t::change_t{
-                    old_keys,
-                    new_keys,
-                    report.primary_key,
-                    report.info.deleted.first,
-                    report.info.added.first}),
-            report.primary_key,
-            cfeed_stamp_spot);
+        if (cserver.first != nullptr) {
+            cserver.first->send_all(
+                ql::changefeed::msg_t(
+                    ql::changefeed::msg_t::change_t{
+                        old_keys,
+                            new_keys,
+                            report.primary_key,
+                            report.info.deleted.first,
+                            report.info.added.first}),
+                report.primary_key,
+                cfeed_stamp_spot,
+                cserver.second);
+        }
         sindexes_updated_cond.wait_lazily_unordered();
     }
 }
@@ -1184,7 +1143,7 @@ std::vector<std::string> expand_geo_key(
         // `compute_keys()`. That's ok, though it would be nice if we could
         // pass on some kind of warning to the user.
         logWRN("Failed to compute grid keys for an index: %s", e.what());
-        rfail_target(&key, ql::base_exc_t::GENERIC,
+        rfail_target(&key, ql::base_exc_t::LOGIC,
                 "Failed to compute grid keys: %s", e.what());
     }
 }
@@ -1276,18 +1235,16 @@ void serialize_sindex_info(write_message_t *wm,
     serialize<cluster_version_t::LATEST_DISK>(wm, info.geo);
 }
 
-void deserialize_sindex_info(const std::vector<char> &data,
-                             sindex_disk_info_t *info_out)
-    THROWS_ONLY(archive_exc_t) {
+void deserialize_sindex_info(
+        const std::vector<char> &data,
+        sindex_disk_info_t *info_out,
+        const std::function<void()> &obsolete_cb) {
     buffer_read_stream_t read_stream(data.data(), data.size());
     // This cluster version field is _not_ a ReQL evaluation version field, which is
     // in secondary_index_t -- it only says how the value was serialized.
     cluster_version_t cluster_version;
     archive_result_t success = deserialize_cluster_version(
-        &read_stream,
-        &cluster_version,
-        "Encountered a RethinkDB 1.13 secondary index, which is no longer supported.  "
-        "You can use RethinkDB 2.0 to upgrade your secondary index.");
+        &read_stream, &cluster_version, obsolete_cb);
     throw_if_bad_deserialization(success, "sindex description");
 
     switch (cluster_version) {
@@ -1296,10 +1253,10 @@ void deserialize_sindex_info(const std::vector<char> &data,
     case cluster_version_t::v1_16:
     case cluster_version_t::v2_0:
     case cluster_version_t::v2_1_is_latest:
-        success = deserialize_for_version(
-                cluster_version,
+        success = deserialize_reql_version(
                 &read_stream,
-                &info_out->mapping_version_info.original_reql_version);
+                &info_out->mapping_version_info.original_reql_version,
+                obsolete_cb);
         throw_if_bad_deserialization(success, "original_reql_version");
         success = deserialize_for_version(
                 cluster_version,
@@ -1340,6 +1297,18 @@ void deserialize_sindex_info(const std::vector<char> &data,
               "An sindex description was incompletely deserialized.");
 }
 
+void deserialize_sindex_info_or_crash(
+        const std::vector<char> &data,
+        sindex_disk_info_t *info_out)
+            THROWS_ONLY(archive_exc_t) {
+    deserialize_sindex_info(data, info_out,
+        [] () -> void {
+            fail_due_to_user_error("Encountered a RethinkDB 1.13 secondary index, "
+                                   "which is no longer supported.  You can use "
+                                   "RethinkDB 2.0 to update your secondary index.");
+        });
+}
+
 /* Used below by rdb_update_sindexes. */
 void rdb_update_single_sindex(
         store_t *store,
@@ -1358,12 +1327,12 @@ void rdb_update_single_sindex(
     // function.
     guarantee(modification->primary_key.size() != 0);
 
-    guarantee(old_keys_out == NULL || old_keys_out->size() == 0);
-    guarantee(new_keys_out == NULL || new_keys_out->size() == 0);
+    guarantee(old_keys_out == nullptr || old_keys_out->size() == 0);
+    guarantee(new_keys_out == nullptr || new_keys_out->size() == 0);
 
     sindex_disk_info_t sindex_info;
     try {
-        deserialize_sindex_info(sindex->sindex.opaque_definition, &sindex_info);
+        deserialize_sindex_info_or_crash(sindex->sindex.opaque_definition, &sindex_info);
     } catch (const archive_exc_t &e) {
         crash("%s", e.what());
     }
@@ -1373,8 +1342,7 @@ void rdb_update_single_sindex(
 
     sindex_superblock_t *superblock = sindex->superblock.get();
 
-    ql::changefeed::server_t *server =
-        store->changefeed_server.has() ? store->changefeed_server.get() : NULL;
+    auto cserver = store->changefeed_server(modification->primary_key);
 
     if (modification->info.deleted.first.has()) {
         guarantee(!modification->info.deleted.second.empty());
@@ -1383,7 +1351,7 @@ void rdb_update_single_sindex(
 
             std::vector<std::pair<store_key_t, ql::datum_t> > keys;
             compute_keys(modification->primary_key, deleted, sindex_info, &keys);
-            if (old_keys_out != NULL) {
+            if (old_keys_out != nullptr) {
                 for (const auto &pair : keys) {
                     old_keys_out->push_back(
                         std::make_pair(
@@ -1391,8 +1359,8 @@ void rdb_update_single_sindex(
                                 key_to_unescaped_str(pair.first)).tag_num));
                 }
             }
-            if (server != NULL) {
-                server->foreach_limit(
+            if (cserver.first != nullptr) {
+                cserver.first->foreach_limit(
                     sindex->name.name,
                     &modification->primary_key,
                     [&](rwlock_in_line_t *clients_spot,
@@ -1404,7 +1372,7 @@ void rdb_update_single_sindex(
                         for (const auto &pair : keys) {
                             lm->del(lm_spot, pair.first, is_primary_t::NO);
                         }
-                    });
+                    }, cserver.second);
             }
             for (auto it = keys.begin(); it != keys.end(); ++it) {
                 promise_t<superblock_t *> return_superblock_local;
@@ -1428,7 +1396,8 @@ void rdb_update_single_sindex(
                             it->first,
                             repli_timestamp_t::distant_past,
                             deletion_context,
-                            NULL);
+                            delete_mode_t::REGULAR_QUERY,
+                            nullptr);
                     }
                     // The keyvalue location gets destroyed here.
                 }
@@ -1439,7 +1408,7 @@ void rdb_update_single_sindex(
             // Do nothing (it wasn't actually in the index).
 
             // See comment in `catch` below.
-            guarantee(old_keys_out == NULL || old_keys_out->size() == 0);
+            guarantee(old_keys_out == nullptr || old_keys_out->size() == 0);
         }
     }
 
@@ -1456,8 +1425,8 @@ void rdb_update_single_sindex(
             std::vector<std::pair<store_key_t, ql::datum_t> > keys;
 
             compute_keys(modification->primary_key, added, sindex_info, &keys);
-            if (new_keys_out != NULL) {
-                guarantee(keys_available_cond != NULL);
+            if (new_keys_out != nullptr) {
+                guarantee(keys_available_cond != nullptr);
                 for (const auto &pair : keys) {
                     new_keys_out->push_back(
                         std::make_pair(
@@ -1470,8 +1439,8 @@ void rdb_update_single_sindex(
                     keys_available_cond->pulse();
                 }
             }
-            if (server != NULL) {
-                server->foreach_limit(
+            if (cserver.first != nullptr) {
+                cserver.first->foreach_limit(
                     sindex->name.name,
                     &modification->primary_key,
                     [&](rwlock_in_line_t *clients_spot,
@@ -1484,7 +1453,7 @@ void rdb_update_single_sindex(
                             lm->add(lm_spot, pair.first, is_primary_t::NO,
                                     pair.second, added);
                         }
-                    });
+                    }, cserver.second);
             }
             for (auto it = keys.begin(); it != keys.end(); ++it) {
                 promise_t<superblock_t *> return_superblock_local;
@@ -1523,7 +1492,7 @@ void rdb_update_single_sindex(
             // can only be triggered by an exception thrown from `compute_keys`
             // (which begs the question of why so many other statements are
             // inside of it), so this guarantee should never trip.
-            if (keys_available_cond != NULL) {
+            if (keys_available_cond != nullptr) {
                 guarantee(!decremented_updates_left);
                 guarantee(new_keys_out->size() == 0);
                 guarantee(*updates_left > 0);
@@ -1533,7 +1502,7 @@ void rdb_update_single_sindex(
             }
         }
     } else {
-        if (keys_available_cond != NULL) {
+        if (keys_available_cond != nullptr) {
             guarantee(*updates_left > 0);
             if (--*updates_left == 0) {
                 keys_available_cond->pulse();
@@ -1541,8 +1510,8 @@ void rdb_update_single_sindex(
         }
     }
 
-    if (server != NULL) {
-        server->foreach_limit(
+    if (cserver.first != nullptr) {
+        cserver.first->foreach_limit(
             sindex->name.name,
             &modification->primary_key,
             [&](rwlock_in_line_t *clients_spot,
@@ -1553,7 +1522,7 @@ void rdb_update_single_sindex(
                 guarantee(limit_clients_spot->read_signal()->is_pulsed());
                 lm->commit(lm_spot, ql::changefeed::sindex_ref_t{
                         sindex->btree, superblock, &sindex_info});
-            });
+            }, cserver.second);
     }
 }
 

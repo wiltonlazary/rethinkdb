@@ -273,6 +273,7 @@ public:
 
     void run_query(ql::query_params_t *query_params,
                    ql::response_t *res_out,
+                   UNUSED new_semaphore_acq_t *throttler,
                    signal_t *interruptor) {
         assert_thread();
 
@@ -298,7 +299,9 @@ public:
         }
 
         // The real server sends a SUCCESS_SEQUENCE, but this makes the test simpler
-        res_out->fill_error(Response::RUNTIME_ERROR, stop_query_message,
+        res_out->fill_error(Response::RUNTIME_ERROR,
+                            Response::QUERY_LOGIC,
+                            stop_query_message,
                             ql::backtrace_registry_t::EMPTY_BACKTRACE);
     }
 private:
@@ -493,29 +496,26 @@ http_res_t run_http_req(const http_req_t &req,
     return result;
 }
 
-int32_t create_http_session(http_app_t *query_app) {
+std::string create_http_session(http_app_t *query_app) {
     http_req_t create_req("/query/open-new-connection");
     create_req.method = http_method_t::POST;
 
     cond_t dummy_interruptor;
     http_res_t result = run_http_req(create_req, query_app, &dummy_interruptor);
-    guarantee(result.body.size() == sizeof(int32_t));
-    return *reinterpret_cast<const int32_t *>(result.body.data());
+    return result.body.data();
 }
 
-http_req_t make_http_close(int32_t conn_id) {
+http_req_t make_http_close(const std::string &conn_id) {
     http_req_t close_req("/query/close-connection");
     close_req.method = http_method_t::POST;
-    close_req.query_params.insert(std::make_pair("conn_id",
-                                                 strprintf("%" PRIi32, conn_id)));
+    close_req.query_params.insert(std::make_pair("conn_id", conn_id));
     return close_req;
 }
 
-http_req_t make_http_query(int32_t conn_id, const std::string &query_json) {
+http_req_t make_http_query(const std::string &conn_id, const std::string &query_json) {
     http_req_t query_req("/query");
     query_req.method = http_method_t::POST;
-    query_req.query_params.insert(std::make_pair("conn_id",
-                                                 strprintf("%" PRIi32, conn_id)));
+    query_req.query_params.insert(std::make_pair("conn_id", conn_id));
     query_req.body.append(reinterpret_cast<const char *>(&test_token),
                           sizeof(test_token));
     query_req.body.append(query_json);
@@ -538,7 +538,7 @@ std::string parse_http_result(const http_res_t &http_res, int32_t expected_type)
 void http_interrupt_test(test_rdb_env_t *test_env,
                          const std::string &expected_msg,
                          std::function<void(scoped_ptr_t<query_server_t> *,
-                                            cond_t *, int32_t)> interrupt_fn) {
+                                            cond_t *, std::string)> interrupt_fn) {
     scoped_ptr_t<test_rdb_env_t::instance_t> env_instance = test_env->make_env();
 
     query_hanger_t hanger; // Causes all queries to hang until interrupted
@@ -551,7 +551,7 @@ void http_interrupt_test(test_rdb_env_t *test_env,
     http_res_t result;
     cond_t http_done;
 
-    int32_t conn_id = create_http_session(server.get());
+    std::string conn_id = create_http_session(server.get());
 
     coro_t::spawn_now_dangerously([&]() {
             result = run_http_req(make_http_query(conn_id, r_uuid_json),
@@ -575,7 +575,7 @@ TEST(RDBInterrupt, HttpInterrupt) {
         unittest::run_in_thread_pool(std::bind(http_interrupt_test, &test_env,
             "This ReQL connection has been terminated.",
             [](UNUSED scoped_ptr_t<query_server_t> *server,
-               cond_t *interruptor, UNUSED int32_t conn_id) {
+               cond_t *interruptor, UNUSED const std::string &conn_id) {
                 // We don't have a real socket here, use the fake interruptor
                 interruptor->pulse_if_not_already_pulsed();
             }));
@@ -587,7 +587,7 @@ TEST(RDBInterrupt, HttpInterrupt) {
         unittest::run_in_thread_pool(std::bind(http_interrupt_test, &test_env,
             "This ReQL connection has been terminated.",
             [](scoped_ptr_t<query_server_t> *server,
-               cond_t *interruptor, int32_t conn_id) {
+               cond_t *interruptor, const std::string &conn_id) {
                 http_res_t result = run_http_req(make_http_close(conn_id),
                                                  server->get(), interruptor);
             }));
@@ -599,7 +599,7 @@ TEST(RDBInterrupt, HttpInterrupt) {
         unittest::run_in_thread_pool(std::bind(http_interrupt_test, &test_env,
             "Server is shutting down.", // Technically we can't send this message back
             [](scoped_ptr_t<query_server_t> *server,
-               UNUSED cond_t *interruptor, UNUSED int32_t conn_id) {
+               UNUSED cond_t *interruptor, UNUSED const std::string &conn_id) {
                 server->reset();
             }));
     }
@@ -610,7 +610,7 @@ TEST(RDBInterrupt, HttpInterrupt) {
         unittest::run_in_thread_pool(std::bind(http_interrupt_test, &test_env,
             query_hanger_t::stop_query_message,
             [](scoped_ptr_t<query_server_t> *server,
-               cond_t *interruptor, int32_t conn_id) {
+               cond_t *interruptor, const std::string &conn_id) {
                 http_res_t result = run_http_req(make_http_query(conn_id, stop_json),
                                                  server->get(), interruptor);
             }));
@@ -622,7 +622,7 @@ TEST(RDBInterrupt, HttpInterrupt) {
         unittest::run_in_thread_pool(std::bind(http_interrupt_test, &test_env,
             "HTTP ReQL query timed out after 2 seconds.",
             [](UNUSED scoped_ptr_t<query_server_t> *server,
-               UNUSED cond_t *interruptor, UNUSED int32_t conn_id) {
+               UNUSED cond_t *interruptor, UNUSED const std::string &conn_id) {
                 // Don't actually have to do anything here, the test should
                 // wait for the timeout
             }));

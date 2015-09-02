@@ -65,7 +65,7 @@ scoped_ptr_t<val_t> obj_or_seq_op_impl_t::eval_impl_dereferenced(
         case reql_version_t::v2_1_is_latest:
             if (d.is_ptype() &&
                 acceptable_ptypes.find(d.get_reql_type()) == acceptable_ptypes.end()) {
-                rfail_target(v0, base_exc_t::GENERIC,
+                rfail_target(v0, base_exc_t::LOGIC,
                              "Cannot call `%s` on objects of type `%s`.",
                              parent->name(), d.get_type_name().c_str());
             }
@@ -82,7 +82,7 @@ scoped_ptr_t<val_t> obj_or_seq_op_impl_t::eval_impl_dereferenced(
         if (scoped_ptr_t<val_t> no_recurse = args->optarg(env, "_NO_RECURSE_")) {
             rcheck_target(target,
                           no_recurse->as_bool() == false,
-                          base_exc_t::GENERIC,
+                          base_exc_t::LOGIC,
                           strprintf("Cannot perform %s on a sequence of sequences.",
                                     target->name()));
         }
@@ -94,7 +94,15 @@ scoped_ptr_t<val_t> obj_or_seq_op_impl_t::eval_impl_dereferenced(
         counted_t<const func_t> f =
             func_term->eval_to_func(env->scope, env->env->term_storage);
 
-        counted_t<datum_stream_t> stream = v0->as_seq(env->env);
+        counted_t<datum_stream_t> stream;
+        counted_t<selection_t> sel; // may be empty
+        if (poly_type == FILTER
+            && v0->get_type().is_convertible(val_t::type_t::SELECTION)) {
+            sel = v0->as_selection(env->env);
+            stream = sel->seq;
+        } else {
+            stream = v0->as_seq(env->env);
+        }
         switch (poly_type) {
         case MAP:
             stream->add_transformation(map_wire_func_t(f), target->backtrace());
@@ -111,7 +119,11 @@ scoped_ptr_t<val_t> obj_or_seq_op_impl_t::eval_impl_dereferenced(
         default: unreachable();
         }
 
-        return target->new_val(env->env, stream);
+        if (sel) {
+            return target->new_val(sel);
+        } else {
+            return target->new_val(env->env, stream);
+        }
     }
 
     rfail_typed_target(
@@ -191,7 +203,7 @@ public:
 private:
     virtual scoped_ptr_t<val_t> eval_impl(
         scope_env_t *env, args_t *args, eval_flags_t flags) const {
-        rcheck(flags & LITERAL_OK, base_exc_t::GENERIC,
+        rcheck(flags & LITERAL_OK, base_exc_t::LOGIC,
                "Stray literal keyword found: literal is only legal inside of "
                "the object passed to merge or update and cannot nest inside "
                "other literals.");
@@ -234,7 +246,7 @@ private:
                     case reql_version_t::v2_1_is_latest:
                         rcheck_target(v,
                                       !d0.is_ptype() || d0.is_ptype("LITERAL"),
-                                      base_exc_t::GENERIC,
+                                      base_exc_t::LOGIC,
                                       strprintf("Cannot merge objects of type `%s`.",
                                                 d0.get_type_name().c_str()));
                         break;
@@ -255,7 +267,7 @@ private:
                     case reql_version_t::v2_1_is_latest:
                         rcheck_target(v,
                                       !d0.is_ptype() || d0.is_ptype("LITERAL"),
-                                      base_exc_t::GENERIC,
+                                      base_exc_t::LOGIC,
                                       strprintf("Cannot merge objects of type `%s`.",
                                                 d0.get_type_name().c_str()));
                         break;

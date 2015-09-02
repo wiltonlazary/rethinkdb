@@ -35,7 +35,7 @@ scoped_ptr_t<val_t> func_t::call(env_t *env,
 
 void func_t::assert_deterministic(const char *extra_msg) const {
     rcheck(is_deterministic(),
-           base_exc_t::GENERIC,
+           base_exc_t::LOGIC,
            strprintf("Could not prove function deterministic.  %s", extra_msg));
 }
 
@@ -59,11 +59,12 @@ scoped_ptr_t<val_t> reql_func_t::call(env_t *env,
         // about that.  Some server-created functions might also be constructed this
         // way (thanks to entropy).  TODO: This is bad.
         rcheck(arg_names.size() == args.size() || arg_names.size() == 0,
-               base_exc_t::GENERIC,
-               strprintf("Expected %zd argument%s but found %zu.",
+               base_exc_t::LOGIC,
+               strprintf("Expected function with %zu argument%s but found function with %zu argument%s.",
+                         args.size(),
+                         (args.size() == 1 ? "" : "s"),
                          arg_names.size(),
-                         (arg_names.size() == 1 ? "" : "s"),
-                         args.size()));
+                         (arg_names.size() == 1 ? "" : "s")));
 
         var_scope_t new_scope = arg_names.size() == 0
             ? captured_scope
@@ -109,11 +110,11 @@ scoped_ptr_t<val_t> js_func_t::call(
         try {
             result = env->get_js_runner()->call(js_source, args, config);
         } catch (const extproc_worker_exc_t &e) {
-            rfail(base_exc_t::GENERIC,
+            rfail(base_exc_t::INTERNAL,
                   "Javascript query `%s` caused a crash in a worker process.",
                   js_source.c_str());
         } catch (const interrupted_exc_t &e) {
-            rfail(base_exc_t::GENERIC,
+            rfail(base_exc_t::LOGIC,
                   "JavaScript query `%s` timed out after "
                   "%" PRIu64 ".%03" PRIu64 " seconds.",
                   js_source.c_str(), js_timeout_ms / 1000, js_timeout_ms % 1000);
@@ -149,10 +150,10 @@ func_term_t::func_term_t(compile_env_t *env, const raw_term_t *t)
     r_sanity_check(t != nullptr);
     r_sanity_check(t->type == Term::FUNC);
     rcheck(t->num_optargs() == 0,
-           base_exc_t::GENERIC,
+           base_exc_t::LOGIC,
            "FUNC takes no optional arguments.");
     rcheck(t->num_args() == 2,
-           base_exc_t::GENERIC,
+           base_exc_t::LOGIC,
            strprintf("FUNC takes exactly two arguments (got %zu)", t->num_args()));
 
     auto it = t->args();
@@ -163,12 +164,12 @@ func_term_t::func_term_t(compile_env_t *env, const raw_term_t *t)
     if (vars->type == Term::DATUM) {
         datum_t d = vars->datum();
         rcheck(d.get_type() == datum_t::type_t::R_ARRAY,
-               base_exc_t::GENERIC,
+               base_exc_t::LOGIC,
                "CLIENT ERROR: FUNC variables must be a literal *array* of numbers.");
         for (size_t i = 0; i < d.arr_size(); ++i) {
             datum_t dnum = d.get(i);
             rcheck(dnum.get_type() == datum_t::type_t::R_NUM,
-                   base_exc_t::GENERIC,
+                   base_exc_t::LOGIC,
                    "CLIENT ERROR: FUNC variables must be a literal array of *numbers*.");
             args.push_back(sym_t(dnum.as_num()));
         }
@@ -176,16 +177,16 @@ func_term_t::func_term_t(compile_env_t *env, const raw_term_t *t)
         auto vars_it = vars->args();
         while (const raw_term_t *v = vars_it.next()) {
             rcheck(v->type == Term::DATUM,
-                   base_exc_t::GENERIC,
+                   base_exc_t::LOGIC,
                    "CLIENT ERROR: FUNC variables must be a *literal* array of numbers.");
             datum_t d = v->datum();
             rcheck(d.get_type() == datum_t::type_t::R_NUM,
-                   base_exc_t::GENERIC,
+                   base_exc_t::LOGIC,
                    "CLIENT ERROR: FUNC variables must be a literal array of *numbers*.");
             args.push_back(sym_t(d.as_num()));
         }
     } else {
-        rfail(base_exc_t::GENERIC,
+        rfail(base_exc_t::LOGIC,
               "CLIENT ERROR: FUNC variables must be a *literal array of numbers*.");
     }
 
@@ -394,7 +395,7 @@ counted_t<const func_t> new_page_func(datum_t method, backtrace_id_t bt,
         } else {
             std::string msg = strprintf("`page` method '%s' not recognized, "
                                         "only 'link-next' is available.", name.c_str());
-            rcheck_src(bt, false, base_exc_t::GENERIC, msg);
+            rcheck_src(bt, false, base_exc_t::LOGIC, msg);
         }
     }
     return counted_t<const func_t>();
@@ -402,7 +403,7 @@ counted_t<const func_t> new_page_func(datum_t method, backtrace_id_t bt,
 
 
 val_t *js_result_visitor_t::operator()(const std::string &err_val) const {
-    rfail_target(parent, base_exc_t::GENERIC, "%s", err_val.c_str());
+    rfail_target(parent, base_exc_t::LOGIC, "%s", err_val.c_str());
     unreachable();
 }
 val_t *js_result_visitor_t::operator()(

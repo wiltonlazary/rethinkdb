@@ -66,11 +66,12 @@ def run_tests(build=None, data_dir='./'):
     else:
         print('Testing: %s' % executable_path)
     
+    i = 0
     for settings in servers_settings:
 
         print("Starting server with cache_size " + str(settings["cache_size"]) + " MB...", end=' ')
         sys.stdout.flush()
-        serverFiles = driver.Files(machine_name=settings["name"], db_path=os.path.join(data_dir, settings["name"]))
+        serverFiles = driver.Files(server_name=settings["name"], db_path=os.path.join(data_dir, settings["name"]))
         
         with driver.Process(files=serverFiles, executable_path=executable_path, extra_options=['--cache-size', str(settings["cache_size"])]) as server:
             
@@ -88,6 +89,7 @@ def run_tests(build=None, data_dir='./'):
 
             if i == 0:
                 execute_constant_queries()
+            i = i + 1
 
     save_compare_results()
 
@@ -99,7 +101,7 @@ def init_tables(connection):
     sys.stdout.flush()
     try:
         r.db_drop("test").run(connection)
-    except r.errors.RqlRuntimeError as e:
+    except r.errors.ReqlRuntimeError as e:
         pass
 
     r.db_create("test").run(connection)
@@ -110,6 +112,7 @@ def init_tables(connection):
     for table in tables:
         r.db("test").table(table["name"]).index_create("field0").run(connection)
         r.db("test").table(table["name"]).index_create("field1").run(connection)
+        r.db("test").table(table["name"]).index_wait().run(connection)
 
     print(" Done.")
     sys.stdout.flush()

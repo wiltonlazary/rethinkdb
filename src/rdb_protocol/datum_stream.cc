@@ -25,10 +25,8 @@ bool changespec_t::include_initial_vals() {
 // RANGE/READGEN STUFF
 rget_response_reader_t::rget_response_reader_t(
     const counted_t<real_table_t> &_table,
-    bool _use_outdated,
     scoped_ptr_t<readgen_t> &&_readgen)
     : table(_table),
-      use_outdated(_use_outdated),
       started(false), shards_exhausted(false),
       readgen(std::move(_readgen)),
       last_read_start(store_key_t::min()),
@@ -106,7 +104,7 @@ std::vector<datum_t> rget_response_reader_t::next_batch(env_t *env,
                 res.push_back(std::move(items[items_index].data));
 
                 rcheck_datum(
-                    res.size() <= env->limits().array_size_limit(), base_exc_t::GENERIC,
+                    res.size() <= env->limits().array_size_limit(), base_exc_t::RESOURCE,
                     strprintf("Too many rows (> %zu) with the same value "
                               "for index `%s`:\n%s",
                               env->limits().array_size_limit(),
@@ -164,7 +162,7 @@ struct last_read_start_visitor_t : public boost::static_visitor<store_key_t> {
 
 rget_read_response_t rget_response_reader_t::do_read(env_t *env, const read_t &read) {
     read_response_t res;
-    table->read_with_profile(env, read, &res, use_outdated);
+    table->read_with_profile(env, read, &res);
     auto rget_res = boost::get<rget_read_response_t>(&res.response);
     r_sanity_check(rget_res != NULL);
     if (auto e = boost::get<exc_t>(&rget_res->result)) {
@@ -176,9 +174,8 @@ rget_read_response_t rget_response_reader_t::do_read(env_t *env, const read_t &r
 
 rget_reader_t::rget_reader_t(
     const counted_t<real_table_t> &_table,
-    bool _use_outdated,
     scoped_ptr_t<readgen_t> &&_readgen)
-    : rget_response_reader_t(_table, _use_outdated, std::move(_readgen)) { }
+    : rget_response_reader_t(_table, std::move(_readgen)) { }
 
 void rget_reader_t::accumulate_all(env_t *env, eager_acc_t *acc) {
     r_sanity_check(!started);
@@ -223,7 +220,9 @@ rget_reader_t::do_range_read(env_t *env, const read_t &read) {
     r_sanity_check(static_cast<bool>(stamp) == static_cast<bool>(rr->stamp));
     if (stamp) {
         r_sanity_check(res.stamp_response);
-        for (const auto &pair : (*res.stamp_response).stamps) {
+        rcheck_datum(res.stamp_response->stamps, base_exc_t::OP_FAILED,
+                     "Changefeed aborted.  (Did you just reshard?)");
+        for (const auto &pair : *res.stamp_response->stamps) {
             // It's OK to blow away old values.
             shard_stamps[pair.first] = pair.second;
         }
@@ -235,7 +234,7 @@ rget_reader_t::do_range_read(env_t *env, const read_t &read) {
     store_key_t *key = &res.last_key;
     if (*key == store_key_t::max() && !reversed(rr->sorting)) {
         if (!rng.right.unbounded) {
-            *key = rng.right.key;
+            *key = rng.right.key();
             bool b = key->decrement();
             r_sanity_check(b);
         }
@@ -272,7 +271,7 @@ bool rget_reader_t::load_items(env_t *env, const batchspec_t &batchspec) {
 
             rcheck_datum(
                 (items.size() + new_items.size()) <= env->limits().array_size_limit(),
-                base_exc_t::GENERIC,
+                base_exc_t::RESOURCE,
                 strprintf("Too many rows (> %zu) with the same "
                           "truncated key for index `%s`.  "
                           "Example value:\n%s\n"
@@ -295,9 +294,8 @@ bool rget_reader_t::load_items(env_t *env, const batchspec_t &batchspec) {
 
 intersecting_reader_t::intersecting_reader_t(
     const counted_t<real_table_t> &_table,
-    bool _use_outdated,
     scoped_ptr_t<readgen_t> &&_readgen)
-    : rget_response_reader_t(_table, _use_outdated, std::move(_readgen)) { }
+    : rget_response_reader_t(_table, std::move(_readgen)) { }
 
 void intersecting_reader_t::accumulate_all(env_t *env, eager_acc_t *acc) {
     r_sanity_check(!started);
@@ -331,7 +329,7 @@ bool intersecting_reader_t::load_items(env_t *env, const batchspec_t &batchspec)
                 if (processed_pkeys.count(pkey) == 0) {
                     rcheck_toplevel(
                         processed_pkeys.size() < env->limits().array_size_limit(),
-                        ql::base_exc_t::GENERIC,
+                        ql::base_exc_t::RESOURCE,
                         "Array size limit exceeded during geospatial index traversal.");
                     processed_pkeys.insert(pkey);
                     items.push_back(std::move(unfiltered_items[i]));
@@ -359,7 +357,7 @@ std::vector<rget_item_t> intersecting_reader_t::do_intersecting_read(
     store_key_t *key = &res.last_key;
     if (*key == store_key_t::max()) {
         if (!rng.right.unbounded) {
-            *key = rng.right.key;
+            *key = rng.right.key();
             bool b = key->decrement();
             r_sanity_check(b);
         }
@@ -377,10 +375,12 @@ readgen_t::readgen_t(
     global_optargs_t _global_optargs,
     std::string _table_name,
     profile_bool_t _profile,
+    read_mode_t _read_mode,
     sorting_t _sorting)
     : global_optargs(std::move(_global_optargs)),
       table_name(std::move(_table_name)),
       profile(_profile),
+      read_mode(_read_mode),
       sorting(_sorting) { }
 
 bool readgen_t::update_range(key_range_t *active_range,
@@ -396,13 +396,13 @@ bool readgen_t::update_range(key_range_t *active_range,
     if (!reversed(sorting)) {
         if (!active_range->left.increment()
             || (!active_range->right.unbounded
-                && (active_range->right.key < active_range->left))) {
+                && (active_range->right.key() < active_range->left))) {
             return true;
         }
     } else {
         r_sanity_check(!active_range->right.unbounded);
-        if (!active_range->right.key.decrement()
-            || active_range->right.key < active_range->left) {
+        if (!active_range->right.key().decrement()
+            || active_range->right.key() < active_range->left) {
             return true;
         }
     }
@@ -414,8 +414,10 @@ rget_readgen_t::rget_readgen_t(
     std::string _table_name,
     const datum_range_t &_original_datum_range,
     profile_bool_t _profile,
+    read_mode_t _read_mode,
     sorting_t _sorting)
-    : readgen_t(std::move(_global_optargs), std::move(_table_name), _profile, _sorting),
+    : readgen_t(std::move(_global_optargs), std::move(_table_name),
+                _profile, _read_mode, _sorting),
       original_datum_range(_original_datum_range) { }
 
 read_t rget_readgen_t::next_read(
@@ -428,7 +430,8 @@ read_t rget_readgen_t::next_read(
                       std::move(stamp),
                       std::move(transforms),
                       batchspec),
-                  profile);
+                  profile,
+                  read_mode);
 }
 
 // TODO: this is how we did it before, but it sucks.
@@ -442,21 +445,23 @@ read_t rget_readgen_t::terminal_read(
         transforms,
         batchspec);
     read.terminal = _terminal;
-    return read_t(read, profile);
+    return read_t(read, profile, read_mode);
 }
 
 primary_readgen_t::primary_readgen_t(
     global_optargs_t global_optargs,
     std::string table_name,
     datum_range_t range,
-    profile_bool_t profile,
+    profile_bool_t _profile,
+    read_mode_t _read_mode,
     sorting_t sorting)
     : rget_readgen_t(std::move(global_optargs), std::move(table_name),
-                     range, profile, sorting) { }
+                     range, _profile, _read_mode, sorting) { }
 
 scoped_ptr_t<readgen_t> primary_readgen_t::make(
     env_t *env,
     std::string table_name,
+    read_mode_t read_mode,
     datum_range_t range,
     sorting_t sorting) {
     return scoped_ptr_t<readgen_t>(
@@ -465,6 +470,7 @@ scoped_ptr_t<readgen_t> primary_readgen_t::make(
             std::move(table_name),
             range,
             env->profile(),
+            read_mode,
             sorting));
 }
 
@@ -516,15 +522,18 @@ sindex_readgen_t::sindex_readgen_t(
     std::string table_name,
     const std::string &_sindex,
     datum_range_t range,
-    profile_bool_t profile,
+    profile_bool_t _profile,
+    read_mode_t _read_mode,
     sorting_t sorting)
-    : rget_readgen_t(std::move(global_optargs), std::move(table_name), range, profile, sorting),
+    : rget_readgen_t(std::move(global_optargs), std::move(table_name), range,
+                     _profile, _read_mode, sorting),
       sindex(_sindex),
       sent_first_read(false) { }
 
 scoped_ptr_t<readgen_t> sindex_readgen_t::make(
     env_t *env,
     std::string table_name,
+    read_mode_t read_mode,
     const std::string &sindex,
     datum_range_t range,
     sorting_t sorting) {
@@ -535,6 +544,7 @@ scoped_ptr_t<readgen_t> sindex_readgen_t::make(
             sindex,
             range,
             env->profile(),
+            read_mode,
             sorting));
 }
 
@@ -635,7 +645,7 @@ boost::optional<read_t> sindex_readgen_t::sindex_sort_read(
                 // possible row with this truncated sindex.
                 rng.left = store_key_t(skey);
             }
-            if (rng.right.unbounded || rng.left < rng.right.key) {
+            if (rng.right.unbounded || rng.left < rng.right.key()) {
                 return read_t(
                     rget_read_t(
                         std::move(stamp),
@@ -650,7 +660,8 @@ boost::optional<read_t> sindex_readgen_t::sindex_sort_read(
                             region_t(key_range_t(rng)),
                             original_datum_range),
                         sorting),
-                    profile);
+                    profile,
+                    read_mode);
             }
         }
     }
@@ -674,14 +685,17 @@ intersecting_readgen_t::intersecting_readgen_t(
     std::string table_name,
     const std::string &_sindex,
     const datum_t &_query_geometry,
-    profile_bool_t profile)
-    : readgen_t(std::move(global_optargs), std::move(table_name), profile, sorting_t::UNORDERED),
+    profile_bool_t _profile,
+    read_mode_t _read_mode)
+    : readgen_t(std::move(global_optargs), std::move(table_name),
+                _profile, _read_mode, sorting_t::UNORDERED),
       sindex(_sindex),
       query_geometry(_query_geometry) { }
 
 scoped_ptr_t<readgen_t> intersecting_readgen_t::make(
     env_t *env,
     std::string table_name,
+    read_mode_t read_mode,
     const std::string &sindex,
     const datum_t &query_geometry) {
     return scoped_ptr_t<readgen_t>(
@@ -690,7 +704,8 @@ scoped_ptr_t<readgen_t> intersecting_readgen_t::make(
             std::move(table_name),
             sindex,
             query_geometry,
-            env->profile()));
+            env->profile(),
+            read_mode));
 }
 
 read_t intersecting_readgen_t::next_read(
@@ -703,7 +718,8 @@ read_t intersecting_readgen_t::next_read(
                       std::move(stamp),
                       std::move(transforms),
                       batchspec),
-                  profile);
+                  profile,
+                  read_mode);
 }
 
 read_t intersecting_readgen_t::terminal_read(
@@ -717,7 +733,7 @@ read_t intersecting_readgen_t::terminal_read(
             transforms,
             batchspec);
     read.terminal = _terminal;
-    return read_t(read, profile);
+    return read_t(read, profile, read_mode);
 }
 
 intersecting_geo_read_t intersecting_readgen_t::next_read_impl(
@@ -818,7 +834,7 @@ void datum_stream_t::add_grouping(transform_variant_t &&tv,
     add_transformation(std::move(tv), bt);
 }
 void datum_stream_t::check_not_grouped(const char *msg) {
-    rcheck(!is_grouped(), base_exc_t::GENERIC, msg);
+    rcheck(!is_grouped(), base_exc_t::LOGIC, msg);
 }
 
 std::vector<datum_t>
@@ -839,8 +855,7 @@ datum_stream_t::next_batch(env_t *env, const batchspec_t &batchspec) {
     }
 }
 
-datum_t datum_stream_t::next(
-    env_t *env, const batchspec_t &batchspec) {
+datum_t datum_stream_t::next(env_t *env, const batchspec_t &batchspec) {
 
     profile::starter_t("Reading element from datum stream.", env->trace);
     if (batch_cache_index >= batch_cache.size()) {
@@ -1114,7 +1129,7 @@ slice_datum_stream_t::slice_datum_stream_t(
 std::vector<changespec_t> slice_datum_stream_t::get_changespecs() {
     if (left == 0) {
         auto subspecs = source->get_changespecs();
-        rcheck(subspecs.size() == 1, base_exc_t::GENERIC,
+        rcheck(subspecs.size() == 1, base_exc_t::LOGIC,
                "Cannot call `changes` on a slice of a union.");
         auto subspec = subspecs[0];
         auto *rspec = boost::get<changefeed::keyspec_t::range_t>(&subspec.keyspec.spec);
@@ -1122,7 +1137,7 @@ std::vector<changespec_t> slice_datum_stream_t::get_changespecs() {
             std::copy(transforms.begin(), transforms.end(),
                       std::back_inserter(rspec->transforms));
             rcheck(right <= static_cast<uint64_t>(std::numeric_limits<size_t>::max()),
-                   base_exc_t::GENERIC,
+                   base_exc_t::LOGIC,
                    strprintf("Cannot call `changes` on a slice "
                              "with size > %zu (got %" PRIu64 ").",
                              std::numeric_limits<size_t>::max(),
@@ -1226,7 +1241,16 @@ public:
         if (!stream->is_exhausted() && !running) {
             running = true;
             auto_drainer_t::lock_t lock(&parent->drainer);
-            coro_t::spawn_sometime([this, lock]{this->cb(lock);});
+            if (stream->cfeed_type() == feed_type_t::not_feed) {
+                // We only launch a limited number of non-feed reads per union
+                // at a time, controlled by a coro pool.
+                parent->read_queue.push([this, lock]{this->cb(lock);});
+            } else {
+                // For feeds, we have to spawn a coroutine since we cannot afford
+                // to wait for a specific subset of substreams to yield a result
+                // before spawning a read from the remaining ones.
+                coro_t::spawn_sometime([this, lock]{this->cb(lock);});
+            }
         }
     }
     const counted_t<datum_stream_t> stream;
@@ -1282,6 +1306,10 @@ private:
     union_datum_stream_t *parent;
 };
 
+// The maximum number of reads that a union_datum_stream spawns on its substreams
+// at a time. This limit does not apply to changefeed streams.
+const size_t MAX_CONCURRENT_UNION_READS = 32;
+
 union_datum_stream_t::union_datum_stream_t(
     env_t *env,
     std::vector<counted_t<datum_stream_t> > &&streams,
@@ -1292,6 +1320,7 @@ union_datum_stream_t::union_datum_stream_t(
       is_infinite_union(false),
       sent_init(false),
       ready_needed(expected_states),
+      read_coro_pool(MAX_CONCURRENT_UNION_READS, &read_queue, &read_coro_callback),
       active(0),
       coros_exhausted(false) {
 
@@ -1368,8 +1397,8 @@ union_datum_stream_t::next_batch_impl(env_t *env, const batchspec_t &batchspec) 
                         ready_needed -= 1;
                         if (ready_needed != 0) continue;
                     } else {
-                        rfail(base_exc_t::GENERIC,
-                              "Internal Error: Unrecognized state string `%s`.",
+                        rfail(base_exc_t::INTERNAL,
+                              "Unrecognized state string `%s`.",
                               state.as_str().to_std().c_str());
                     }
                 }
@@ -1476,8 +1505,9 @@ range_datum_stream_t::next_raw_batch(env_t *, const batchspec_t &batchspec) {
     rcheck(!is_infinite_range
            || batchspec.get_batch_type() == batch_type_t::NORMAL
            || batchspec.get_batch_type() == batch_type_t::NORMAL_FIRST,
-           base_exc_t::GENERIC,
-           "Cannot use an infinite stream with an aggregation function (`reduce`, `count`, etc.) or coerce it to an array.");
+           base_exc_t::LOGIC,
+           "Cannot use an infinite stream with an aggregation function "
+           "(`reduce`, `count`, etc.) or coerce it to an array.");
 
     std::vector<datum_t> batch;
     // 500 is picked out of a hat for latency, primarily in the Data Explorer. If you
@@ -1492,7 +1522,7 @@ range_datum_stream_t::next_raw_batch(env_t *, const batchspec_t &batchspec) {
         // than 2^53 indicating we've reached the end of our infinite stream. This must
         // be checked before creating a `datum_t` as that does a similar check on
         // construction.
-        rcheck(risfinite(next), base_exc_t::GENERIC,
+        rcheck(risfinite(next), base_exc_t::LOGIC,
                "`range` out of safe double bounds.");
 
         batch.emplace_back(next);
@@ -1516,6 +1546,7 @@ map_datum_stream_t::map_datum_stream_t(
         backtrace_id_t bt)
     : eager_datum_stream_t(bt), streams(std::move(_streams)), func(std::move(_func)),
       union_type(feed_type_t::not_feed), is_array_map(true), is_infinite_map(true) {
+    args.reserve(streams.size());
     for (const auto &stream : streams) {
         is_array_map &= stream->is_array();
         union_type = union_of(union_type, stream->cfeed_type());
@@ -1528,24 +1559,33 @@ map_datum_stream_t::next_raw_batch(env_t *env, const batchspec_t &batchspec) {
     rcheck(!is_infinite_map
            || batchspec.get_batch_type() == batch_type_t::NORMAL
            || batchspec.get_batch_type() == batch_type_t::NORMAL_FIRST,
-           base_exc_t::GENERIC,
-           "Cannot use an infinite stream with an aggregation function (`reduce`, `count`, etc.) or coerce it to an array.");
+           base_exc_t::LOGIC,
+           "Cannot use an infinite stream with an aggregation function "
+           "(`reduce`, `count`, etc.) or coerce it to an array.");
 
     std::vector<datum_t> batch;
     batcher_t batcher = batchspec.to_batcher();
 
-    std::vector<datum_t> args;
-    args.reserve(streams.size());
     // We need a separate batchspec for the streams to prevent calling `stream->next`
     // with a `batch_type_t::TERMINAL` on an infinite stream.
     batchspec_t batchspec_inner = batchspec_t::default_for(batch_type_t::NORMAL);
     while (!is_exhausted()) {
-        args.clear();   // This prevents allocating a new vector every iteration.
-        for (const auto &stream : streams) {
-            args.push_back(stream->next(env, batchspec_inner));
+        while (args.size() < streams.size()) {
+            datum_t d = streams[args.size()]->next(env, batchspec_inner);
+            if (union_type == feed_type_t::not_feed) {
+                r_sanity_check(d.has());
+            } else {
+                if (!d.has()) {
+                    // Return with `args` partway full and continue next time
+                    // the client asks for a batch.
+                    return batch;
+                }
+            }
+            args.push_back(std::move(d));
         }
-
         datum_t datum = func->call(env, args)->as_datum();
+        r_sanity_check(datum.has());
+        args.clear();
         batcher.note_el(datum);
         batch.push_back(std::move(datum));
         if (batcher.should_send_batch()) {
@@ -1636,7 +1676,7 @@ std::vector<changespec_t> vector_datum_stream_t::get_changespecs() {
         return std::vector<changespec_t>{
             changespec_t(*changespec, counted_from_this())};
     } else {
-        rfail(base_exc_t::GENERIC, "%s", "Cannot call `changes` on this stream.");
+        rfail(base_exc_t::LOGIC, "%s", "Cannot call `changes` on this stream.");
     }
 }
 

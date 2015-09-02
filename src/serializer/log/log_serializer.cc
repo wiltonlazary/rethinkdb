@@ -402,6 +402,7 @@ log_serializer_t::log_serializer_t(dynamic_config_t _dynamic_config, serializer_
 #endif
       dynamic_config(_dynamic_config),
       shutdown_callback(NULL),
+      shutdown_state(shutdown_not_started),
       state(state_unstarted),
       dbfile(NULL),
       extent_manager(NULL),
@@ -469,6 +470,7 @@ get_ls_block_token(const counted_t<scs_block_token_t<log_serializer_t> > &tok) {
 
 
 void log_serializer_t::index_write(new_mutex_in_line_t *mutex_acq,
+                                   const std::function<void()> &on_writes_reflected,
                                    const std::vector<index_write_op_t> &write_ops) {
     assert_thread();
     ticks_t pm_time;
@@ -522,6 +524,9 @@ void log_serializer_t::index_write(new_mutex_in_line_t *mutex_acq,
                                       index_writes_io_account.get(), &txn);
         }
     }
+
+    // All changes are now in the in-memory LBA
+    on_writes_reflected();
 
     index_write_finish(mutex_acq, &txn, index_writes_io_account.get());
 
@@ -793,6 +798,7 @@ void log_serializer_t::shutdown(cond_t *cb) {
     rassert(state == state_ready);
     shutdown_callback = cb;
 
+    rassert(shutdown_state == shutdown_not_started);
     shutdown_state = shutdown_begin;
 
     // We must shutdown the LBA GC before we shut down
@@ -801,6 +807,12 @@ void log_serializer_t::shutdown(cond_t *cb) {
     // `shutdown_gc()` might block, but uses coroutine waiting in contrast
     // to most of the remaining shutdown process which is still FSM-based.
     lba_index->shutdown_gc();
+
+    // Additionally we tell the data block manager to stop GCing.
+    // Not doing this doesn't hurt correctness, but it will delay the shutdown
+    // process because GC writes are contributing to `active_write_count` that
+    // stops us from getting through the remaining shutdown process quickly.
+    data_block_manager->disable_gc();
 
     next_shutdown_step();
 }

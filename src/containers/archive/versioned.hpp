@@ -1,6 +1,8 @@
 #ifndef CONTAINERS_ARCHIVE_VERSIONED_HPP_
 #define CONTAINERS_ARCHIVE_VERSIONED_HPP_
 
+#include <functional>
+
 #include "containers/archive/archive.hpp"
 #include "version.hpp"
 
@@ -20,7 +22,9 @@ inline void serialize_cluster_version(write_message_t *wm, cluster_version_t v) 
 }
 
 inline MUST_USE archive_result_t deserialize_cluster_version(
-    read_stream_t *s, cluster_version_t *thing, const char *v1_13_msg) {
+        read_stream_t *s,
+        cluster_version_t *thing,
+        const std::function<void()> &obsolete_cb) {
     // Initialize `thing` to *something* because GCC 4.6.3 thinks that `thing`
     // could be used uninitialized, even when the return value of this function
     // is checked through `guarantee_deserialization()`.
@@ -30,12 +34,35 @@ inline MUST_USE archive_result_t deserialize_cluster_version(
     archive_result_t res = deserialize<cluster_version_t::LATEST_OVERALL>(s, &raw);
     if (raw == static_cast<int8_t>(obsolete_cluster_version_t::v1_13)
         || raw == static_cast<int8_t>(obsolete_cluster_version_t::v1_13_2)) {
-        fail_due_to_user_error("%s", v1_13_msg);
+        obsolete_cb();
+        crash("Outdated index handling did not crash or throw.");
     } else {
         // This is the same rassert in `ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE`.
         rassert(raw >= static_cast<int8_t>(cluster_version_t::v1_14)
                 && raw <= static_cast<int8_t>(cluster_version_t::v2_1_is_latest));
         *thing = static_cast<cluster_version_t>(raw);
+    }
+    return res;
+}
+
+inline MUST_USE archive_result_t deserialize_reql_version(
+        read_stream_t *s, reql_version_t *thing,
+        const std::function<void()> &obsolete_cb) {
+    // Initialize `thing` to *something* because GCC 4.6.3 thinks that `thing`
+    // could be used uninitialized, even when the return value of this function
+    // is checked through `guarantee_deserialization()`.
+    // See https://github.com/rethinkdb/rethinkdb/issues/2640
+    *thing = reql_version_t::LATEST;
+    int8_t raw;
+    archive_result_t res = deserialize_universal(s, &raw);
+    if (raw == static_cast<int8_t>(obsolete_reql_version_t::v1_13)) {
+        obsolete_cb();
+        crash("Outdated index handling did not crash or throw.");
+    } else {
+        // This is the same rassert in `ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE`.
+        rassert(raw >= static_cast<int8_t>(reql_version_t::v1_14)
+                && raw <= static_cast<int8_t>(reql_version_t::v2_1_is_latest));
+        *thing = static_cast<reql_version_t>(raw);
     }
     return res;
 }
@@ -184,6 +211,14 @@ size_t serialized_size_for_version(cluster_version_t version,
 #define INSTANTIATE_SERIALIZABLE_SINCE_v1_16(typ)        \
     INSTANTIATE_SERIALIZE_FOR_CLUSTER_AND_DISK(typ);     \
     INSTANTIATE_DESERIALIZE_SINCE_v1_16(typ)
+
+#define INSTANTIATE_DESERIALIZE_SINCE_v2_1(typ)                                  \
+    template archive_result_t deserialize<cluster_version_t::v2_1_is_latest>(    \
+            read_stream_t *, typ *)
+
+#define INSTANTIATE_SERIALIZABLE_SINCE_v2_1(typ)         \
+    INSTANTIATE_SERIALIZE_FOR_CLUSTER_AND_DISK(typ);     \
+    INSTANTIATE_DESERIALIZE_SINCE_v2_1(typ)
 
 #define INSTANTIATE_SERIALIZABLE_FOR_CLUSTER(typ)                      \
     INSTANTIATE_SERIALIZE_FOR_CLUSTER(typ);                            \

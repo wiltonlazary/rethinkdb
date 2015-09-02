@@ -21,7 +21,7 @@ public:
                                                    const raw_term_t *in))
             : term_t(term) {
         rcheck(argspec.contains(term->num_args()),
-               base_exc_t::GENERIC,
+               base_exc_t::LOGIC,
                strprintf("Expected %s but found %zu.",
                          argspec.print().c_str(), term->num_args()));
         rewrite_src = rewrite(env, term).raw_term();

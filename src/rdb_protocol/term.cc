@@ -3,7 +3,6 @@
 
 #include "arch/address.hpp"
 #include "clustering/administration/jobs/report.hpp"
-#include "containers/cow_ptr.hpp"
 #include "concurrency/cross_thread_watchable.hpp"
 #include "rdb_protocol/backtrace.hpp"
 #include "rdb_protocol/env.hpp"
@@ -17,8 +16,15 @@
 
 namespace ql {
 
-counted_t<const term_t> compile_term(compile_env_t *env, const raw_term_t *t) {
-    switch (t->type) {
+// The minimum amount of stack space we require to be available on a coroutine
+// before attempting to compile or evaluate a term.
+const size_t MIN_COMPILE_STACK_SPACE = 16 * KILOBYTE;
+const size_t MIN_EVAL_STACK_SPACE = 16 * KILOBYTE;
+
+counted_t<const term_t> compile_on_current_stack(
+        compile_env_t *env,
+        const protob_t<const Term> t) {
+    switch (t->type()) {
     case Term::DATUM:              return make_datum_term(t);
     case Term::MAKE_ARRAY:         return make_make_array_term(env, t);
     case Term::MAKE_OBJ:           return make_make_obj_term(env, t);
@@ -57,6 +63,7 @@ counted_t<const term_t> compile_term(compile_env_t *env, const raw_term_t *t) {
     case Term::GET_FIELD:          return make_get_field_term(env, t);
     case Term::OFFSETS_OF:         return make_offsets_of_term(env, t);
     case Term::KEYS:               return make_keys_term(env, t);
+    case Term::VALUES:             return make_values_term(env, t);
     case Term::OBJECT:             return make_object_term(env, t);
     case Term::HAS_FIELDS:         return make_has_fields_term(env, t);
     case Term::WITH_FIELDS:        return make_with_fields_term(env, t);
@@ -229,7 +236,8 @@ void run(query_params_t *query_params,
         default: unreachable();
         }
     } catch (const bt_exc_t &ex) {
-        response_out->fill_error(ex.response_type, ex.message, ex.bt_datum);
+        response_out->fill_error(ex.response_type, ex.error_type,
+                                 ex.message, ex.bt_datum);
     }
 }
 
@@ -267,7 +275,9 @@ const raw_term_t *term_t::get_src() const {
     return src;
 }
 
-scoped_ptr_t<val_t> runtime_term_t::eval(scope_env_t *env, eval_flags_t eval_flags) const {
+scoped_ptr_t<val_t> runtime_term_t::eval_on_current_stack(
+        scope_env_t *env,
+        eval_flags_t eval_flags) const {
     guarantee(env->env->term_storage.has());
     // This is basically a hook for unit tests to change things mid-query
     profile::starter_t starter(strprintf("Evaluating %s.", name()), env->env->trace);
@@ -299,6 +309,14 @@ scoped_ptr_t<val_t> runtime_term_t::eval(scope_env_t *env, eval_flags_t eval_fla
         throw;
     }
 #endif // INSTRUMENT
+}
+
+scoped_ptr_t<val_t> runtime_term_t::eval(
+        scope_env_t *env,
+        eval_flags_t eval_flags) const {
+    return call_with_enough_stack<scoped_ptr_t<val_t> >([&] () {
+            return eval_on_current_stack(env, std::move(eval_flags));
+        }, MIN_EVAL_STACK_SPACE);
 }
 
 } // namespace ql

@@ -68,9 +68,6 @@ class MainContainer extends Backbone.View
             issues: driver.queries.issues_with_ids()
             num_issues: r.db(system_db).table('current_issues').count()
             num_servers: r.db(system_db).table('server_config').count()
-            num_available_servers: r.db(system_db).table('server_status').filter( (server) ->
-                server("status").eq("connected")
-            ).count()
             num_tables: r.db(system_db).table('table_config').count()
             num_available_tables: r.db(system_db).table('table_status')('status').filter( (status) ->
                 status("all_replicas_ready")
@@ -181,7 +178,7 @@ class AlertUpdates extends Backbone.View
 
     check: =>
         # If it's fail, it's fine - like if the user is just on a local network without access to the Internet.
-        $.getJSON "http://update.rethinkdb.com/update_for/#{VERSION}?callback=?", @render_updates
+        $.getJSON "https://update.rethinkdb.com/update_for/#{VERSION}?callback=?", @render_updates
 
     # Callback on the ajax request
     render_updates: (data) =>

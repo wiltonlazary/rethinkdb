@@ -35,7 +35,6 @@
 class store_t;
 class buf_lock_t;
 template <class> class clone_ptr_t;
-template <class> class cow_ptr_t;
 template <class> class cross_thread_watchable_variable_t;
 class cross_thread_signal_t;
 struct secondary_index_t;
@@ -66,16 +65,8 @@ ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(
         point_delete_result_t, int8_t,
         point_delete_result_t::DELETED, point_delete_result_t::MISSING);
 
-enum class sindex_rename_result_t {
-    OLD_NAME_DOESNT_EXIST,
-    NEW_NAME_EXISTS,
-    SUCCESS
-};
-ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(
-        sindex_rename_result_t, int8_t,
-        sindex_rename_result_t::OLD_NAME_DOESNT_EXIST, sindex_rename_result_t::SUCCESS);
-
-#define RDB_DECLARE_PROTOB_DESERIALIZABLE(pb_t) \
+#define RDB_DECLARE_PROTOB_SERIALIZABLE(pb_t) \
+    void serialize_protobuf(write_message_t *wm, const pb_t &p); \
     MUST_USE archive_result_t deserialize_protobuf(read_stream_t *s, pb_t *p)
 
 RDB_DECLARE_PROTOB_DESERIALIZABLE(Term);
@@ -101,30 +92,6 @@ class sindex_readgen_t;
 class intersecting_readgen_t;
 } // namespace ql
 
-struct backfill_atom_t {
-    store_key_t key;
-    ql::datum_t value;
-    repli_timestamp_t recency;
-
-    backfill_atom_t() { }
-    backfill_atom_t(const store_key_t &_key,
-                    const ql::datum_t &_value,
-                    const repli_timestamp_t &_recency) :
-        key(_key),
-        value(_value),
-        recency(_recency)
-    { }
-};
-RDB_DECLARE_SERIALIZABLE(backfill_atom_t);
-
-enum class sindex_multi_bool_t { SINGLE = 0, MULTI = 1};
-enum class sindex_geo_bool_t { REGULAR = 0, GEO = 1};
-
-ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(sindex_multi_bool_t, int8_t,
-        sindex_multi_bool_t::SINGLE, sindex_multi_bool_t::MULTI);
-ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(sindex_geo_bool_t, int8_t,
-        sindex_geo_bool_t::REGULAR, sindex_geo_bool_t::GEO);
-
 namespace rdb_protocol {
 
 void bring_sindexes_up_to_date(
@@ -133,26 +100,7 @@ void bring_sindexes_up_to_date(
         buf_lock_t *sindex_block)
     THROWS_NOTHING;
 
-struct single_sindex_status_t {
-    single_sindex_status_t()
-        : blocks_processed(0),
-          blocks_total(0), ready(true), outdated(false),
-          geo(sindex_geo_bool_t::REGULAR), multi(sindex_multi_bool_t::SINGLE)
-    { }
-    single_sindex_status_t(size_t _blocks_processed, size_t _blocks_total, bool _ready)
-        : blocks_processed(_blocks_processed),
-          blocks_total(_blocks_total), ready(_ready) { }
-    size_t blocks_processed, blocks_total;
-    bool ready;
-    bool outdated;
-    sindex_geo_bool_t geo;
-    sindex_multi_bool_t multi;
-    std::string func;
-};
-
 } // namespace rdb_protocol
-
-RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(rdb_protocol::single_sindex_status_t);
 
 struct point_read_response_t {
     ql::datum_t data;
@@ -166,8 +114,9 @@ struct changefeed_stamp_response_t {
     changefeed_stamp_response_t() { }
     // The `uuid_u` below is the uuid of the changefeed `server_t`.  (We have
     // different timestamps for each `server_t` because they're on different
-    // servers and don't synchronize with each other.)
-    std::map<uuid_u, uint64_t> stamps;
+    // servers and don't synchronize with each other.)  If this is empty it
+    // means the feed was aborted.
+    boost::optional<std::map<uuid_u, uint64_t> > stamps;
 };
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(changefeed_stamp_response_t);
 
@@ -229,19 +178,6 @@ struct distribution_read_response_t {
 };
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(distribution_read_response_t);
 
-struct sindex_list_response_t {
-    sindex_list_response_t() { }
-    std::vector<std::string> sindexes;
-};
-RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(sindex_list_response_t);
-
-struct sindex_status_response_t {
-    sindex_status_response_t()
-    { }
-    std::map<std::string, rdb_protocol::single_sindex_status_t> statuses;
-};
-RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(sindex_status_response_t);
-
 struct changefeed_subscribe_response_t {
     changefeed_subscribe_response_t() { }
     std::set<uuid_u> server_uuids;
@@ -265,10 +201,14 @@ struct changefeed_point_stamp_response_t {
     // The `uuid_u` below is the uuid of the changefeed `server_t`.  (We have
     // different timestamps for each `server_t` because they're on different
     // servers and don't synchronize with each other.)
-    std::pair<uuid_u, uint64_t> stamp;
-    ql::datum_t initial_val;
+    struct valid_response_t {
+        std::pair<uuid_u, uint64_t> stamp;
+        ql::datum_t initial_val;
+    };
+    // If this is empty it means the feed was aborted.
+    boost::optional<valid_response_t> resp;
 };
-
+RDB_DECLARE_SERIALIZABLE(changefeed_point_stamp_response_t::valid_response_t);
 RDB_DECLARE_SERIALIZABLE(changefeed_point_stamp_response_t);
 
 struct dummy_read_response_t {
@@ -286,8 +226,6 @@ struct read_response_t {
                            changefeed_stamp_response_t,
                            changefeed_point_stamp_response_t,
                            distribution_read_response_t,
-                           sindex_list_response_t,
-                           sindex_status_response_t,
                            dummy_read_response_t> variant_t;
     variant_t response;
     profile::event_log_t event_log;
@@ -309,7 +247,7 @@ public:
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(point_read_t);
 
 // `dummy_read_t` can be used to poll for table readiness - it will go through all
-// the clustering and reactor layers, but is a no-op in the protocol layer.
+// the clustering layers, but is a no-op in the protocol layer.
 class dummy_read_t {
 public:
     dummy_read_t() : region(region_t::universe()) { }
@@ -473,21 +411,6 @@ public:
 };
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(distribution_read_t);
 
-struct sindex_list_t {
-    sindex_list_t() { }
-};
-RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(sindex_list_t);
-
-struct sindex_status_t {
-    sindex_status_t() { }
-    explicit sindex_status_t(const std::set<std::string> &_sindexes)
-        : sindexes(_sindexes), region(region_t::universe())
-    { }
-    std::set<std::string> sindexes;
-    region_t region;
-};
-RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(sindex_status_t);
-
 struct changefeed_subscribe_t {
     changefeed_subscribe_t() { }
     explicit changefeed_subscribe_t(ql::changefeed::client_t::addr_t _addr)
@@ -538,11 +461,10 @@ struct read_t {
                            changefeed_limit_subscribe_t,
                            changefeed_point_stamp_t,
                            distribution_read_t,
-                           sindex_list_t,
-                           sindex_status_t,
                            dummy_read_t> variant_t;
     variant_t read;
     profile_bool_t profile;
+    read_mode_t read_mode;
 
     region_t get_region() const THROWS_NOTHING;
     // Returns true if the read has any operation for this region.  Returns
@@ -555,10 +477,10 @@ struct read_t {
                  signal_t *interruptor) const
         THROWS_ONLY(interrupted_exc_t);
 
-    read_t() { }
+    read_t() : profile(profile_bool_t::DONT_PROFILE), read_mode(read_mode_t::SINGLE) { }
     template<class T>
-    read_t(T &&_read, profile_bool_t _profile)
-        : read(std::forward<T>(_read)), profile(_profile) { }
+    read_t(T &&_read, profile_bool_t _profile, read_mode_t _read_mode)
+        : read(std::forward<T>(_read)), profile(_profile), read_mode(_read_mode) { }
 
     // We use snapshotting for queries that acquire-and-hold large portions of the
     // table, so that they don't block writes.
@@ -566,9 +488,6 @@ struct read_t {
 
     // At the moment changefeed reads must be routed to the primary replica.
     bool route_to_primary() const THROWS_NOTHING;
-
-    // Returns true if this read should be sent to every replica.
-    bool all_read() const THROWS_NOTHING { return boost::get<sindex_status_t>(&read); }
 };
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(read_t);
 
@@ -591,24 +510,6 @@ struct point_delete_response_t {
 };
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(point_delete_response_t);
 
-// TODO we're reusing the enums from row writes and reads to avoid name
-// shadowing. Nothing really wrong with this but maybe they could have a
-// more generic name.
-struct sindex_create_response_t {
-    bool success;
-};
-RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(sindex_create_response_t);
-
-struct sindex_drop_response_t {
-    bool success;
-};
-RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(sindex_drop_response_t);
-
-struct sindex_rename_response_t {
-    sindex_rename_result_t result;
-};
-RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(sindex_rename_response_t);
-
 struct sync_response_t {
     // sync always succeeds
 };
@@ -627,9 +528,6 @@ struct write_response_t {
                    // batched_replace_response_t is also for batched_insert
                    point_write_response_t,
                    point_delete_response_t,
-                   sindex_create_response_t,
-                   sindex_drop_response_t,
-                   sindex_rename_response_t,
                    sync_response_t,
                    dummy_write_response_t> response;
 
@@ -723,53 +621,6 @@ public:
 };
 RDB_DECLARE_SERIALIZABLE(point_delete_t);
 
-class sindex_create_t {
-public:
-    sindex_create_t() { }
-    sindex_create_t(const std::string &_id, const ql::map_wire_func_t &_mapping,
-                    sindex_multi_bool_t _multi, sindex_geo_bool_t _geo)
-        : id(_id), mapping(_mapping), region(region_t::universe()),
-          multi(_multi), geo(_geo)
-    { }
-
-    std::string id;
-    ql::map_wire_func_t mapping;
-    region_t region;
-    sindex_multi_bool_t multi;
-    sindex_geo_bool_t geo;
-};
-RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(sindex_create_t);
-
-class sindex_drop_t {
-public:
-    sindex_drop_t() { }
-    explicit sindex_drop_t(const std::string &_id)
-        : id(_id), region(region_t::universe())
-    { }
-
-    std::string id;
-    region_t region;
-};
-RDB_DECLARE_SERIALIZABLE(sindex_drop_t);
-
-class sindex_rename_t {
-public:
-    sindex_rename_t() { }
-    sindex_rename_t(const std::string &_old_name,
-                    const std::string &_new_name,
-                    bool _overwrite) :
-        old_name(_old_name),
-        new_name(_new_name),
-        overwrite(_overwrite),
-        region(region_t::universe()) { }
-
-    std::string old_name;
-    std::string new_name;
-    bool overwrite;
-    region_t region;
-};
-RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(sindex_rename_t);
-
 class sync_t {
 public:
     sync_t()
@@ -781,7 +632,7 @@ public:
 RDB_DECLARE_SERIALIZABLE(sync_t);
 
 // `dummy_write_t` can be used to poll for table readiness - it will go through all
-// the clustering and reactor layers, but is a no-op in the protocol layer.
+// the clustering layers, but is a no-op in the protocol layer.
 class dummy_write_t {
 public:
     dummy_write_t() : region(region_t::universe()) { }
@@ -794,9 +645,6 @@ struct write_t {
                            batched_insert_t,
                            point_write_t,
                            point_delete_t,
-                           sindex_create_t,
-                           sindex_drop_t,
-                           sindex_rename_t,
                            sync_t,
                            dummy_write_t> variant_t;
     variant_t write;
@@ -814,9 +662,26 @@ struct write_t {
                  write_response_t *response, rdb_context_t *cache, signal_t *)
         const THROWS_NOTHING;
 
+    // This is currently used to improve the cache's write transaction throttling.
+    int expected_document_changes() const;
+
     durability_requirement_t durability() const { return durability_requirement; }
 
-    write_t() : durability_requirement(DURABILITY_REQUIREMENT_DEFAULT), limits() {}
+    /* The clustering layer calls this. */
+    static write_t make_sync(const region_t &region, profile_bool_t profile) {
+        sync_t sync;
+        sync.region = region;
+        return write_t(
+            sync,
+            DURABILITY_REQUIREMENT_HARD,
+            profile,
+            ql::configured_limits_t());
+    }
+
+    write_t() :
+        durability_requirement(DURABILITY_REQUIREMENT_DEFAULT),
+        profile(profile_bool_t::DONT_PROFILE),
+        limits() {}
     /*  Note that for durability != DURABILITY_REQUIREMENT_HARD, sync might
      *  not have the desired effect (of writing unsaved data to disk).
      *  However there are cases where we use sync internally (such as when
@@ -841,62 +706,6 @@ struct write_t {
 };
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(write_t);
 
-struct backfill_chunk_t {
-    struct delete_key_t {
-        store_key_t key;
-        repli_timestamp_t recency;
-
-        delete_key_t() { }
-        delete_key_t(const store_key_t& _key, const repli_timestamp_t& _recency) : key(_key), recency(_recency) { }
-    };
-    struct delete_range_t {
-        region_t range;
-        delete_range_t() { }
-        explicit delete_range_t(const region_t& _range) : range(_range) { }
-    };
-    struct key_value_pairs_t {
-        std::vector<backfill_atom_t> backfill_atoms;
-
-        key_value_pairs_t() { }
-        explicit key_value_pairs_t(std::vector<backfill_atom_t> &&_backfill_atoms)
-            : backfill_atoms(std::move(_backfill_atoms)) { }
-    };
-    struct sindexes_t {
-        std::map<std::string, secondary_index_t> sindexes;
-
-        sindexes_t() { }
-        explicit sindexes_t(const std::map<std::string, secondary_index_t> &_sindexes)
-            : sindexes(_sindexes) { }
-    };
-
-    typedef boost::variant<delete_range_t, delete_key_t, key_value_pairs_t, sindexes_t> value_t;
-
-    backfill_chunk_t() { }
-    explicit backfill_chunk_t(const value_t &_val) : val(_val) { }
-    value_t val;
-
-    static backfill_chunk_t delete_range(const region_t& range) {
-        return backfill_chunk_t(delete_range_t(range));
-    }
-    static backfill_chunk_t delete_key(const store_key_t& key, const repli_timestamp_t& recency) {
-        return backfill_chunk_t(delete_key_t(key, recency));
-    }
-    static backfill_chunk_t set_keys(std::vector<backfill_atom_t> &&keys) {
-        return backfill_chunk_t(key_value_pairs_t(std::move(keys)));
-    }
-
-    static backfill_chunk_t sindexes(const std::map<std::string, secondary_index_t> &sindexes) {
-        return backfill_chunk_t(sindexes_t(sindexes));
-    }
-};
-
-RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(backfill_chunk_t::delete_key_t);
-RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(backfill_chunk_t::delete_range_t);
-RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(backfill_chunk_t::key_value_pairs_t);
-RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(backfill_chunk_t::sindexes_t);
-RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(backfill_chunk_t);
-
-
 class store_t;
 
 namespace rdb_protocol {
@@ -909,8 +718,6 @@ region_t monokey_region(const store_key_t &k);
 // TODO consider relocating this
 key_range_t sindex_key_range(const store_key_t &start,
                              const store_key_t &end);
-
-region_t cpu_sharding_subspace(int subregion_number, int num_cpu_shards);
 }  // namespace rdb_protocol
 
 

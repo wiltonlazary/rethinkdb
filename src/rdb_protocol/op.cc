@@ -50,14 +50,16 @@ optargspec_t optargspec_t::with(std::initializer_list<const char *> args) const 
 
 class faux_term_t : public runtime_term_t {
 public:
-    faux_term_t(backtrace_id_t bt, datum_t _d)
-        : runtime_term_t(bt), d(std::move(_d)) { }
+    faux_term_t(backtrace_id_t bt, datum_t _d, bool _deterministic)
+        : runtime_term_t(bt), d(std::move(_d)), deterministic(_deterministic) { }
+    bool is_deterministic() const final { return deterministic; }
     const char *name() const final { return "<EXPANDED FROM r.args>"; }
 private:
     scoped_ptr_t<val_t> term_eval(scope_env_t *, eval_flags_t) const final {
         return new_val(d);
     }
     datum_t d;
+    bool deterministic;
 };
 
 
@@ -93,7 +95,7 @@ arg_terms_t::arg_terms_t(const raw_term_t *_src, argspec_t _argspec,
     // We check this here *and* in `start_eval` because if `r.args` isn't in
     // play we want to give a compile-time error.
     rcheck(argspec.contains(original_args.size()),
-           base_exc_t::GENERIC,
+           base_exc_t::LOGIC,
            strprintf("Expected %s but found %zu.",
                      argspec.print().c_str(), original_args.size()));
 }
@@ -104,17 +106,21 @@ argvec_t arg_terms_t::start_eval(scope_env_t *env, eval_flags_t flags) const {
     std::vector<counted_t<const runtime_term_t> > args;
     for (auto it = original_args.begin(); it != original_args.end(); ++it) {
         if ((*it)->get_src()->type == Term::ARGS) {
+            bool det = (*it)->is_deterministic();
             scoped_ptr_t<val_t> v = (*it)->eval(env, new_flags);
             datum_t d = v->as_datum();
             for (size_t i = 0; i < d.arr_size(); ++i) {
-                args.push_back(make_counted<faux_term_t>(backtrace(), d.get(i)));
+                // This is a little hacky because the determinism flag is for
+                // all the arguments together and we attach it to each of them,
+                // but I think that's fine.
+                args.push_back(make_counted<faux_term_t>(backtrace(), d.get(i), det));
             }
         } else {
             args.push_back(counted_t<const runtime_term_t>(*it));
         }
     }
     rcheck(argspec.contains(args.size()),
-           base_exc_t::GENERIC,
+           base_exc_t::LOGIC,
            strprintf("Expected %s but found %zu.",
                      argspec.print().c_str(), args.size()));
     return argvec_t(std::move(args));
@@ -130,12 +136,19 @@ counted_t<const runtime_term_t> argvec_t::remove(size_t i) {
     ret.swap(vec[i]);
     return ret;
 }
-
+bool argvec_t::is_deterministic(size_t i) const {
+    r_sanity_check(i < vec.size());
+    r_sanity_check(vec[i].has());
+    return vec[i]->is_deterministic();
+}
 
 size_t args_t::num_args() const {
     return argv.size();
 }
 
+bool args_t::arg_is_deterministic(size_t i) const {
+    return argv.is_deterministic(i);
+}
 scoped_ptr_t<val_t> args_t::arg(scope_env_t *env, size_t i, eval_flags_t flags) {
     if (i == 0 && arg0.has()) {
         scoped_ptr_t<val_t> v = std::move(arg0);
@@ -173,13 +186,15 @@ op_term_t::op_term_t(compile_env_t *env, const raw_term_t *term,
     auto opt_it = term->optargs();
     while (const raw_term_t *opt = opt_it.next()) {
         rcheck_src(opt->bt, optargspec.contains(opt_it.optarg_name()),
-                   base_exc_t::GENERIC,
+                   base_exc_t::LOGIC,
                    strprintf("Unrecognized optional argument `%s`.",
                              opt_it.optarg_name().c_str()));
         counted_t<const term_t> t = compile_term(env, opt);
         auto res = optargs.insert(std::make_pair(opt_it.optarg_name(), std::move(t)));
-        rcheck_src(opt->bt, res.second, base_exc_t::GENERIC,
-            strprintf("Duplicate optional argument: %s", opt_it.optarg_name().c_str()));
+        rcheck_src(opt->bt, res.second,
+                   base_exc_t::LOGIC,
+                   strprintf("Duplicate optional argument: %s",
+                             opt_it.optarg_name().c_str()));
     }
 }
 op_term_t::~op_term_t() { }
@@ -324,7 +339,7 @@ bool bounded_op_term_t::open_bool(
     } else if (s == "closed") {
         return false;
     } else {
-        rfail(base_exc_t::GENERIC,
+        rfail(base_exc_t::LOGIC,
               "Expected `open` or `closed` for optarg `%s` (got `%s`).",
               key.c_str(), v->trunc_print().c_str());
     }

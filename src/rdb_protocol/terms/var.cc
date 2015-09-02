@@ -12,17 +12,17 @@ class var_term_t : public term_t {
 public:
     var_term_t(compile_env_t *env, const raw_term_t *term)
             : term_t(term) {
-        rcheck(term->num_args() == 1, base_exc_t::GENERIC,
+        rcheck(term->num_args() == 1, base_exc_t::LOGIC,
                "A variable term has the wrong number of arguments.");
 
         const raw_term_t *arg0 = term->args().next();
-        rcheck(arg0->type == Term::DATUM, base_exc_t::GENERIC,
-               "A variable term has a non-numeric argument.");
-        rcheck(arg0->datum().get_type() == datum_t::type_t::R_NUM, base_exc_t::GENERIC,
-               "A variable term has a non-numeric variable name argument.");
+        rcheck(arg0->type == Term::DATUM, base_exc_t::LOGIC,
+               "A variable term has a non-datum argument.");
+        rcheck(arg0->datum().get_type() == datum_t::type_t::R_NUM, base_exc_t::LOGIC,
+               "A variable term has a non-numeric name datum.");
 
         varname = sym_t(arg0->datum().as_int());
-        rcheck(env->visibility.contains_var(varname), base_exc_t::GENERIC,
+        rcheck(env->visibility.contains_var(varname), base_exc_t::LOGIC,
                "Variable name not found.");
     }
 
@@ -47,10 +47,10 @@ public:
     implicit_var_term_t(compile_env_t *env, const raw_term_t *term)
         : term_t(term) {
         rcheck(
-            term->num_args() == 0 && term->num_optargs() == 0, base_exc_t::GENERIC,
+            term->num_args() == 0 && term->num_optargs() == 0, base_exc_t::LOGIC,
             "Expected no arguments or optional arguments on implicit variable term.");
 
-        rcheck(env->visibility.implicit_is_accessible(), base_exc_t::GENERIC,
+        rcheck(env->visibility.implicit_is_accessible(), base_exc_t::LOGIC,
                env->visibility.get_implicit_depth() == 0
                ? "r.row is not defined in this context."
                : "Cannot use r.row in nested queries.  Use functions instead.");

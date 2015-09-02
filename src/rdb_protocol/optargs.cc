@@ -21,7 +21,7 @@ global_optargs_t::global_optargs_t(counted_t<term_storage_t> term_storage) {
 
         auto res = optargs.insert(std::make_pair(std::string(optarg_it.optarg_name()),
                                                  wire_func_t(func)));
-        rcheck_toplevel(res.second, base_exc_t::GENERIC, strprintf(
+        rcheck_toplevel(res.second, base_exc_t::LOGIC, strprintf(
             "Duplicate global optional argument: `%s`.",
             optarg_it.optarg_name().c_str()));
     }

@@ -15,6 +15,8 @@
 #include "errors.hpp"
 #include <boost/optional.hpp>
 
+#include "concurrency/coro_pool.hpp"
+#include "concurrency/queue/unlimited_fifo.hpp"
 #include "containers/counted.hpp"
 #include "containers/scoped.hpp"
 #include "rdb_protocol/changefeed.hpp"
@@ -132,7 +134,7 @@ protected:
 
 protected:
     virtual std::vector<changespec_t> get_changespecs() {
-        rfail(base_exc_t::GENERIC, "%s", "Cannot call `changes` on an eager stream.");
+        rfail(base_exc_t::LOGIC, "%s", "Cannot call `changes` on an eager stream.");
     }
     std::vector<transform_variant_t> transforms;
 
@@ -303,6 +305,18 @@ private:
     bool sent_init;
     size_t ready_needed;
 
+    // A coro pool for launching reads on the individual coro_streams.
+    // If the union is not a changefeed, coro_stream_t::maybe_launch_read() is going
+    // to put reads into `read_queue` which will then be processed by `read_coro_pool`.
+    // This is to limit the degree of parallelism if a union stream is created
+    // over a large number of substreams (like in a getAll with many arguments).
+    // If the union is a changefeed, we must launch parallel reads on all streams,
+    // and this is not used (instead coro_stream_t::maybe_launch_read() will launch
+    // a coroutine directly).
+    unlimited_fifo_queue_t<std::function<void()> > read_queue;
+    calling_callback_t read_coro_callback;
+    coro_pool_t<std::function<void()> > read_coro_pool;
+
     size_t active;
     // We recompute this only when `next_batch_impl` returns to retain the
     // invariant that a stream won't change from unexhausted to exhausted
@@ -367,6 +381,13 @@ private:
     counted_t<const func_t> func;
     feed_type_t union_type;
     bool is_array_map, is_infinite_map;
+
+    // We need to preserve this between calls because we might have gotten data
+    // from a few substreams before having to abort because we timed out on a
+    // changefeed stream and return a partial batch.  (We still time out and
+    // return partial batches, or even empty batches, for the web UI in the case
+    // of a changefeed stream.)
+    std::vector<datum_t> args;
 };
 
 // This class generates the `read_t`s used in range reads.  It's used by
@@ -378,6 +399,7 @@ public:
         global_optargs_t global_optargs,
         std::string table_name,
         profile_bool_t profile,
+        read_mode_t read_mode,
         sorting_t sorting);
     virtual ~readgen_t() { }
 
@@ -421,6 +443,7 @@ protected:
     const global_optargs_t global_optargs;
     const std::string table_name;
     const profile_bool_t profile;
+    const read_mode_t read_mode;
     const sorting_t sorting;
 };
 
@@ -431,6 +454,7 @@ public:
         std::string table_name,
         const datum_range_t &original_datum_range,
         profile_bool_t profile,
+        read_mode_t read_mode,
         sorting_t sorting);
 
     virtual read_t terminal_read(
@@ -465,6 +489,7 @@ public:
     static scoped_ptr_t<readgen_t> make(
         env_t *env,
         std::string table_name,
+        read_mode_t read_mode,
         datum_range_t range = datum_range_t::universe(),
         sorting_t sorting = sorting_t::UNORDERED);
 
@@ -473,6 +498,7 @@ private:
                       std::string table_name,
                       datum_range_t range,
                       profile_bool_t profile,
+                      read_mode_t read_mode,
                       sorting_t sorting);
     virtual rget_read_t next_read_impl(
         const boost::optional<key_range_t> &active_range,
@@ -496,6 +522,7 @@ public:
     static scoped_ptr_t<readgen_t> make(
         env_t *env,
         std::string table_name,
+        read_mode_t read_mode,
         const std::string &sindex,
         datum_range_t range = datum_range_t::universe(),
         sorting_t sorting = sorting_t::UNORDERED);
@@ -517,6 +544,7 @@ private:
         const std::string &sindex,
         datum_range_t sindex_range,
         profile_bool_t profile,
+        read_mode_t read_mode,
         sorting_t sorting);
     virtual rget_read_t next_read_impl(
         const boost::optional<key_range_t> &active_range,
@@ -534,6 +562,7 @@ public:
     static scoped_ptr_t<readgen_t> make(
         env_t *env,
         std::string table_name,
+        read_mode_t read_mode,
         const std::string &sindex,
         const datum_t &query_geometry);
 
@@ -561,7 +590,7 @@ public:
 
     virtual changefeed::keyspec_t::range_t get_range_spec(
         std::vector<transform_variant_t>) const {
-        rfail_datum(base_exc_t::GENERIC,
+        rfail_datum(base_exc_t::LOGIC,
                     "%s", "Cannot call `changes` on an intersection read.");
         unreachable();
     }
@@ -571,7 +600,8 @@ private:
         std::string table_name,
         const std::string &sindex,
         const datum_t &query_geometry,
-        profile_bool_t profile);
+        profile_bool_t profile,
+        read_mode_t read_mode);
 
     // Analogue to rget_readgen_t::next_read_impl(), but generates an intersecting
     // geo read.
@@ -606,7 +636,6 @@ class rget_response_reader_t : public reader_t {
 public:
     rget_response_reader_t(
         const counted_t<real_table_t> &table,
-        bool use_outdated,
         scoped_ptr_t<readgen_t> &&readgen);
     virtual void add_transformation(transform_variant_t &&tv);
     virtual bool add_stamp(changefeed_stamp_t stamp);
@@ -630,7 +659,6 @@ protected:
     rget_read_response_t do_read(env_t *env, const read_t &read);
 
     counted_t<real_table_t> table;
-    const bool use_outdated;
     std::vector<transform_variant_t> transforms;
     boost::optional<changefeed_stamp_t> stamp;
 
@@ -650,7 +678,6 @@ class rget_reader_t : public rget_response_reader_t {
 public:
     rget_reader_t(
         const counted_t<real_table_t> &_table,
-        bool use_outdated,
         scoped_ptr_t<readgen_t> &&readgen);
     virtual void accumulate_all(env_t *env, eager_acc_t *acc);
 
@@ -670,7 +697,6 @@ class intersecting_reader_t : public rget_response_reader_t {
 public:
     intersecting_reader_t(
         const counted_t<real_table_t> &_table,
-        bool use_outdated,
         scoped_ptr_t<readgen_t> &&readgen);
     virtual void accumulate_all(env_t *env, eager_acc_t *acc);
 
