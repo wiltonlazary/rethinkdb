@@ -75,6 +75,7 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(query_params_t *query_p
                                             std::move(root_term)));
     scoped_ptr_t<ref_t> ref(new ref_t(this,
                                       query_params->token,
+                                      std::move(query_params->throttler),
                                       entry.get(),
                                       interruptor));
     auto insert_res = queries.insert(std::make_pair(query_params->token,
@@ -96,6 +97,7 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::get(query_params_t *query_para
 
     return scoped_ptr_t<ref_t>(new ref_t(this,
                                          query_params->token,
+                                         std::move(query_params->throttler),
                                          it->second.get(),
                                          interruptor));
 }
@@ -135,12 +137,14 @@ void query_cache_t::terminate_internal(query_cache_t::entry_t *entry) {
 
 query_cache_t::ref_t::ref_t(query_cache_t *_query_cache,
                             int64_t _token,
+                            new_semaphore_acq_t _throttler,
                             query_cache_t::entry_t *_entry,
                             signal_t *interruptor) :
         entry(_entry),
         token(_token),
         trace(maybe_make_profile_trace(entry->profile)),
         query_cache(_query_cache),
+        throttler(std::move(_throttler)),
         drainer_lock(&entry->drainer),
         combined_interruptor(interruptor, &entry->persistent_interruptor),
         mutex_lock(&entry->mutex) {
@@ -200,7 +204,7 @@ void query_cache_t::ref_t::fill_response(response_t *res) {
         }
 
         if (entry->state == entry_t::state_t::STREAM) {
-            serve(&env, res, throttler);
+            serve(&env, res);
         }
 
         if (trace.has()) {
@@ -277,7 +281,7 @@ void query_cache_t::ref_t::serve(env_t *env, response_t *res) {
     feed_type_t cfeed_type = entry->stream->cfeed_type();
     if (cfeed_type != feed_type_t::not_feed) {
         // We don't throttle changefeed queries because they can block forever.
-        throttler->reset();
+        throttler.reset();
     }
 
     batch_type_t batch_type = entry->has_sent_batch

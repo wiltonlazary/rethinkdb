@@ -416,8 +416,8 @@ void query_server_t::connection_loop(tcp_conn_t *conn,
         scoped_ptr_t<ql::query_params_t> query =
             protocol_t::parse_query(conn, &interruptor, query_cache);
         if (query.has()) {
-            auto outer_acq = make_scoped<new_semaphore_acq_t>(&sem, 1);
-            wait_interruptible(outer_acq->acquisition_signal(), &interruptor);
+            query->throttler.init(&sem, 1);
+            wait_interruptible(query->throttler.acquisition_signal(), &interruptor);
             coro_t::spawn_now_dangerously([&]() {
                 // We grab these right away while they're still valid.
                 scoped_ptr_t<new_semaphore_acq_t> acq = std::move(outer_acq);
@@ -537,9 +537,7 @@ void query_server_t::handle(const http_req_t &req,
             try {
                 ticks_t start = get_ticks();
                 // We don't throttle HTTP queries.
-                new_semaphore_acq_t dummy_throttler;
-                handler->run_query(q.get(), &response,
-                                   &dummy_throttler, &true_interruptor);
+                handler->run_query(q.get(), &response, &true_interruptor);
                 ticks_t ticks = get_ticks() - start;
 
                 if (!response.has_profile()) {

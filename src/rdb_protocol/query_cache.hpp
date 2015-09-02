@@ -43,24 +43,26 @@ public:
     class ref_t {
     public:
         ~ref_t();
-        void fill_response(response_t *res, new_semaphore_acq_t *throttler);
+        void fill_response(response_t *res);
     private:
         friend class query_cache_t;
         ref_t(query_cache_t *_query_cache,
               int64_t _token,
+              new_semaphore_acq_t _throttler,
               query_cache_t::entry_t *_entry,
               signal_t *interruptor);
 
         // Run a new query
         void run(env_t *env, response_t *res);
         // Serve a batch from a stream
-        void serve(env_t *env, response_t *res, new_semaphore_acq_t *throttler);
+        void serve(env_t *env, response_t *res);
 
         query_cache_t::entry_t *const entry;
         const int64_t token;
         const scoped_ptr_t<profile::trace_t> trace;
 
         query_cache_t *query_cache;
+        new_semaphore_acq_t throttler;
         auto_drainer_t::lock_t drainer_lock;
         wait_any_t combined_interruptor;
         new_mutex_in_line_t mutex_lock;

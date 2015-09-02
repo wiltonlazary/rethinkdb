@@ -59,6 +59,8 @@ public:
 
     const rapidjson::Value *root_term_json;
     const rapidjson::Value *global_optargs_json;
+
+    new_semaphore_acq_t throttler;
 private:
     bool static_optarg_as_bool(const std::string &key, bool default_value);
 
@@ -109,6 +111,7 @@ public:
     optarg_iterator_t optargs() const;
 
     // This parses the datum each time it is called - keep calls to a minimum
+    // TODO: cache the result
     datum_t datum() const;
 
     const char *optarg_name() const;
