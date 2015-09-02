@@ -336,10 +336,23 @@ void query_cache_t::ref_t::serve(env_t *env, Response *res) {
         res->add_response();
     }
     guarantee(static_cast<size_t>(res->response_size()) == ds.size());
-    // For performance reasons, we parallelize the JSON encoding
-    const int num_threads = get_num_db_threads();
+
+    // For performance reasons, we parallelize the JSON encoding for large batches.
+    // For small batches, the parallelization adds additional latency,
+    //   so we avoid it in that case and just stay on the current thread.
+    // The rationale behind limiting the number of threads to 16 is that if we
+    //   use a lot of threads, the risk increases that one of them will be under
+    //   higher-than-average load, which in turn would lead to a high latency for us.
+    int num_threads = std::min(16, get_num_db_threads());
+    static const size_t PARALLELIZATION_THRESHOLD = 500;
+    if (ds.size() <= PARALLELIZATION_THRESHOLD) {
+        num_threads = 1;
+    }
+    int32_t thread_offset = get_thread_id().threadnum;
     pmap(static_cast<int64_t>(num_threads), [&] (int64_t m) {
-        on_thread_t switcher((threadnum_t(static_cast<int32_t>(m))));
+        int32_t my_thread =
+            (thread_offset + static_cast<int32_t>(m)) % get_num_db_threads();
+        on_thread_t switcher((threadnum_t(my_thread)));
         for (size_t i = m; i < ds.size(); i += num_threads) {
             ds[i].write_to_protobuf(res->mutable_response(i), use_json);
         }
