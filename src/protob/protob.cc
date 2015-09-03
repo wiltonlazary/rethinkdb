@@ -598,10 +598,10 @@ void query_server_t::connection_loop(tcp_conn_t *conn,
                 ql::query_id_t query_id(query_cache);
                 wait_any_t cb_interruptor(coro_drainer_lock.get_drain_signal(),
                                           &interruptor);
-                Response response;
-                bool replied = false;
+            Response response;
+            bool replied = false;
 
-                save_exception(&err, &err_str, &abort, [&]() {
+            save_exception(&err, &err_str, &abort, [&]() {
                     handler->run_query(std::move(query_id), query_pb, &response,
                                        query_cache, acq.get(), &cb_interruptor);
                     if (!ql::is_noreply(query_pb)) {
@@ -610,7 +610,7 @@ void query_server_t::connection_loop(tcp_conn_t *conn,
                         protocol_t::send_response(
                             response, handler, conn, &cb_interruptor);
                         replied = true;
-                        }
+                    }
                 });
                 save_exception(&err, &err_str, &abort, [&]() {
                     if (!replied && !ql::is_noreply(query_pb)) {
@@ -619,9 +619,9 @@ void query_server_t::connection_loop(tcp_conn_t *conn,
                         response.set_token(query_pb->token());
                         new_mutex_acq_t send_lock(&send_mutex, drain_signal);
                         protocol_t::send_response(response, handler, conn, drain_signal);
-                    }
+            }
+        });
                 });
-            });
             guarantee(!outer_acq.has());
         }
     }
@@ -713,14 +713,8 @@ void query_server_t::handle(const http_req_t &req,
             ql::query_id_t query_id(conn->get_query_cache());
             try {
                 ticks_t start = get_ticks();
-                // We don't throttle HTTP queries.
-                new_semaphore_acq_t dummy_throttler;
-                handler->run_query(std::move(query_id),
-                                   query,
-                                   &response,
-                                   conn->get_query_cache(),
-                                   &dummy_throttler,
-                                   &true_interruptor);
+                handler->run_query(std::move(query_id), query, &response,
+                                   conn->get_query_cache(), &true_interruptor);
                 ticks_t ticks = get_ticks() - start;
 
                 if (!response.has_profile()) {
