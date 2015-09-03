@@ -264,7 +264,7 @@ public:
         if (!handler_thread) {
             handler_thread = get_thread_id();
         }
-        assert(handler_thread.get() == get_thread_id());
+        rassert(handler_thread.get() == get_thread_id());
 
         if (query->type() != Query::STOP) {
             cond_t dummy_cond;
