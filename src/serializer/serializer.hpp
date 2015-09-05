@@ -73,10 +73,12 @@ public:
     the free list of unused block IDs. */
 
     /* Returns a block ID such that every existing block has an ID less than
-     * that ID. Note that index_read(max_block_id() - 1) is not guaranteed to be
-     * non-NULL. Note that for k > 0, max_block_id() - k might have never been
+     * that ID. Note that index_read(end_block_id() - 1) is not guaranteed to be
+     * non-NULL. Note that for k > 0, end_block_id() - k might have never been
      * created. */
-    virtual block_id_t max_block_id() = 0;
+    // TODO! Update comment
+    virtual block_id_t end_block_id() = 0;
+    virtual block_id_t end_aux_block_id() = 0;
 
     /* Returns all recencies, for all block ids of the form first + step * k, for k =
        0, 1, 2, 3, ..., in order by block id.  Non-existant block ids have recency

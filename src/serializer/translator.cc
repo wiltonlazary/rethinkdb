@@ -191,21 +191,34 @@ serializer_multiplexer_t::~serializer_multiplexer_t() {
 /* translator_serializer_t */
 
 block_id_t translator_serializer_t::translate_block_id(block_id_t id, int mod_count, int mod_id, config_block_id_t cfgid) {
-    return id * mod_count + mod_id + cfgid.subsequent_ser_id();
+    if (is_aux_block(id)) {
+        return AUX_BLOCK_BIT | translate_block_id(convert_aux_block_id(id), mod_count, mod_id, cfgid);
+    } else {
+        return id * mod_count + mod_id + cfgid.subsequent_ser_id();
+    }
 }
 
 int translator_serializer_t::untranslate_block_id_to_mod_id(block_id_t inner_id, int mod_count, config_block_id_t cfgid) {
-    // We know that inner_id == id * mod_count + mod_id + min.
-    // Thus inner_id - min == id * mod_count + mod_id.
-    // It follows that inner_id - min === mod_id (modulo mod_count).
-    // So (inner_id - min) % mod_count == mod_id (since 0 <= mod_id < mod_count).
-    // (And inner_id - min >= 0, so '%' works as expected.)
-    return (inner_id - cfgid.subsequent_ser_id()) % mod_count;
+    if (is_aux_block(inner_id)) {
+        return untranslate_block_id_to_mod_id(convert_aux_block_id(inner_id), mod_count, cfgid);
+    } else {
+        // We know that inner_id == id * mod_count + mod_id + min.
+        // Thus inner_id - min == id * mod_count + mod_id.
+        // It follows that inner_id - min === mod_id (modulo mod_count).
+        // So (inner_id - min) % mod_count == mod_id (since 0 <= mod_id < mod_count).
+        // (And inner_id - min >= 0, so '%' works as expected.)
+        return (inner_id - cfgid.subsequent_ser_id()) % mod_count;
+    }
 }
 
 block_id_t translator_serializer_t::untranslate_block_id_to_id(block_id_t inner_id, int mod_count, int mod_id, config_block_id_t cfgid) {
-    // (simply dividing by mod_count should be sufficient, but this is cleaner)
-    return (inner_id - cfgid.subsequent_ser_id() - mod_id) / mod_count;
+    if (is_aux_block(inner_id)) {
+        return AUX_BLOCK_BIT | untranslate_block_id_to_id(
+            convert_aux_block_id(inner_id), mod_count, mod_id, cfgid);
+    } else {
+        // (simply dividing by mod_count should be sufficient, but this is cleaner)
+        return (inner_id - cfgid.subsequent_ser_id() - mod_id) / mod_count;
+    }
 }
 
 block_id_t translator_serializer_t::translate_block_id(block_id_t id) const {
@@ -271,15 +284,15 @@ bool translator_serializer_t::is_gc_active() const {
     return inner->is_gc_active();
 }
 
-block_id_t translator_serializer_t::max_block_id() {
-    int64_t x = inner->max_block_id() - cfgid.subsequent_ser_id();
+block_id_t translator_serializer_t::end_block_id() {
+    int64_t x = inner->end_block_id() - cfgid.subsequent_ser_id();
     if (x <= 0) {
         x = 0;
     } else {
         while (x % mod_count != mod_id) x++;
         x /= mod_count;
     }
-    rassert(translate_block_id(x) >= inner->max_block_id());
+    rassert(translate_block_id(x) >= inner->end_block_id());
 
     while (x > 0) {
         --x;
@@ -289,6 +302,28 @@ block_id_t translator_serializer_t::max_block_id() {
         }
     }
     return x;
+}
+
+block_id_t translator_serializer_t::end_aux_block_id() {
+    // TODO! Deduplicate
+    int64_t x = convert_aux_block_id(inner->end_aux_block_id()) - cfgid.subsequent_ser_id();
+    if (x <= 0) {
+        x = 0;
+    } else {
+        while (x % mod_count != mod_id) x++;
+        x /= mod_count;
+    }
+
+    block_id_t id = static_cast<block_id_t>(x) | AUX_BLOCK_BIT;
+    rassert(translate_block_id(id) >= inner->end_aux_block_id());
+    while (id > AUX_BLOCK_BIT) {
+        --id;
+        if (!get_delete_bit(id)) {
+            ++id;
+            break;
+        }
+    }
+    return id;
 }
 
 segmented_vector_t<repli_timestamp_t>

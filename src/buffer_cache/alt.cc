@@ -536,7 +536,10 @@ void buf_lock_t::wait_for_parent(buf_parent_t parent, access_t access) {
     }
 }
 
-void buf_lock_t::help_construct(buf_parent_t parent, alt_create_t) {
+void buf_lock_t::help_construct(
+        buf_parent_t parent,
+        alt_create_t,
+        is_aux_block_t is_aux) {
     cache()->assert_thread();
 
     buf_lock_t::wait_for_parent(parent, access_t::write);
@@ -548,7 +551,8 @@ void buf_lock_t::help_construct(buf_parent_t parent, alt_create_t) {
     ASSERT_FINITE_CORO_WAITING;
 
     current_page_acq_.init(new current_page_acq_t(txn_->page_txn(),
-                                                  alt_create_t::create));
+                                                  alt_create_t::create,
+                                                  is_aux));
 
     if (parent.lock_or_null_ != NULL) {
         create_empty_child_snapshot_attachments(txn_->cache(),
@@ -568,21 +572,23 @@ void buf_lock_t::help_construct(buf_parent_t parent, alt_create_t) {
 }
 
 buf_lock_t::buf_lock_t(buf_parent_t parent,
-                       alt_create_t create)
+                       alt_create_t create,
+                       is_aux_block_t is_aux)
     : txn_(parent.txn()),
       current_page_acq_(),
       snapshot_node_(NULL),
       access_ref_count_(0) {
-    help_construct(parent, create);
+    help_construct(parent, create, is_aux);
 }
 
 buf_lock_t::buf_lock_t(buf_lock_t *parent,
-                       alt_create_t create)
+                       alt_create_t create,
+                       is_aux_block_t is_aux)
     : txn_(parent->txn_),
       current_page_acq_(),
       snapshot_node_(NULL),
       access_ref_count_(0) {
-    help_construct(buf_parent_t(parent), create);
+    help_construct(buf_parent_t(parent), create, is_aux);
 }
 
 buf_lock_t::~buf_lock_t() {

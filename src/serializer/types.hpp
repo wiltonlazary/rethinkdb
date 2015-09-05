@@ -20,6 +20,14 @@ class printf_buffer_t;
 
 typedef uint64_t block_id_t;
 #define NULL_BLOCK_ID (block_id_t(-1))
+#define AUX_BLOCK_BIT ((uint64_t)1 << 63)
+inline bool is_aux_block(const block_id_t id) {
+    return id & AUX_BLOCK_BIT;
+}
+inline block_id_t convert_aux_block_id(const block_id_t id) {
+    rassert(is_aux_block(id));
+    return id & ~AUX_BLOCK_BIT;
+}
 
 #define PR_BLOCK_ID PRIu64
 

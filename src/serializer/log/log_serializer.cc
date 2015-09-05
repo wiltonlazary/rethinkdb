@@ -297,17 +297,22 @@ struct ls_start_existing_fsm_t :
         if (start_existing_state == state_reconstruct) {
             ser->data_block_manager->start_reconstruct();
             start_existing_state = state_reconstruct_ongoing;
-            num_blocks_reconstructed = 0;
+            next_block_to_reconstruct = 0;
             // Fall through into state_reconstruct_ongoing
         }
 
         if (start_existing_state == state_reconstruct_ongoing) {
             int batch = 0;
-            for (; num_blocks_reconstructed < ser->lba_index->end_block_id(); num_blocks_reconstructed++) {
-                flagged_off64_t offset = ser->lba_index->get_block_offset(num_blocks_reconstructed);
+            for (; next_block_to_reconstruct < ser->lba_index->end_aux_block_id(); next_block_to_reconstruct++) {
+                // Once we are done with the normal blocks, switch over to the aux blocks.
+                if (!is_aux_block(next_block_to_reconstruct)
+                    && next_block_to_reconstruct >= ser->lba_index->end_block_id()) {
+                    next_block_to_reconstruct = AUX_BLOCK_BIT;
+                }
+                flagged_off64_t offset = ser->lba_index->get_block_offset(next_block_to_reconstruct);
                 if (offset.has_value()) {
                     ser->data_block_manager->mark_live(offset.get_value(),
-                        ser->lba_index->get_block_size(num_blocks_reconstructed));
+                        ser->lba_index->get_block_size(next_block_to_reconstruct));
                 }
                 ++batch;
                 if (batch >= LBA_RECONSTRUCTION_BATCH_SIZE) {
@@ -384,7 +389,7 @@ struct ls_start_existing_fsm_t :
 
     // When in state_reconstruct_ongoing, we keep track of how many blocks we
     // already have reconstructed.
-    block_id_t num_blocks_reconstructed;
+    block_id_t next_block_to_reconstruct;
 
     bool metablock_found;
     log_serializer_t::metablock_t metablock_buffer;
@@ -750,12 +755,18 @@ bool log_serializer_t::is_gc_active() const {
     return data_block_manager->is_gc_active() || lba_index->is_any_gc_active();
 }
 
-// TODO: Should be called end_block_id I guess (or should subtract 1 frim end_block_id?
-block_id_t log_serializer_t::max_block_id() {
+block_id_t log_serializer_t::end_block_id() {
     assert_thread();
     rassert(state == state_ready);
 
     return lba_index->end_block_id();
+}
+
+block_id_t log_serializer_t::end_aux_block_id() {
+    assert_thread();
+    rassert(state == state_ready);
+
+    return lba_index->end_aux_block_id();
 }
 
 counted_t<ls_block_token_pointee_t> log_serializer_t::index_read(block_id_t block_id) {
@@ -764,7 +775,8 @@ counted_t<ls_block_token_pointee_t> log_serializer_t::index_read(block_id_t bloc
 
     rassert(state == state_ready);
 
-    if (block_id >= lba_index->end_block_id()) {
+    if ((is_aux_block(block_id) && block_id >= lba_index->end_aux_block_id())
+        || (!is_aux_block(block_id) && block_id >= lba_index->end_block_id())) {
         return counted_t<ls_block_token_pointee_t>();
     }
 

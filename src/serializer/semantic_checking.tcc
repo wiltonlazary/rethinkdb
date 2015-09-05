@@ -205,7 +205,11 @@ max_block_size() const { return inner_serializer.max_block_size(); }
 
 template<class inner_serializer_t>
 block_id_t semantic_checking_serializer_t<inner_serializer_t>::
-max_block_id() { return inner_serializer.max_block_id(); }
+end_block_id() { return inner_serializer.end_block_id(); }
+
+template<class inner_serializer_t>
+block_id_t semantic_checking_serializer_t<inner_serializer_t>::
+end_aux_block_id() { return inner_serializer.end_aux_block_id(); }
 
 template<class inner_serializer_t>
 segmented_vector_t<repli_timestamp_t> semantic_checking_serializer_t<inner_serializer_t>::

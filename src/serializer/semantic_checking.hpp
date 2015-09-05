@@ -28,6 +28,7 @@ class semantic_checking_serializer_t :
 {
 private:
     inner_serializer_t inner_serializer;
+    // TODO! Needs to be updated to handle aux block IDs
     two_level_array_t<scs_block_info_t> blocks;
     int last_index_write_started, last_index_write_finished;
     scoped_ptr_t<semantic_checking_file_t> semantic_file;
@@ -69,7 +70,8 @@ public:
 
     bool coop_lock_and_check();
 
-    block_id_t max_block_id();
+    block_id_t end_block_id();
+    block_id_t end_aux_block_id();
 
     segmented_vector_t<repli_timestamp_t> get_all_recencies(block_id_t first,
                                                             block_id_t step);

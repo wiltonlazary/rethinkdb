@@ -131,7 +131,9 @@ public:
     // block with id greater than or equal to this has never been
     // created.  As long as you don't skip ahead past max_block_id,
     // block id contiguity will be ensured.
-    block_id_t max_block_id();
+    // TODO! Update comment
+    block_id_t end_block_id();
+    block_id_t end_aux_block_id();
 
     segmented_vector_t<repli_timestamp_t> get_all_recencies(block_id_t first,
                                                             block_id_t step);
