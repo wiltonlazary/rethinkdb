@@ -182,8 +182,8 @@ private:
         rcheck_toplevel(false, type, strprintf(args));   \
         unreachable();                                   \
     } while (0)
-#define r_sanity_fail() do {                        \
-        r_sanity_check(false);                      \
+#define r_sanity_fail(args...) do {                 \
+        r_sanity_check(false, args...);             \
         unreachable();                              \
     } while (0)
 

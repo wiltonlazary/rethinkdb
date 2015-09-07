@@ -246,8 +246,8 @@ runtime_term_t::runtime_term_t(backtrace_id_t bt)
 
 runtime_term_t::~runtime_term_t() { }
 
-term_t::term_t(const raw_term_t *_src)
-    : runtime_term_t(backtrace_id_t(_src->bt)),
+term_t::term_t(const raw_term_t &_src)
+    : runtime_term_t(_src.backtrace()),
       src(_src) { }
 
 term_t::~term_t() { }
@@ -271,14 +271,13 @@ TLS_with_init(int, DBG_depth, 0);
 #define DEC_DEPTH
 #endif // INSTRUMENT
 
-const raw_term_t *term_t::get_src() const {
+const raw_term_t &term_t::get_src() const {
     return src;
 }
 
 scoped_ptr_t<val_t> runtime_term_t::eval_on_current_stack(
         scope_env_t *env,
         eval_flags_t eval_flags) const {
-    guarantee(env->env->term_storage.has());
     // This is basically a hook for unit tests to change things mid-query
     profile::starter_t starter(strprintf("Evaluating %s.", name()), env->env->trace);
     env->env->do_eval_callback();

@@ -65,7 +65,7 @@ private:
 
 class arg_terms_t : public bt_rcheckable_t {
 public:
-    arg_terms_t(const raw_term_t *_src, argspec_t _argspec,
+    arg_terms_t(const raw_term_t &_src, argspec_t _argspec,
                 std::vector<counted_t<const term_t> > _original_args);
     // Evals the r.args arguments, and returns the expanded argument list.
     argvec_t start_eval(scope_env_t *env, eval_flags_t flags) const;
@@ -74,17 +74,17 @@ public:
         return original_args;
     }
 private:
-    const raw_term_t *src;
+    const raw_term_t src;
     const argspec_t argspec;
     const std::vector<counted_t<const term_t> > original_args;
 
     DISABLE_COPYING(arg_terms_t);
 };
 
-arg_terms_t::arg_terms_t(const raw_term_t *_src, argspec_t _argspec,
+arg_terms_t::arg_terms_t(const raw_term_t &_src, argspec_t _argspec,
                          std::vector<counted_t<const term_t> > _original_args)
-    : bt_rcheckable_t(_src->bt),
-      src(std::move(_src)),
+    : bt_rcheckable_t(_src.backtrace()),
+      src(_src),
       argspec(std::move(_argspec)),
       original_args(std::move(_original_args)) {
     for (auto it = original_args.begin(); it != original_args.end(); ++it) {
@@ -171,31 +171,30 @@ args_t::args_t(const op_term_t *_op_term,
     : op_term(_op_term), argv(std::move(_argv)), arg0(std::move(_arg0)) { }
 
 
-op_term_t::op_term_t(compile_env_t *env, const raw_term_t *term,
+op_term_t::op_term_t(compile_env_t *env, const raw_term_t &term,
                      argspec_t argspec, optargspec_t optargspec)
         : term_t(term) {
     std::vector<counted_t<const term_t> > original_args;
-    original_args.reserve(term->num_args());
-    auto arg_it = term->args();
-    while (const raw_term_t *arg = arg_it.next()) {
-        counted_t<const term_t> t = compile_term(env, arg);
+    original_args.reserve(term.num_args());
+    for (size_t i = 0; i < original_args.size(); ++i) {
+        counted_t<const term_t> t = compile_term(env, term.arg(i));
         original_args.push_back(t);
     }
     arg_terms.init(new arg_terms_t(term, std::move(argspec), std::move(original_args)));
 
-    auto opt_it = term->optargs();
-    while (const raw_term_t *opt = opt_it.next()) {
-        rcheck_src(opt->bt, optargspec.contains(opt_it.optarg_name()),
-                   base_exc_t::LOGIC,
-                   strprintf("Unrecognized optional argument `%s`.",
-                             opt_it.optarg_name().c_str()));
-        counted_t<const term_t> t = compile_term(env, opt);
-        auto res = optargs.insert(std::make_pair(opt_it.optarg_name(), std::move(t)));
-        rcheck_src(opt->bt, res.second,
-                   base_exc_t::LOGIC,
-                   strprintf("Duplicate optional argument: %s",
-                             opt_it.optarg_name().c_str()));
-    }
+    term.each_optarg([&] (raw_term_t o) {
+            rcheck_src(o.backtrace(), optargspec.contains(o.optarg_name()),
+                       base_exc_t::LOGIC,
+                       strprintf("Unrecognized optional argument `%s`.",
+                                 o.optarg_name().c_str()));
+            counted_t<const term_t> t = compile_term(env, o);
+            auto res = optargs.insert(std::make_pair(o.optarg_name(), std::move(t)));
+            rcheck_src(o.backtrace(), res.second,
+                       base_exc_t::LOGIC,
+                       strprintf("Duplicate optional argument: %s",
+                                 o.optarg_name().c_str()));
+            
+        });
 }
 op_term_t::~op_term_t() { }
 
@@ -241,12 +240,10 @@ scoped_ptr_t<val_t> op_term_t::optarg(scope_env_t *env, const std::string &key) 
     return env->env->get_optarg(env->env, key);
 }
 
-counted_t<func_term_t> op_term_t::lazy_literal_optarg(compile_env_t *env, const std::string &key) const {
+scoped_ptr_t<generated_term_t> op_term_t::lazy_literal_optarg(const std::string &key) const {
     std::map<std::string, counted_t<const term_t> >::const_iterator it = optargs.find(key);
     if (it != optargs.end()) {
-        minidriver_t r(env->term_storage, it->second->backtrace());
-        const raw_term_t * func = r.fun(r.expr(it->second->get_src())).raw_term();
-        return make_counted<func_term_t>(env, func);
+        return r.fun(r.expr(it->second->get_src())).release();
     }
     return counted_t<func_term_t>();
 }
@@ -314,7 +311,7 @@ void op_term_t::maybe_grouped_data(scope_env_t *env,
     }
 }
 
-bounded_op_term_t::bounded_op_term_t(compile_env_t *env, const raw_term_t *term,
+bounded_op_term_t::bounded_op_term_t(compile_env_t *env, const raw_term_t &term,
                                      argspec_t argspec, optargspec_t optargspec)
     : op_term_t(env, term, argspec,
                 optargspec.with({"left_bound", "right_bound"})) { }

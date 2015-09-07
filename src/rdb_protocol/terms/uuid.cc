@@ -13,7 +13,7 @@ namespace ql {
 
 class uuid_term_t : public op_term_t {
 public:
-    uuid_term_t(compile_env_t *env, const raw_term_t *term)
+    uuid_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(0)) { }
 
 private:
@@ -29,7 +29,7 @@ private:
 };
 
 counted_t<term_t> make_uuid_term(
-        compile_env_t *env, const raw_term_t *term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<uuid_term_t>(env, term);
 }
 

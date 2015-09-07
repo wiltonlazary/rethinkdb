@@ -22,7 +22,6 @@
 #include "containers/counted.hpp"
 #include "http/http.hpp"
 #include "perfmon/perfmon.hpp"
-#include "rdb_protocol/counted_term.hpp"
 #include "utils.hpp"
 
 class auth_key_t;

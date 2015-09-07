@@ -13,7 +13,7 @@ namespace ql {
 
 class arith_term_t : public op_term_t {
 public:
-    arith_term_t(compile_env_t *env, const raw_term_t *term)
+    arith_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(1, -1)), namestr(0), op(0) {
         switch (static_cast<int>(term->type)) {
         case Term::ADD: namestr = "ADD"; op = &arith_term_t::add; break;
@@ -122,7 +122,7 @@ private:
 
 class mod_term_t : public op_term_t {
 public:
-    mod_term_t(compile_env_t *env, const raw_term_t *term)
+    mod_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(2)) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -139,7 +139,7 @@ private:
 
 class floor_term_t : public op_term_t {
 public:
-    floor_term_t(compile_env_t *env, const raw_term_t *term)
+    floor_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(1)) { }
 
 private:
@@ -153,7 +153,7 @@ private:
 
 class ceil_term_t : public op_term_t {
 public:
-    ceil_term_t(compile_env_t *env, const raw_term_t *term)
+    ceil_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(1)) { }
 
 private:
@@ -167,7 +167,7 @@ private:
 
 class round_term_t : public op_term_t {
 public:
-    round_term_t(compile_env_t *env, const raw_term_t *term)
+    round_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(1)) { }
 
 private:
@@ -180,27 +180,27 @@ private:
 };
 
 counted_t<term_t> make_arith_term(
-        compile_env_t *env, const raw_term_t *term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<arith_term_t>(env, term);
 }
 
 counted_t<term_t> make_mod_term(
-        compile_env_t *env, const raw_term_t *term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<mod_term_t>(env, term);
 }
 
 counted_t<term_t> make_floor_term(
-            compile_env_t *env, const raw_term_t *term) {
+            compile_env_t *env, const raw_term_t &term) {
     return make_counted<floor_term_t>(env, term);
 }
 
 counted_t<term_t> make_ceil_term(
-            compile_env_t *env, const raw_term_t *term) {
+            compile_env_t *env, const raw_term_t &term) {
     return make_counted<ceil_term_t>(env, term);
 }
 
 counted_t<term_t> make_round_term(
-            compile_env_t *env, const raw_term_t *term) {
+            compile_env_t *env, const raw_term_t &term) {
     return make_counted<round_term_t>(env, term);
 }
 

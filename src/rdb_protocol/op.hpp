@@ -107,7 +107,7 @@ void accumulate_all_captures(
 // access their arguments.
 class op_term_t : public term_t {
 protected:
-    op_term_t(compile_env_t *env, const raw_term_t *term,
+    op_term_t(compile_env_t *env, const raw_term_t &term,
               argspec_t argspec, optargspec_t optargspec = optargspec_t({}));
     virtual ~op_term_t();
 
@@ -165,7 +165,7 @@ private:
 
 class bounded_op_term_t : public op_term_t {
 public:
-    bounded_op_term_t(compile_env_t *env, const raw_term_t *term,
+    bounded_op_term_t(compile_env_t *env, const raw_term_t &term,
                       argspec_t argspec, optargspec_t optargspec = optargspec_t({}));
 
     virtual ~bounded_op_term_t() { }

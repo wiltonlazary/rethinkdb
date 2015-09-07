@@ -13,11 +13,11 @@ class generic_term_walker_t {
 public:
     virtual ~generic_term_walker_t() {}
 
-    virtual Accumulator walk(const ql::raw_term_t *t) {
+    virtual Accumulator walk(const ql::raw_term_t &t) {
         return visit_generic(t);
     }
 protected:
-    virtual Accumulator visit_generic(const ql::raw_term_t *t) = 0;
+    virtual Accumulator visit_generic(const ql::raw_term_t &t) = 0;
 };
 
 } // namespace pprint

@@ -196,11 +196,11 @@ std::string create_sindex(const std::vector<scoped_ptr_t<store_t> > *stores) {
     const ql::sym_t arg(1);
 
     counted_t<ql::term_storage_t> term_storage = make_counted<ql::term_storage_t>();
-    ql::minidriver_t r(term_storage.get(), ql::backtrace_id_t::empty());
-    const ql::raw_term_t *mapping = r.var(arg)["sid"].raw_term();
+    ql::minidriver_t r(ql::backtrace_id_t::empty());
+    scoped_ptr_t<ql::generated_term_t> mapping = r.var(arg)["sid"].release();
 
     sindex_config_t sindex(
-        ql::map_wire_func_t(mapping, make_vector(arg), ql::backtrace_id_t::empty()),
+        ql::map_wire_func_t(std::move(mapping), make_vector(arg), ql::backtrace_id_t::empty()),
         reql_version_t::LATEST,
         sindex_multi_bool_t::SINGLE,
         sindex_geo_bool_t::REGULAR);

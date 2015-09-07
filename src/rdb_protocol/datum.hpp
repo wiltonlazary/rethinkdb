@@ -476,11 +476,6 @@ private:
     key_range_t::bound_t left_bound_type, right_bound_type;
 };
 
-datum_t to_datum(const Datum *d, const configured_limits_t &, reql_version_t);
-datum_t to_datum(
-    const rapidjson::Value &json,
-    const configured_limits_t &,
-    reql_version_t);
 // DEPRECATED: Used in the r.json term for pre 2.1 backwards compatibility
 datum_t to_datum(cJSON *json, const configured_limits_t &, reql_version_t);
 

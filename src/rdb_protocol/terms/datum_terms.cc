@@ -10,7 +10,7 @@ namespace ql {
 
 class datum_term_t : public term_t {
 public:
-    explicit datum_term_t(const raw_term_t *term)
+    explicit datum_term_t(const raw_term_t &term)
             : term_t(term) {
         r_sanity_check(term->datum().has());
     }
@@ -25,7 +25,7 @@ private:
 
 class constant_term_t : public op_term_t {
 public:
-    constant_term_t(compile_env_t *env, const raw_term_t *term,
+    constant_term_t(compile_env_t *env, const raw_term_t &term,
                     double constant, const char *name)
         : op_term_t(env, term, argspec_t(0)), _constant(constant), _name(name) { }
 private:
@@ -39,7 +39,7 @@ private:
 
 class make_array_term_t : public op_term_t {
 public:
-    make_array_term_t(compile_env_t *env, const raw_term_t *term)
+    make_array_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(0, -1)) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -59,22 +59,21 @@ private:
 
 class make_obj_term_t : public term_t {
 public:
-    make_obj_term_t(compile_env_t *env, const raw_term_t *term)
+    make_obj_term_t(compile_env_t *env, const raw_term_t &term)
         : term_t(term) {
         // An F.Y.I. for driver developers.
         rcheck(term->num_args() == 0,
                base_exc_t::LOGIC,
                "MAKE_OBJ term must not have any args.");
 
-        auto optarg_it = term->optargs();
-        while (const raw_term_t *o = optarg_it.next()) {
-            counted_t<const term_t> t = compile_term(env, o);
-            auto res = optargs.insert(std::make_pair(optarg_it.optarg_name(),
-                                                     std::move(t)));
-            rcheck(res.second, base_exc_t::LOGIC,
-                   strprintf("Duplicate object key: %s",
-                             optarg_it.optarg_name().c_str()));
-        }
+        raw_term.each_optarg([&] (raw_term_t optarg) {
+                counted_t<const term_t> t = compile_term(env, optarg);
+                auto res = optargs.insert(std::make_pair(optarg.optarg_name(),
+                                                         std::move(t)));
+                rcheck(res.second, base_exc_t::LOGIC,
+                       strprintf("Duplicate object key: %s",
+                                 optarg.optarg_name().c_str()));
+            });
     }
 
     scoped_ptr_t<val_t> term_eval(scope_env_t *env, eval_flags_t flags) const {
@@ -84,10 +83,11 @@ public:
         {
             profile::sampler_t sampler("Evaluating elements in make_obj.", env->env->trace);
             for (auto it = optargs.begin(); it != optargs.end(); ++it) {
-                bool dup = acc.add(datum_string_t(it->first),
-                                   it->second->eval(env, new_flags)->as_datum());
+                bool dup = acc.add(datum_string_t(it->raw_term().optarg_name()),
+                                   it->eval(env, new_flags)->as_datum());
                 rcheck(!dup, base_exc_t::LOGIC,
-                       strprintf("Duplicate object key: %s.", it->first.c_str()));
+                       strprintf("Duplicate object key: %s.",
+                                 it->raw_term().optarg_name().c_str()));
                 sampler.new_sample();
             }
         }
@@ -105,13 +105,13 @@ public:
     const char *name() const { return "make_obj"; }
 
 private:
-    std::map<std::string, counted_t<const term_t> > optargs;
+    std::vector<counted_t<const term_t> > optargs;
     DISABLE_COPYING(make_obj_term_t);
 };
 
 class binary_term_t : public op_term_t {
 public:
-    binary_term_t(compile_env_t *env, const raw_term_t *term)
+    binary_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(1, 1)) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -129,24 +129,24 @@ private:
 };
 
 counted_t<term_t> make_datum_term(
-        const raw_term_t *term) {
+        const raw_term_t &term) {
     return make_counted<datum_term_t>(term);
 }
 counted_t<term_t> make_constant_term(
-        compile_env_t *env, const raw_term_t *term,
+        compile_env_t *env, const raw_term_t &term,
         double constant, const char *name) {
     return make_counted<constant_term_t>(env, term, constant, name);
 }
 counted_t<term_t> make_make_array_term(
-        compile_env_t *env, const raw_term_t *term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<make_array_term_t>(env, term);
 }
 counted_t<term_t> make_make_obj_term(
-        compile_env_t *env, const raw_term_t *term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<make_obj_term_t>(env, term);
 }
 counted_t<term_t> make_binary_term(
-        compile_env_t *env, const raw_term_t *term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<binary_term_t>(env, term);
 }
 

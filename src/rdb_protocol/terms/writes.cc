@@ -81,7 +81,7 @@ return_changes_t parse_return_changes(
 
 class insert_term_t : public op_term_t {
 public:
-    insert_term_t(compile_env_t *env, const raw_term_t *term)
+    insert_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(2),
                     optargspec_t({"conflict", "durability", "return_vals",
                                   "return_changes"})) { }
@@ -226,7 +226,7 @@ private:
 
 class replace_term_t : public op_term_t {
 public:
-    replace_term_t(compile_env_t *env, const raw_term_t *term)
+    replace_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(2),
                     optargspec_t({"non_atomic", "durability",
                                   "return_vals", "return_changes"})) { }
@@ -271,15 +271,12 @@ private:
 
             if (f->is_deterministic()) {
                 // Attach a transformation to `ds` to pull out the primary key.
-                minidriver_t r(env->env->term_storage.get(), backtrace());
+                minidriver_t r(backtrace());
                 auto x = pb::dummy_var_t::REPLACE_HELPER_ROW;
-                const raw_term_t *map = r.fun(x, r.expr(x)[tbl->get_pkey()]).raw_term();
-                compile_env_t compile_env((var_visibility_t()), env->env->term_storage.get());
-                func_term_t func_term(&compile_env, map);
-                var_scope_t var_scope;
-                counted_t<const func_t> func =
-                    func_term.eval_to_func(var_scope, env->env->term_storage);
-                ds->add_transformation(map_wire_func_t(func), backtrace());
+                ds->add_transformation(
+                    map_wire_func_t(var_scope_t(),
+                                    r.fun(x, r.expr(x)[tbl->get_pkey()]).release()),
+                    backtrace());
             }
 
             batchspec_t batchspec = batchspec_t::user(batch_type_t::TERMINAL, env->env);
@@ -318,7 +315,7 @@ private:
 
 class foreach_term_t : public op_term_t {
 public:
-    foreach_term_t(compile_env_t *env, const raw_term_t *term)
+    foreach_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(2)) { }
 
 private:
@@ -366,17 +363,17 @@ private:
 };
 
 counted_t<term_t> make_insert_term(
-        compile_env_t *env, const raw_term_t *term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<insert_term_t>(env, term);
 }
 
 counted_t<term_t> make_replace_term(
-        compile_env_t *env, const raw_term_t *term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<replace_term_t>(env, term);
 }
 
 counted_t<term_t> make_foreach_term(
-        compile_env_t *env, const raw_term_t *term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<foreach_term_t>(env, term);
 }
 

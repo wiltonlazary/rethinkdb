@@ -23,14 +23,14 @@ class js_pretty_printer_t
 public:
     js_pretty_printer_t() : depth(0), prepend_ok(true), in_r_expr(false) {}
 protected:
-    counted_t<const document_t> visit_generic(const ql::raw_term_t *t) override {
+    counted_t<const document_t> visit_generic(const ql::raw_term_t &t) override {
         bool old_r_expr = in_r_expr;
         ++depth;
         if (depth > MAX_DEPTH) return dotdotdot; // Crude attempt to avoid blowing stack
         counted_t<const document_t> doc;
-        switch (static_cast<int>(t->type)) {
+        switch (static_cast<int>(t.type())) {
         case Term::DATUM:
-            doc = to_js_datum(t->datum());
+            doc = to_js_datum(t.datum());
             if (!in_r_expr) {
                 doc = prepend_r_expr(doc);
             }
@@ -38,7 +38,7 @@ protected:
         case Term::FUNCALL:
             // Hack here: JS users expect .do in suffix position if
             // there's only one argument.
-            if (t->num_args() == 2) {
+            if (t.num_args() == 2) {
                 doc = string_dots_together(t);
             } else {
                 doc = toplevel_funcall(t);
@@ -64,9 +64,9 @@ protected:
             break;
         case Term::VAR: {
             guarantee(t->num_args() == 1);
-            const ql::raw_term_t *arg0 = t->args().next();
-            guarantee(arg0->type == Term::DATUM);
-            doc = var_name(arg0->datum());
+            ql::raw_term_t arg0 = t.arg(0);
+            guarantee(arg0.type() == Term::DATUM);
+            doc = var_name(arg0.datum());
         } break;
         case Term::IMPLICIT_VAR:
             doc = prepend_r_dot(row);
@@ -87,8 +87,8 @@ protected:
     }
 
 private:
-    std::string to_js_name(const ql::raw_term_t *t) {
-        return to_js_name(Term::TermType_Name(t->type));
+    std::string to_js_name(const ql::raw_term_t &t) {
+        return to_js_name(Term::TermType_Name(t.type()));
     }
 
     std::string to_js_name(const std::string &s) {
@@ -108,48 +108,45 @@ private:
         return result;
     }
 
-    counted_t<const document_t> to_js_array(const ql::raw_term_t *t) {
-        guarantee(t->num_optargs() == 0);
+    counted_t<const document_t> to_js_array(const ql::raw_term_t &t) {
+        guarantee(t.num_optargs() == 0);
         bool old_r_expr = in_r_expr;
         in_r_expr = true;
         std::vector<counted_t<const document_t> > term;
-        auto arg_it = t->args();
-        while (const ql::raw_term_t *item = arg_it.next()) {
+        for (size_t i = 0; i < t.num_args(); ++i) {
             if (!term.empty()) { term.push_back(comma_linebreak); }
-            term.push_back(visit_generic(item));
+            term.push_back(visit_generic(t.arg(i)));
         }
         in_r_expr = old_r_expr;
         return make_c(lbrack, make_nest(make_concat(std::move(term))), rbrack);
     }
 
-    counted_t<const document_t> to_js_object(const ql::raw_term_t *t) {
-        guarantee(t->num_args() == 0);
+    counted_t<const document_t> to_js_object(const ql::raw_term_t &t) {
+        guarantee(t.num_args() == 0);
         return in_r_expr ? to_js_natural_object(t) : to_js_wrapped_object(t);
     }
 
-    counted_t<const document_t> to_js_natural_object(const ql::raw_term_t *t) {
+    counted_t<const document_t> to_js_natural_object(const ql::raw_term_t &t) {
         std::vector<counted_t<const document_t> > term;
-        auto optarg_it = t->optargs();
-        while (const ql::raw_term_t *item = optarg_it.next()) {
-            if (!term.empty()) { term.push_back(comma_linebreak); }
-            term.push_back(make_nc(
-                make_text(strprintf("\"%s\":", optarg_it.optarg_name().c_str())),
-                cond_linebreak,
-                visit_generic(item)));
-        }
+        t.each_optarg([&] (raw_term_t item) {
+                if (!term.empty()) { term.push_back(comma_linebreak); }
+                term.push_back(make_nc(
+                    make_text(strprintf("\"%s\":", item.optarg_name().c_str())),
+                    cond_linebreak,
+                    visit_generic(item)));
+            });
         return make_c(lbrace, make_nest(make_concat(std::move(term))), rbrace);
     }
 
-    counted_t<const document_t> to_js_wrapped_object(const ql::raw_term_t *t) {
+    counted_t<const document_t> to_js_wrapped_object(const ql::raw_term_t &t) {
         std::vector<counted_t<const document_t> > term;
-        auto optarg_it = t->optargs();
-        while (const ql::raw_term_t *item = optarg_it.next()) {
-            if (!term.empty()) { term.push_back(comma_linebreak); }
-            term.push_back(make_text(
-                strprintf("\"%s\"", optarg_it.optarg_name().c_str())));
-            term.push_back(comma_linebreak);
-            term.push_back(visit_generic(item));
-        }
+        t.each_optarg([&] (raw_term_t item) {
+                if (!term.empty()) { term.push_back(comma_linebreak); }
+                term.push_back(make_text(
+                    strprintf("\"%s\"", item.optarg_name().c_str())));
+                term.push_back(comma_linebreak);
+                term.push_back(visit_generic(item));
+            });
         return prepend_r_obj(make_nest(make_concat(std::move(term))));
     }
 
@@ -206,126 +203,113 @@ private:
         }
     }
 
-    counted_t<const document_t> render_optargs(const ql::raw_term_t *t) {
+    counted_t<const document_t> render_optargs(const ql::raw_term_t &t) {
         std::vector<counted_t<const document_t> > optargs;
-        auto optarg_it = t->optargs();
-        while (const ql::raw_term_t *item = optarg_it.next()) {
-            if (!optargs.empty()) { optargs.push_back(comma_linebreak); }
-            counted_t<const document_t> inner = make_c(make_text(
-                    strprintf("\"%s\":", to_js_name(optarg_it.optarg_name()).c_str())),
-                cond_linebreak,
-                visit_generic(item));
-            optargs.push_back(make_nest(std::move(inner)));
-        }
+        t.each_optarg([&] (raw_term_t item) {
+                if (!optargs.empty()) { optargs.push_back(comma_linebreak); }
+                counted_t<const document_t> inner = make_c(make_text(
+                        strprintf("\"%s\":", to_js_name(item.optarg_name()).c_str())),
+                    cond_linebreak,
+                    visit_generic(item));
+                optargs.push_back(make_nest(std::move(inner)));
+            });
         return make_c(lbrace, make_nest(make_concat(std::move(optargs))), rbrace);
     }
 
-    void visit_stringing(const ql::raw_term_t *var,
-                         std::vector<counted_t<const document_t> > *stack,
-                         const ql::raw_term_t **next_out,
-                         bool *last_is_dot,
-                         bool *last_should_r_wrap) {
+    boost::optional<ql::raw_term_t>
+        visit_stringing(const ql::raw_term_t &var,
+                        std::vector<counted_t<const document_t> > *stack,
+                        bool *last_is_dot,
+                        bool *last_should_r_wrap) {
         bool insert_trailing_comma = false;
         bool old_r_expr = in_r_expr;
-        switch (static_cast<int>(var->type)) {
+        switch (static_cast<int>(var.type())) {
         case Term::BRACKET: {
-            guarantee(var->num_args() == 2);
+            guarantee(var.num_args() == 2);
             stack->push_back(rparen);
             in_r_expr = true;
-            if (var->num_optargs() > 0) {
+            if (var.num_optargs() > 0) {
                 stack->push_back(render_optargs(var));
                 stack->push_back(cond_linebreak);
                 stack->push_back(comma);
             }
-            auto arg_it = var->args();
-            *next_out = arg_it.next();
-            stack->push_back(visit_generic(arg_it.next()));
+            stack->push_back(visit_generic(var.arg(1)));
             in_r_expr = old_r_expr;
             stack->push_back(lparen);
             *last_is_dot = false;
             *last_should_r_wrap = false;
-            return;
+            return boost::make_optional(var.arg(0));
         }
         case Term::FUNCALL: {
-            guarantee(var->num_args() == 2);
-            guarantee(var->num_optargs() == 0);
+            guarantee(var.num_args() == 2);
+            guarantee(var.num_optargs() == 0);
             stack->push_back(rparen);
             in_r_expr = true;
-            auto arg_it = var->args();
-            stack->push_back(make_nest(visit_generic(arg_it.next())));
+            stack->push_back(make_nest(visit_generic(var.arg(0))));
             in_r_expr = old_r_expr;
             stack->push_back(lparen);
             stack->push_back(do_st);
             stack->push_back(dot_linebreak);
-            *next_out = arg_it.next();
             *last_is_dot = true;
             *last_should_r_wrap = true;
-            return;
+            return boost::optional(var.arg(1));
         }
         case Term::DATUM:
             in_r_expr = true;
-            stack->push_back(prepend_r_expr(to_js_datum(var->datum())));
+            stack->push_back(prepend_r_expr(to_js_datum(var.datum())));
             in_r_expr = old_r_expr;
-            *next_out = nullptr;
             *last_is_dot = false;
             *last_should_r_wrap = false;
-            return;
+            return boost::optional<ql::raw_term_t>();
         case Term::MAKE_OBJ:
             in_r_expr = true;
             stack->push_back(to_js_wrapped_object(var));
             in_r_expr = old_r_expr;
-            *next_out = nullptr;
             *last_is_dot = false;
             *last_should_r_wrap = false;
-            return;
+            return boost::optional<ql::raw_term_t>();
         case Term::VAR: {
-            guarantee(var->num_args() == 1);
-            const ql::raw_term_t *arg = var->args().next();
-            guarantee(arg->type == Term::DATUM);
-            stack->push_back(var_name(arg->datum()));
-            *next_out = nullptr;
+            guarantee(var.num_args() == 1);
+            ql::raw_term_t arg = var.arg(0);
+            guarantee(arg.type() == Term::DATUM);
+            stack->push_back(var_name(arg.datum()));
             *last_is_dot = false;
             *last_should_r_wrap = false;
-            return;
+            return boost::optional<ql::raw_term_t>();
         }
         case Term::IMPLICIT_VAR:
             stack->push_back(row);
-            *next_out = nullptr;
             *last_is_dot = false;
             *last_should_r_wrap = true;
-            return;
+            return boost::optional<ql::raw_term_t>();
         default:
             stack->push_back(rparen);
             in_r_expr = true;
-            if (var->num_optargs() > 0) {
+            if (var.num_optargs() > 0) {
                 stack->push_back(render_optargs(var));
                 insert_trailing_comma = true;
             }
-            switch (var->num_args()) {
+            switch (var.num_args()) {
             case 0:
                 in_r_expr = old_r_expr;
                 stack->push_back(lparen);
                 stack->push_back(make_text(to_js_name(var)));
-                *next_out = nullptr;
-                *last_is_dot = false;
                 *last_should_r_wrap = should_use_rdot(var);
-                return;
+                *last_is_dot = false;
+                return boost::optional<ql::raw_term_t>();
             case 1:
                 in_r_expr = old_r_expr;
                 stack->push_back(lparen);
                 stack->push_back(make_text(to_js_name(var)));
                 stack->push_back(dot_linebreak);
-                *next_out = var->args().next();
                 *last_is_dot = true;
                 *last_should_r_wrap = should_use_rdot(var);
-                return;
+                return boost::make_optional(var.arg(0));
             default:
-                auto arg_it = var->args();
-                *next_out = arg_it.next();
                 std::vector<counted_t<const document_t> > args;
-                while (const ql::raw_term_t *item = arg_it.next()) {
+                for (size_t i = 1; i < args.size(); ++i) {
                     if (!args.empty()) { args.push_back(comma_linebreak); }
-                    args.push_back(visit_generic(item));
+                    args.push_back(visit_generic(var.arg(i)));
                 }
                 if (insert_trailing_comma) { args.push_back(comma_linebreak); }
                 stack->push_back(make_nest(reverse(std::move(args), false)));
@@ -336,34 +320,34 @@ private:
                 stack->push_back(dot_linebreak);
                 *last_is_dot = true;
                 *last_should_r_wrap = should_use_rdot(var);
-                return;
+                return boost::make_optional(var.arg(0));
             }
         }
     }
 
-    counted_t<const document_t> string_dots_together(const ql::raw_term_t *t) {
+    counted_t<const document_t> string_dots_together(const ql::raw_term_t &t) {
         std::vector<counted_t<const document_t> > stack;
-        const ql::raw_term_t *var = t;
         bool last_is_dot = false;
         bool last_should_r_wrap = false;
-        while (var != nullptr && should_continue_string(var)) {
-            visit_stringing(var, &stack, &var, &last_is_dot, &last_should_r_wrap);
+        boost::optional<ql::raw_term_t> var(t);
+        while (var && should_continue_string(*var)) {
+            var = visit_stringing(*var, &stack, &last_is_dot, &last_should_r_wrap);
         }
-        guarantee(var != t);
-        if (var == nullptr) {
+
+        if (!var) {
             if (last_should_r_wrap) {
                 return prepend_r_dot(reverse(std::move(stack), false));
             } else {
                 return reverse(std::move(stack), false);
             }
-        } else if (should_use_rdot(var)) {
+        } else if (should_use_rdot(*var)) {
             bool old = prepend_ok;
             prepend_ok = false;
-            counted_t<const document_t> subdoc = visit_generic(var);
+            counted_t<const document_t> subdoc = visit_generic(*var);
             prepend_ok = old;
             return prepend_r_dot(make_c(subdoc, reverse(std::move(stack), false)));
         } else {
-            return make_nc(visit_generic(var), reverse(std::move(stack), last_is_dot));
+            return make_nc(visit_generic(*var), reverse(std::move(stack), last_is_dot));
         }
     }
 
@@ -377,20 +361,19 @@ private:
         return make_concat(stack.rbegin(), stack.rend());
     }
 
-    counted_t<const document_t> toplevel_funcall(const ql::raw_term_t *t) {
-        guarantee(t->num_args() >= 1);
-        guarantee(t->num_optargs() == 0);
+    counted_t<const document_t> toplevel_funcall(const ql::raw_term_t &t) {
+        guarantee(t.num_args() >= 1);
+        guarantee(t.num_optargs() == 0);
         std::vector<counted_t<const document_t> > term;
         term.push_back(do_st);
         term.push_back(lparen);
         bool old_r_expr = in_r_expr;
         in_r_expr = true;
-        auto arg_it = t->args();
-        const ql::raw_term_t *arg0 = arg_it.next();
+        ql::raw_term_t arg0 = t.arg(0);
         std::vector<counted_t<const document_t> > args;
-        while (const ql::raw_term_t *item = arg_it.next()) {
+        for (size_t i = 1; i < t.num_args(); ++i) {
             if (!args.empty()) { args.push_back(comma_linebreak); }
-            args.push_back(visit_generic(item));
+            args.push_back(visit_generic(t.arg(i)));
         }
         if (!args.empty()) { args.push_back(comma_linebreak); }
         in_r_expr = old_r_expr;
@@ -400,18 +383,17 @@ private:
         return prepend_r_dot(make_concat(std::move(term)));
     }
 
-    counted_t<const document_t> standard_funcall(const ql::raw_term_t *t) {
+    counted_t<const document_t> standard_funcall(const ql::raw_term_t &t) {
         std::vector<counted_t<const document_t> > term;
         term.push_back(term_name(t));
         bool old_r_expr = in_r_expr;
         in_r_expr = true;
         std::vector<counted_t<const document_t> > args;
-        auto arg_it = t->args();
-        while (const ql::raw_term_t *item = arg_it.next()) {
+        for (size_t i = 0; i < t.num_args(); ++i) {
             if (!args.empty()) { args.push_back(comma_linebreak); }
-            args.push_back(visit_generic(item));
+            args.push_back(visit_generic(t.arg(i)));
         }
-        if (t->num_optargs() > 0) {
+        if (t.num_optargs() > 0) {
             if (!args.empty()) { args.push_back(comma_linebreak); }
             args.push_back(render_optargs(t));
         }
@@ -424,8 +406,8 @@ private:
         }
     }
 
-    counted_t<const document_t> standard_literal(const ql::raw_term_t *t) {
-        guarantee(t->num_args() == 0);
+    counted_t<const document_t> standard_literal(const ql::raw_term_t &t) {
+        guarantee(t.num_args() == 0);
         return prepend_r_dot(term_name(t));
     }
 
@@ -462,8 +444,8 @@ private:
         return make_concat({std::forward<Ts>(docs)...});
     }
 
-    counted_t<const document_t> term_name(const ql::raw_term_t *t) {
-        switch (static_cast<int>(t->type)) {
+    counted_t<const document_t> term_name(const ql::raw_term_t &t) {
+        switch (static_cast<int>(t.type())) {
         case Term::JAVASCRIPT:
             return js;
         default:
@@ -471,8 +453,8 @@ private:
         }
     }
 
-    bool should_use_rdot(const ql::raw_term_t *t) {
-        switch (static_cast<int>(t->type)) {
+    bool should_use_rdot(const ql::raw_term_t &t) {
+        switch (static_cast<int>(t.type())) {
         case Term::VAR:
         case Term::DATUM:
             return false;
@@ -481,8 +463,8 @@ private:
         }
     }
 
-    bool should_continue_string(const ql::raw_term_t *t) {
-        switch (static_cast<int>(t->type)) {
+    bool should_continue_string(const ql::raw_term_t &t) {
+        switch (static_cast<int>(t.type())) {
         case Term::ERROR:
         case Term::UUID:
         case Term::HTTP:
@@ -557,10 +539,10 @@ private:
         }
     }
 
-    bool should_use_parens(const ql::raw_term_t *t) {
+    bool should_use_parens(const ql::raw_term_t &t) {
         // handle malformed protobufs
-        if (t->num_args() > 0) return true;
-        switch (static_cast<int>(t->type)) {
+        if (t.num_args() > 0) return true;
+        switch (static_cast<int>(t.type())) {
         case Term::MINVAL:
         case Term::MAXVAL:
         case Term::IMPLICIT_VAR:
@@ -593,26 +575,25 @@ private:
         return make_text("var" + std::to_string(lrint(d.as_num())));
     }
 
-    counted_t<const document_t> to_js_func(const ql::raw_term_t *t) {
-        guarantee(t->type == Term::FUNC);
-        guarantee(t->num_args() == 2);
+    counted_t<const document_t> to_js_func(const ql::raw_term_t &t) {
+        guarantee(t.type() == Term::FUNC);
+        guarantee(t.num_args() == 2);
         counted_t<const document_t> arglist;
-        auto arg_it = t->args();
-        const ql::raw_term_t *arg0 = arg_it.next();
-        if (arg0->type == Term::MAKE_ARRAY) {
+        ql::raw_term_t arg0 = t.arg(0);
+        if (arg0.type() == Term::MAKE_ARRAY) {
             std::vector<counted_t<const document_t> > args;
-            auto arg_arg_it = arg0->args();
-            while (const ql::raw_term_t *item = arg_arg_it.next()) {
+            for (size_t i = 0; i < arg0.num_args(); ++i) {
+                raw_term_t item = arg0.arg(i);
                 if (!args.empty()) { args.push_back(comma_linebreak); }
-                guarantee(item->type == Term::DATUM);
-                ql::datum_t d = item->datum();
+                guarantee(item.type() == Term::DATUM);
+                ql::datum_t d = item.datum();
                 guarantee(d.get_type() == ql::datum_t::type_t::R_NUM);
                 args.push_back(var_name(d));
             }
             arglist = make_c(lparen, make_nest(make_concat(std::move(args))), rparen);
-        } else if (arg0->type == Term::DATUM &&
-                   arg0->datum().get_type() == ql::datum_t::type_t::R_ARRAY) {
-            ql::datum_t d = arg0->datum();
+        } else if (arg0.type() == Term::DATUM &&
+                   arg0.datum().get_type() == ql::datum_t::type_t::R_ARRAY) {
+            ql::datum_t d = arg0.datum();
             std::vector<counted_t<const document_t> > args;
             for (size_t i = 0; i < d.arr_size(); ++i) {
                 if (!args.empty()) { args.push_back(comma_linebreak); }
@@ -685,7 +666,7 @@ counted_t<const document_t> js_pretty_printer_t::base64_str = make_text("'base64
 counted_t<const document_t> js_pretty_printer_t::comma_linebreak =
     make_concat({js_pretty_printer_t::comma, cond_linebreak});
 
-counted_t<const document_t> render_as_javascript(const ql::raw_term_t *t) {
+counted_t<const document_t> render_as_javascript(const ql::raw_term_t &t) {
     return js_pretty_printer_t().walk(t);
 }
 

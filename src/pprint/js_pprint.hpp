@@ -9,7 +9,7 @@ class raw_term_t;
 }
 
 namespace pprint {
-counted_t<const document_t> render_as_javascript(const ql::raw_term_t *t);
+counted_t<const document_t> render_as_javascript(const ql::raw_term_t &t);
 }
 
 #endif // PPRINT_JS_PPRINT_HPP_

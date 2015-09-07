@@ -162,30 +162,37 @@ bool query_params_t::static_optarg_as_bool(const std::string &key, bool default_
     return it->value[1].GetBool();
 }
 
-arg_iterator_t::arg_iterator_t(rapidjson::Value *_args) :
-    args(_args), index(0) { }
+arg_iterator_t::arg_iterator_t(raw_term_t *_parent) :
+    parent(_parent), index(0) { }
 
 raw_term_t arg_iterator_t::next() {
-    r_sanity_check(index < args->Size());
+    r_sanity_check(has_next());
     return (*args)[index++];
 }
 
-bool arg_iterator_t::end() {
-    return index >= args->Size();
+bool arg_iterator_t::has_next() {
+    return index < parent->num_args();
 }
 
 optarg_iterator_t::optarg_iterator_t(rapidjson::Value *_optargs) :
     optargs(_optargs), it(optargs->MemberBegin()) { }
 
 raw_term_t optarg_iterator_t::next() {
-    r_sanity_check(it != optargs->MemberEnd());
+    r_sanity_check(has_next());
     raw_term_t res(&it->value, &it->name);
     ++it;
     return res;
 }
 
-bool optarg_iterator_t::end() {
-    return it == optargs->MemberEnd();
+bool optarg_iterator_t::has_next() {
+    switch (source_type) {
+    case source_type_t::REAL:
+        return real.it != real.source->MemberEnd();
+    case source_type_t::GENERATED:
+        return generated.it != generated.source->optargs.end();
+    default:
+        unreachable();
+    }
 }
 
 raw_term_t::raw_term_t(rapidjson::Value *_src,

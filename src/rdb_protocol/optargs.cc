@@ -11,20 +11,13 @@ namespace ql {
 
 global_optargs_t::global_optargs_t() { }
 
-global_optargs_t::global_optargs_t(counted_t<term_storage_t> term_storage) {
-    auto optarg_it = term_storage->global_optargs();
-    while (const raw_term_t *optarg = optarg_it.next()) {
-        compile_env_t env((var_visibility_t()), term_storage.get());
-        counted_t<func_term_t> func_term = make_counted<func_term_t>(&env, optarg);
-        counted_t<const func_t> func =
-            func_term->eval_to_func(var_scope_t(), term_storage);
-
-        auto res = optargs.insert(std::make_pair(std::string(optarg_it.optarg_name()),
-                                                 wire_func_t(func)));
-        rcheck_toplevel(res.second, base_exc_t::LOGIC, strprintf(
-            "Duplicate global optional argument: `%s`.",
-            optarg_it.optarg_name().c_str()));
-    }
+global_optargs_t::add_optarg(const raw_term_t &optarg) {
+    // TODO: lifetime of raw_term_t's source
+    auto res = optargs.insert(std::make_pair(std::string(optarg.optarg_name()),
+                                             wire_func_t(var_scope_t, optarg)));
+    rcheck_toplevel(res.second, base_exc_t::LOGIC, strprintf(
+        "Duplicate global optional argument: `%s`.",
+        optarg.optarg_name().c_str()));
 }
 
 bool global_optargs_t::has_optarg(const std::string &key) const {

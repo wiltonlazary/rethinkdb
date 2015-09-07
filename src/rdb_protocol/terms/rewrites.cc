@@ -15,17 +15,17 @@ namespace ql {
 
 class rewrite_term_t : public term_t {
 public:
-    rewrite_term_t(compile_env_t *env, const raw_term_t *term,
+    rewrite_term_t(compile_env_t *env, const raw_term_t &term,
                    argspec_t argspec,
                    minidriver_t::reql_t (*rewrite)(compile_env_t *env,
-                                                   const raw_term_t *in))
+                                                   const raw_term_t &in))
             : term_t(term) {
         rcheck(argspec.contains(term->num_args()),
                base_exc_t::LOGIC,
                strprintf("Expected %s but found %zu.",
                          argspec.print().c_str(), term->num_args()));
-        rewrite_src = rewrite(env, term).raw_term();
-        real = compile_term(env, rewrite_src);
+        rewrite_src = rewrite(env, term).release();
+        real = compile_term(env, raw_term_t(rewrite_src));
     }
 
 private:
@@ -40,30 +40,29 @@ private:
         return real->eval(env);
     }
 
-    const raw_term_t *rewrite_src;
+    scoped_ptr_t<generated_term_t> rewrite_src;
     counted_t<const term_t> real;
 };
 
 class inner_join_term_t : public rewrite_term_t {
 public:
-    inner_join_term_t(compile_env_t *env, const raw_term_t *term)
+    inner_join_term_t(compile_env_t *env, const raw_term_t &term)
         : rewrite_term_t(env, term, argspec_t(3), rewrite) { }
 
     static minidriver_t::reql_t rewrite(compile_env_t *env,
-                                        const raw_term_t *in) {
+                                        const raw_term_t &in) {
         minidriver_t r(env->term_storage, in->bt);;
 
-        auto arg_it = in->args();
-        const raw_term_t *left = arg_it.next();
-        const raw_term_t *right = arg_it.next();
-        const raw_term_t *func = arg_it.next();
+        raw_term_t left = in.arg(0);
+        raw_term_t right = in.arg(1);
+        raw_term_t func = in.arg(2);
         auto n = pb::dummy_var_t::INNERJOIN_N;
         auto m = pb::dummy_var_t::INNERJOIN_M;
 
         minidriver_t::reql_t term =
             r.expr(left).concat_map(
                 r.fun(n,
-                     r.expr(right).concat_map(
+                    r.expr(right).concat_map(
                         r.fun(m,
                             r.branch(
                                 r.expr(func)(r.var(n), r.var(m)),
@@ -80,17 +79,16 @@ public:
 
 class outer_join_term_t : public rewrite_term_t {
 public:
-    outer_join_term_t(compile_env_t *env, const raw_term_t *term)
+    outer_join_term_t(compile_env_t *env, const raw_term_t &term)
         : rewrite_term_t(env, term, argspec_t(3), rewrite) { }
 
     static minidriver_t::reql_t rewrite(compile_env_t *env,
-                                        const raw_term_t *in) {
+                                        const raw_term_t &in) {
         minidriver_t r(env->term_storage, in->bt);
 
-        auto arg_it = in->args();
-        const raw_term_t *left = arg_it.next();
-        const raw_term_t *right = arg_it.next();
-        const raw_term_t *func = arg_it.next();
+        raw_term_t left = in.arg(0);
+        raw_term_t right = in.arg(1);
+        raw_term_t func = in.arg(2);
         auto n = pb::dummy_var_t::OUTERJOIN_N;
         auto m = pb::dummy_var_t::OUTERJOIN_M;
         auto lst = pb::dummy_var_t::OUTERJOIN_LST;
@@ -121,18 +119,17 @@ public:
 
 class eq_join_term_t : public rewrite_term_t {
 public:
-    eq_join_term_t(compile_env_t *env, const raw_term_t *term)
+    eq_join_term_t(compile_env_t *env, const raw_term_t &term)
         : rewrite_term_t(env, term, argspec_t(3), rewrite) { }
 private:
 
     static minidriver_t::reql_t rewrite(compile_env_t *env,
-                                        const raw_term_t *in) {
+                                        const raw_term_t &in) {
         minidriver_t r(env->term_storage, in->bt);
 
-        auto arg_it = in->args();
-        const raw_term_t *left = arg_it.next();
-        const raw_term_t *left_attr = arg_it.next();
-        const raw_term_t *right = arg_it.next();
+        raw_term_t left = in.args(0);
+        raw_term_t left_attr = in.args(1);
+        raw_term_t right = in.args(2);
         auto row = pb::dummy_var_t::EQJOIN_ROW;
         auto v = pb::dummy_var_t::EQJOIN_V;
 
@@ -155,16 +152,15 @@ private:
 
 class delete_term_t : public rewrite_term_t {
 public:
-    delete_term_t(compile_env_t *env, const raw_term_t *term)
+    delete_term_t(compile_env_t *env, const raw_term_t &term)
         : rewrite_term_t(env, term, argspec_t(1), rewrite) { }
 private:
 
     static minidriver_t::reql_t rewrite(compile_env_t *env,
-                                        const raw_term_t *in) {
+                                        const raw_term_t &in) {
         minidriver_t r(env->term_storage, in->bt);
 
-        auto arg_it = in->args();
-        const raw_term_t *val = arg_it.next();
+        raw_term_t val = in.args(0);
         auto x = pb::dummy_var_t::IGNORED;
 
         minidriver_t::reql_t term = r.expr(val).replace(r.fun(x, r.null()));
@@ -176,15 +172,14 @@ private:
 
 class update_term_t : public rewrite_term_t {
 public:
-    update_term_t(compile_env_t *env, const raw_term_t *term)
+    update_term_t(compile_env_t *env, const raw_term_t &term)
         : rewrite_term_t(env, term, argspec_t(2), rewrite) { }
 private:
     static minidriver_t::reql_t rewrite(compile_env_t *env,
-                                        const raw_term_t *in) {
+                                        const raw_term_t &in) {
         minidriver_t r(env->term_storage, in->bt);
-        auto arg_it = in->args();
-        const raw_term_t *arg0 = arg_it.next();
-        const raw_term_t *arg1 = arg_it.next();
+        raw_term_t arg0 = in.args(0);
+        raw_term_t arg1 = in.args(1);
         auto old_row = pb::dummy_var_t::UPDATE_OLDROW;
         auto new_row = pb::dummy_var_t::UPDATE_NEWROW;
 
@@ -211,15 +206,14 @@ private:
 
 class skip_term_t : public rewrite_term_t {
 public:
-    skip_term_t(compile_env_t *env, const raw_term_t *term)
+    skip_term_t(compile_env_t *env, const raw_term_t &term)
         : rewrite_term_t(env, term, argspec_t(2), rewrite) { }
 private:
     static minidriver_t::reql_t rewrite(compile_env_t *env,
-                                        const raw_term_t *in) {
+                                        const raw_term_t &in) {
         minidriver_t r(env->term_storage, in->bt);
-        auto arg_it = in->args();
-        const raw_term_t *arg0 = arg_it.next();
-        const raw_term_t *arg1 = arg_it.next();
+        raw_term_t arg0 = in.args(0);
+        raw_term_t arg1 = in.args(1);
 
         minidriver_t::reql_t term =
             r.expr(arg0).slice(arg1, -1, r.optarg("right_bound", "closed"));
@@ -232,15 +226,14 @@ private:
 
 class difference_term_t : public rewrite_term_t {
 public:
-    difference_term_t(compile_env_t *env, const raw_term_t *term)
+    difference_term_t(compile_env_t *env, const raw_term_t &term)
         : rewrite_term_t(env, term, argspec_t(2), rewrite) { }
 private:
     static minidriver_t::reql_t rewrite(compile_env_t *env,
-                                        const raw_term_t *in) {
+                                        const raw_term_t &in) {
         minidriver_t r(env->term_storage, in->bt);
-        auto arg_it = in->args();
-        const raw_term_t *arg0 = arg_it.next();
-        const raw_term_t *arg1 = arg_it.next();
+        raw_term_t arg0 = in.args(0);
+        raw_term_t arg1 = in.args(1);
         auto row = pb::dummy_var_t::DIFFERENCE_ROW;
 
         minidriver_t::reql_t term =
@@ -255,14 +248,13 @@ private:
 
 class with_fields_term_t : public rewrite_term_t {
 public:
-    with_fields_term_t(compile_env_t *env, const raw_term_t *term)
+    with_fields_term_t(compile_env_t *env, const raw_term_t &term)
         : rewrite_term_t(env, term, argspec_t(1, -1), rewrite) { }
 private:
     static minidriver_t::reql_t rewrite(compile_env_t *env,
-                                        const raw_term_t *in) {
+                                        const raw_term_t &in) {
         minidriver_t r(env->term_storage, in->bt);
-        auto arg_it = in->args();
-        const raw_term_t *arg0 = arg_it.next();
+        raw_term_t arg0 = in.args(0);
 
         minidriver_t::reql_t has_fields = r.expr(arg0).has_fields();
         has_fields.copy_args_from_term(in, 1);
@@ -275,35 +267,35 @@ private:
 };
 
 counted_t<term_t> make_skip_term(
-        compile_env_t *env, const raw_term_t *term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<skip_term_t>(env, term);
 }
 counted_t<term_t> make_inner_join_term(
-        compile_env_t *env, const raw_term_t *term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<inner_join_term_t>(env, term);
 }
 counted_t<term_t> make_outer_join_term(
-        compile_env_t *env, const raw_term_t *term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<outer_join_term_t>(env, term);
 }
 counted_t<term_t> make_eq_join_term(
-        compile_env_t *env, const raw_term_t *term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<eq_join_term_t>(env, term);
 }
 counted_t<term_t> make_update_term(
-        compile_env_t *env, const raw_term_t *term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<update_term_t>(env, term);
 }
 counted_t<term_t> make_delete_term(
-        compile_env_t *env, const raw_term_t *term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<delete_term_t>(env, term);
 }
 counted_t<term_t> make_difference_term(
-        compile_env_t *env, const raw_term_t *term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<difference_term_t>(env, term);
 }
 counted_t<term_t> make_with_fields_term(
-        compile_env_t *env, const raw_term_t *term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<with_fields_term_t>(env, term);
 }
 

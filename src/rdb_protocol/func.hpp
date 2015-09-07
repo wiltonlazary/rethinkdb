@@ -198,12 +198,7 @@ private:
 // Evaluating this returns a `func_t` wrapped in a `val_t`.
 class func_term_t : public term_t {
 public:
-    func_term_t(compile_env_t *env, const raw_term_t *term);
-
-    // eval(scope_env_t *env) is a dumb wrapper for this.  Evaluates the func_t without
-    // going by way of val_t, and without requiring a full-blown env.
-    counted_t<const func_t> eval_to_func(const var_scope_t &env_scope,
-                                         counted_t<term_storage_t> term_storage) const;
+    func_term_t(compile_env_t *env, const raw_term_t &term);
 
 private:
     virtual void accumulate_captures(var_captures_t *captures) const;

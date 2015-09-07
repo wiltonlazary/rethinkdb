@@ -15,7 +15,7 @@ namespace ql {
 
 class http_term_t : public op_term_t {
 public:
-    http_term_t(compile_env_t *env, const raw_term_t *term)
+    http_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(1),
                     optargspec_t({"data",
                                   "timeout",
@@ -773,7 +773,7 @@ void http_term_t::get_bool_optarg(const std::string &optarg_name,
 }
 
 counted_t<term_t> make_http_term(
-        compile_env_t *env, const raw_term_t *term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<http_term_t>(env, term);
 }
 

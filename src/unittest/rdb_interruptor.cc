@@ -67,43 +67,37 @@ public:
 };
 
 void count_evals(test_rdb_env_t *test_env,
-                 const ql::raw_term_t *term,
+                 const ql::raw_term_t &term,
                  uint32_t *count_out,
-                 verify_callback_t *verify_callback,
-                 counted_t<ql::term_storage_t> term_storage) {
+                 verify_callback_t *verify_callback) {
     scoped_ptr_t<test_rdb_env_t::instance_t> env_instance = test_env->make_env();
 
     count_callback_t callback(count_out);
     env_instance->get_env()->set_eval_callback(&callback);
 
-    ql::compile_env_t compile_env((ql::var_visibility_t()), term_storage.get());
+    ql::compile_env_t compile_env((ql::var_visibility_t()));
     counted_t<const ql::term_t> compiled_term = ql::compile_term(&compile_env, term);
 
     ql::scope_env_t scope_env(env_instance->get_env(), ql::var_scope_t());
-    ql::scoped_term_storage_t scoped_term_storage(term_storage,
-                                                  env_instance->get_env());
     UNUSED scoped_ptr_t<ql::val_t> result = compiled_term->eval(&scope_env);
     guarantee(*count_out > 0);
     guarantee(verify_callback->verify(env_instance.get()));
 }
 
 void interrupt_test(test_rdb_env_t *test_env,
-                    const ql::raw_term_t *term,
+                    const ql::raw_term_t &term,
                     uint32_t interrupt_phase,
-                    verify_callback_t *verify_callback,
-                    counted_t<ql::term_storage_t> term_storage) {
+                    verify_callback_t *verify_callback) {
     scoped_ptr_t<test_rdb_env_t::instance_t> env_instance = test_env->make_env();
 
     interrupt_callback_t callback(interrupt_phase, env_instance.get());
     env_instance->get_env()->set_eval_callback(&callback);
 
-    ql::compile_env_t compile_env((ql::var_visibility_t()), term_storage.get());
+    ql::compile_env_t compile_env((ql::var_visibility_t()));
     counted_t<const ql::term_t> compiled_term = ql::compile_term(&compile_env, term);
 
     try {
         ql::scope_env_t scope_env(env_instance->get_env(), ql::var_scope_t());
-        ql::scoped_term_storage_t scoped_term_storage(term_storage,
-                                                      env_instance->get_env());
         UNUSED scoped_ptr_t<ql::val_t> result = compiled_term->eval(&scope_env);
         guarantee(false);
     } catch (const interrupted_exc_t &ex) {
@@ -140,11 +134,10 @@ private:
 };
 
 TEST(RDBInterrupt, InsertOp) {
-    counted_t<ql::term_storage_t> term_storage = make_counted<ql::term_storage_t>();
-    ql::minidriver_t r(term_storage.get(), ql::backtrace_id_t::empty());
-    const ql::raw_term_t *insert_term =
+    ql::minidriver_t r(ql::backtrace_id_t::empty());
+    scoped_ptr_t<ql::generated_term_t> insert_term =
         r.db("db").table("table").insert(r.object(r.optarg("id", "key"),
-                                                  r.optarg("value", "stuff"))).raw_term();
+                                                  r.optarg("value", "stuff"))).release();
 
     uint32_t eval_count;
     {
@@ -155,10 +148,9 @@ TEST(RDBInterrupt, InsertOp) {
             "db", "table", ql::datum_t("key"), true);
         unittest::run_in_thread_pool(std::bind(count_evals,
                                                &test_env,
-                                               insert_term,
+                                               raw_term_t(insert_term),
                                                &eval_count,
-                                               &verify_callback,
-                                               term_storage));
+                                               &verify_callback));
     }
     for (uint64_t i = 0; i <= eval_count; ++i) {
         test_rdb_env_t test_env;
@@ -168,10 +160,9 @@ TEST(RDBInterrupt, InsertOp) {
             "db", "table", ql::datum_t("key"), false);
         unittest::run_in_thread_pool(std::bind(interrupt_test,
                                                &test_env,
-                                               insert_term,
+                                               raw_term_t(insert_term),
                                                i,
-                                               &verify_callback,
-                                               term_storage));
+                                               &verify_callback));
     }
 }
 
@@ -192,10 +183,9 @@ TEST(RDBInterrupt, GetOp) {
     row.overwrite("value", ql::datum_t("stuff"));
     initial_data.insert(std::move(row).to_datum());
 
-    counted_t<ql::term_storage_t> term_storage = make_counted<ql::term_storage_t>();
-    ql::minidriver_t r(term_storage.get(), ql::backtrace_id_t::empty());
-    const ql::raw_term_t *get_term =
-        r.db("db").table("table").get_("key").raw_term();
+    ql::minidriver_t r(ql::backtrace_id_t::empty());
+    scoped_ptr_t<ql::generated_term_t> get_term =
+        r.db("db").table("table").get_("key").release();
 
     {
         test_rdb_env_t test_env;
@@ -204,10 +194,9 @@ TEST(RDBInterrupt, GetOp) {
         test_env.add_table("db", "table", "id", initial_data);
         unittest::run_in_thread_pool(std::bind(count_evals,
                                                &test_env,
-                                               get_term,
+                                               raw_term_t(get_term),
                                                &eval_count,
-                                               &dummy_callback,
-                                               term_storage));
+                                               &dummy_callback));
     }
     for (uint64_t i = 0; i <= eval_count; ++i) {
         test_rdb_env_t test_env;
@@ -216,10 +205,9 @@ TEST(RDBInterrupt, GetOp) {
         test_env.add_table("db", "table", "id", initial_data);
         unittest::run_in_thread_pool(std::bind(interrupt_test,
                                                &test_env,
-                                               get_term,
+                                               raw_term_t(get_term),
                                                i,
-                                               &dummy_callback,
-                                               term_storage));
+                                               &dummy_callback));
     }
 }
 
@@ -232,10 +220,9 @@ TEST(RDBInterrupt, DeleteOp) {
     row.overwrite("value", ql::datum_t("stuff"));
     initial_data.insert(std::move(row).to_datum());
 
-    counted_t<ql::term_storage_t> term_storage = make_counted<ql::term_storage_t>();
-    ql::minidriver_t r(term_storage.get(), ql::backtrace_id_t::empty());
-    const ql::raw_term_t *delete_term =
-        r.db("db").table("table").get_("key").delete_().raw_term();
+    ql::minidriver_t r(ql::backtrace_id_t::empty());
+    scoped_ptr_t<ql::generated_term_t> delete_term =
+        r.db("db").table("table").get_("key").delete_().release();
 
     {
         test_rdb_env_t test_env;
@@ -245,10 +232,9 @@ TEST(RDBInterrupt, DeleteOp) {
             "db", "table", ql::datum_t(datum_string_t("key")), false);
         unittest::run_in_thread_pool(std::bind(count_evals,
                                                &test_env,
-                                               delete_term,
+                                               raw_term_t(delete_term),
                                                &eval_count,
-                                               &verify_callback,
-                                               term_storage));
+                                               &verify_callback));
     }
     for (uint64_t i = 0; i <= eval_count; ++i) {
         test_rdb_env_t test_env;
@@ -258,10 +244,9 @@ TEST(RDBInterrupt, DeleteOp) {
             "db", "table", ql::datum_t(datum_string_t("key")), true);
         unittest::run_in_thread_pool(std::bind(interrupt_test,
                                                &test_env,
-                                               delete_term,
+                                               raw_term_t(delete_term),
                                                i,
-                                               &verify_callback,
-                                               term_storage));
+                                               &verify_callback));
     }
 }
 

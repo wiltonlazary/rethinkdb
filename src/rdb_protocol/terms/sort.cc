@@ -27,7 +27,7 @@ namespace ql {
 
 class asc_term_t : public op_term_t {
 public:
-    asc_term_t(compile_env_t *env, const raw_term_t *term)
+    asc_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(1)) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -38,7 +38,7 @@ private:
 
 class desc_term_t : public op_term_t {
 public:
-    desc_term_t(compile_env_t *env, const raw_term_t *term)
+    desc_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(1)) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -49,7 +49,7 @@ private:
 
 class orderby_term_t : public op_term_t {
 public:
-    orderby_term_t(compile_env_t *env, const raw_term_t *term)
+    orderby_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(1, -1),
           optargspec_t({"index"})) { }
 private:
@@ -114,11 +114,9 @@ private:
         std::vector<std::pair<order_direction_t, counted_t<const func_t> > > comparisons;
         r_sanity_check(get_src()->num_args() == args->num_args());
         // RSI (grey): get this working with r.args
-        auto arg_it = get_src()->args();
-        arg_it.next(); // Skip arg0
-        for (size_t i = 1; i < get_src()->num_args(); ++i) {
-            const raw_term_t *t = arg_it.next();
-            if (t->type == Term::DESC) {
+        for (size_t i = 1; i < raw_term.num_args(); ++i) {
+            raw_term_t t = raw_term.args(i);
+            if (t.type() == Term::DESC) {
                 comparisons.push_back(
                     std::make_pair(
                         DESC, args->arg(env, i)->as_func(env->env, GET_FIELD_SHORTCUT)));
@@ -157,12 +155,9 @@ private:
             rcheck(!seq.has(), base_exc_t::LOGIC,
                    "Indexed order_by can only be performed on a TABLE or TABLE_SLICE.");
             sorting_t sorting = sorting_t::UNORDERED;
-            auto optarg_it = get_src()->optargs();
-            while (const raw_term_t *t = optarg_it.next()) {
-                if (optarg_it.optarg_name() == "index") {
-                    sorting = t->type == Term::DESC ?
-                        sorting_t::DESCENDING : sorting_t::ASCENDING;
-                }
+            if (auto optarg = raw_term.optarg("index")) {
+                sorting = optarg.type() == Term::DESC ?
+                    sorting_t::DESCENDING : sorting_t::ASCENDING;
             }
             r_sanity_check(sorting != sorting_t::UNORDERED);
             std::string index_str = index->as_str().to_std();
@@ -207,7 +202,7 @@ private:
 
 class distinct_term_t : public op_term_t {
 public:
-    distinct_term_t(compile_env_t *env, const raw_term_t *term)
+    distinct_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(1), optargspec_t({"index"})) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env,
@@ -222,10 +217,9 @@ private:
             if (idx.has() && idx_str == tbl_pkey) {
                 auto row = pb::dummy_var_t::DISTINCT_ROW;
                 std::vector<sym_t> distinct_args{dummy_var_to_sym(row)}; // NOLINT(readability/braces) yes we bloody well do need the ;
-                minidriver_t r(env->env->term_storage.get(), backtrace());
-                const raw_term_t *body = r.var(row)[idx_str].raw_term();
-                map_wire_func_t mwf(body,
-                                    env->env->term_storage,
+                minidriver_t r(backtrace());
+                scoped_ptr_t<generated_term_t> body = r.var(row)[idx_str].release();
+                map_wire_func_t mwf(std::move(body),
                                     std::vector<sym_t>(1, dummy_var_to_sym(row)),
                                     backtrace());
 
@@ -267,19 +261,19 @@ private:
 };
 
 counted_t<term_t> make_orderby_term(
-        compile_env_t *env, const raw_term_t *term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<orderby_term_t>(env, term);
 }
 counted_t<term_t> make_distinct_term(
-        compile_env_t *env, const raw_term_t *term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<distinct_term_t>(env, term);
 }
 counted_t<term_t> make_asc_term(
-        compile_env_t *env, const raw_term_t *term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<asc_term_t>(env, term);
 }
 counted_t<term_t> make_desc_term(
-        compile_env_t *env, const raw_term_t *term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<desc_term_t>(env, term);
 }
 
