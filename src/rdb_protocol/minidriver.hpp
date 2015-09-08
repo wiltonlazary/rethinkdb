@@ -19,19 +19,13 @@ namespace ql {
 class minidriver_t {
 public:
     /** reql_t
-     *
-     * A class that allows building raw_term_ts using the ReQL syntax. The
-     * raw_term_ts will be added to the term_storage_t that the
-     * minidriver_t was instantiated with.  If the term is used as
-     * an arg or optarg in multiple places, a reference will be added in
-     * the term_storage_t rather than recursively copying the term.
-     *
+     * A class that allows building generated_term_ts using the ReQL syntax.
      **/
     class reql_t {
     public:
-        const raw_term_t *raw_term() const;
-        void copy_optargs_from_term(const raw_term_t *from);
-        void copy_args_from_term(const raw_term_t *from, size_t start_index);
+        scoped_ptr_t<generated_term_t> release() RVALUE_THIS;
+        void copy_optargs_from_term(const raw_term_t &from);
+        void copy_args_from_term(const raw_term_t &from, size_t start_index);
 
 #define REQL_METHOD(name, termtype)  \
     template <class... T>            \
@@ -79,20 +73,10 @@ public:
         reql_t(const reql_t &other);
         reql_t &operator= (const reql_t &other);
 
-        template <class... T>
-        void add_args(T &&... args) {
-            UNUSED int _[] = { (add_arg(std::forward<T>(args)), 1)... };
-        }
-
-        template <class T>
-        void add_arg(T &&a) {
-            reql_t new_term(r, std::forward<T>(a));
-            raw_term_->mutable_args().push_back(new_term.raw_term_);
-        }
-
     private:
         friend class minidriver_t;
-        reql_t(minidriver_t *_r, const raw_term_t *term_);
+        reql_t(minidriver_t *_r, const generated_term_t &term_);
+        reql_t(minidriver_t *_r, const raw_term_t &term_);
         reql_t(minidriver_t *_r, const reql_t &other);
         reql_t(minidriver_t *_r, const double val);
         reql_t(minidriver_t *_r, const std::string &val);
@@ -102,16 +86,20 @@ public:
 
         template <class... T>
         reql_t(minidriver_t *_r, Term::TermType type, T &&... args) :
-                r(_r), raw_term_(r->new_term(type)) {
-            // TODO: set datum value if datum - or disallow datum terms in this constructor
-            add_args(std::forward<T>(args)...);
+                r(_r) {
+            term = make_scoped<generated_term_t>(type, r->bt);
+            if (type == Term::TermType::DATUM) {
+                term->datum = datum_t(std::forward<T>(args)...);      
+            } else {
+                add_args(std::forward<T>(args)...);
+            }
         }
 
         minidriver_t *r;
-        raw_term_t *raw_term_;
+        scoped_ptr_t<generated_term_t> term;
     };
 
-    minidriver_t(term_storage_t *_term_storage, backtrace_id_t bt);
+    minidriver_t(backtrace_id_t bt);
 
     template <class T>
     reql_t expr(T &&d) {
@@ -163,13 +151,6 @@ public:
 private:
     friend class reql_t;
     raw_term_t *new_term(Term::TermType type);
-
-    // We may need to make a reference to this object if it is already in use
-    // by a different term - we wouldn't want to overwrite its optarg name or
-    // intrusive list pointers.
-    raw_term_t *new_ref(const raw_term_t *source);
-
-    term_storage_t *term_storage;
     backtrace_id_t bt;
 };
 

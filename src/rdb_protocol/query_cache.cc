@@ -44,18 +44,14 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(query_params_t *query_p
     }
 
     backtrace_registry_t bt_reg;
-    counted_t<const term_t> root_term;
-    counted_t<term_storage_t> term_storage;
-    scoped_ptr_t<global_optargs_t> global_optargs;
+    counted_t<const term_t> term_tree;
+    global_optargs_t global_optargs;
     try {
-        term_storage = make_counted<term_storage_t>(
-            std::move(*query_params->root_term_json))
-        global_optargs = make_scoped<global_optargs_t>(
-            std::move(*query_params->global_optargs_json));
-        preprocess_term_tree(term_storage->root_term(), &bt_reg);
+        global_optargs = query_params->term_storage.global_optargs();
+        preprocess_term_tree(query_params->term_storage.root_term(), &bt_reg);
 
         compile_env_t compile_env((var_visibility_t()));
-        root_term = compile_term(&compile_env, term_storage->root_term());
+        term_tree = compile_term(&compile_env, query_params->term_storage.root_term());
     } catch (const exc_t &e) {
         throw bt_exc_t(Response::COMPILE_ERROR,
                        e.get_error_type(),
@@ -68,11 +64,10 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(query_params_t *query_p
                        backtrace_registry_t::EMPTY_BACKTRACE);
     }
 
-    scoped_ptr_t<entry_t> entry(new entry_t(*query_params,
+    scoped_ptr_t<entry_t> entry(new entry_t(query_params,
                                             std::move(bt_reg),
-                                            std::move(term_storage),
                                             std::move(global_optargs),
-                                            std::move(root_term)));
+                                            std::move(term_tree)));
     scoped_ptr_t<ref_t> ref(new ref_t(this,
                                       query_params->token,
                                       std::move(query_params->throttler),
@@ -200,7 +195,7 @@ void query_cache_t::ref_t::fill_response(response_t *res) {
 
         if (entry->state == entry_t::state_t::START) {
             run(&env, res);
-            entry->root_term.reset();
+            entry->term_tree.reset();
         }
 
         if (entry->state == entry_t::state_t::STREAM) {
@@ -243,7 +238,7 @@ void query_cache_t::ref_t::fill_response(response_t *res) {
 
 void query_cache_t::ref_t::run(env_t *env, Response *res) {
     scope_env_t scope_env(env, var_scope_t());
-    scoped_ptr_t<val_t> val = entry->root_term->eval(&scope_env);
+    scoped_ptr_t<val_t> val = entry->term_tree->eval(&scope_env);
 
     if (val->get_type().is_convertible(val_t::type_t::DATUM)) {
         res->set_type(Response::SUCCESS_ATOM);
@@ -328,21 +323,20 @@ void query_cache_t::ref_t::serve(env_t *env, response_t *res) {
     entry->stream->set_notes(res);
 }
 
-query_cache_t::entry_t::entry_t(const query_params_t &query_params,
-                                backtrace_registry_t &&_bt_reg,
-                                counted_t<term_storage_t> &&_term_storage,
-                                global_optargs_t &&_global_optargs,
-                                counted_t<const term_t> _root_term) :
+query_cache_t::entry_t::entry_t(query_params_t *query_params,
+                                backtrace_registry_t _bt_reg,
+                                global_optargs_t _global_optargs,
+                                counted_t<const term_t> _term_tree) :
         state(state_t::START),
         job_id(generate_uuid()),
-        noreply(query_params.noreply),
-        profile(query_params.profile ? profile_bool_t::PROFILE :
-                                       profile_bool_t::DONT_PROFILE),
+        noreply(query_params->noreply),
+        profile(query_params->profile ? profile_bool_t::PROFILE :
+                                        profile_bool_t::DONT_PROFILE),
         bt_reg(std::move(_bt_reg)),
-        term_storage(std::move(_term_storage)),
+        term_storage(std::move(query_params->term_storage)),
         global_optargs(std::move(_global_optargs)),
         start_time(current_microtime()),
-        root_term(_root_term),
+        term_tree(std::move(_term_tree)),
         has_sent_batch(false) { }
 
 query_cache_t::entry_t::~entry_t() { }

@@ -94,10 +94,9 @@ public:
 private:
     class entry_t {
     public:
-        entry_t(const query_params_t &params,
-                backtrace_registry_t &&_bt_reg,
-                counted_t<term_storage_t> &&_term_storage,
-                global_optargs_t &&_global_optargs,
+        entry_t(query_params_t *params,
+                backtrace_registry_t _bt_reg,
+                global_optargs_t _global_optargs,
                 counted_t<const term_t> _root_term);
         ~entry_t();
 

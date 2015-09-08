@@ -10,10 +10,6 @@ raw_term_t *minidriver_t::new_term(Term::TermType type) {
     return term_storage->new_term(type, bt);
 }
 
-raw_term_t *minidriver_t::new_ref(const raw_term_t *src) {
-    return term_storage->new_ref(src);
-}
-
 minidriver_t::reql_t &minidriver_t::reql_t::operator=(const minidriver_t::reql_t &other) {
     r = other.r;
     raw_term_ = other.raw_term_;
@@ -21,7 +17,7 @@ minidriver_t::reql_t &minidriver_t::reql_t::operator=(const minidriver_t::reql_t
 }
 
 minidriver_t::reql_t::reql_t(const reql_t &other) :
-        r(other.r), raw_term_(other.raw_term_) { }
+        r(other.r), term(other.raw_term_) { }
 
 minidriver_t::reql_t::reql_t(minidriver_t *_r, const raw_term_t *term) :
         r(_r), raw_term_(r->new_ref(term)) { }
@@ -61,6 +57,22 @@ minidriver_t::reql_t::reql_t(minidriver_t *_r, pb::dummy_var_t var) :
 
 minidriver_t::reql_t minidriver_t::boolean(bool b) {
     return reql_t(this, datum_t(datum_t::construct_boolean_t(), b));
+}
+
+scoped_ptr_t<generated_term_t> minidriver_t::reql_t::release() RVALUE_THIS {
+
+}
+
+void minidriver_t::reql_t::copy_optargs_from_term(const raw_term_t &from) {
+    from.each_optarg([&] (raw_term_t optarg) {
+            term->optargs[o.optarg_name()] = optarg.
+        });
+}
+
+void minidriver_t::reql_t::copy_args_from_term(const raw_term_t &from,
+                                               size_t start_index) {
+
+
 }
 
 void minidriver_t::reql_t::copy_optargs_from_term(const raw_term_t *from) {

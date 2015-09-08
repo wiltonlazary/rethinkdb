@@ -413,45 +413,42 @@ void query_server_t::connection_loop(tcp_conn_t *conn,
     new_semaphore_t sem(max_concurrent_queries);
     auto_drainer_t coro_drainer;
     while (!err) {
-        scoped_ptr_t<ql::query_params_t> query =
+        scoped_ptr_t<ql::query_params_t> outer_query =
             protocol_t::parse_query(conn, &interruptor, query_cache);
-        if (query.has()) {
-            query->throttler.init(&sem, 1);
-            wait_interruptible(query->throttler.acquisition_signal(), &interruptor);
-            coro_t::spawn_now_dangerously([&]() {
-                // We grab these right away while they're still valid.
-                scoped_ptr_t<new_semaphore_acq_t> acq = std::move(outer_acq);
-                scoped_ptr_t<ql::query_params_t> q = std::move(query);
+        if (outer_query.has()) {
+            outer_query->throttler.init(&sem, 1);
+            wait_interruptible(outer_query->throttler.acquisition_signal(), &interruptor);
+            coro_t::spawn_now_dangerously([&] () {
+                // We grab this right away while it's still valid.
+                scoped_ptr_t<ql::query_params_t> query = std::move(outer_query);
                 // Since we `spawn_now_dangerously` it's always safe to acquire this.
                 auto_drainer_t::lock_t coro_drainer_lock(&coro_drainer);
-                ql::query_id_t query_id(query_cache);
                 wait_any_t cb_interruptor(coro_drainer_lock.get_drain_signal(),
                                           &interruptor);
                 ql::response_t response;
                 bool replied = false;
 
                 save_exception(&err, &err_str, &abort, [&]() {
-                    handler->run_query(std::move(query_id), query_pb, &response,
-                                       query_cache, acq.get(), &cb_interruptor);
+                    handler->run_query(query.get(), &response, &cb_interruptor);
                     if (!q->noreply) {
-                        response.set_token(query_pb->token());
+                        response.set_token(query->token);
                         new_mutex_acq_t send_lock(&send_mutex, &cb_interruptor);
-                        protocol_t::send_response(&response, q->token,
+                        protocol_t::send_response(&response, query->token,
                                                   conn, &cb_interruptor);
                         replied = true;
-                        }
+                    }
                 });
                 save_exception(&err, &err_str, &abort, [&]() {
-                    if (!replied && !q->noreply) {
+                    if (!replied && !query->noreply) {
                         make_error_response(drain_signal->is_pulsed(), *conn,
                                             err_str, &response);
                         new_mutex_acq_t send_lock(&send_mutex, drain_signal);
-                        protocol_t::send_response(&response, q->token,
+                        protocol_t::send_response(&response, query->token,
                                                   conn, &cb_interruptor);
                     }
                 });
             });
-            guarantee(!outer_acq.has());
+            guarantee(!outer_query.has());
         }
     }
 
@@ -514,17 +511,17 @@ void query_server_t::handle(const http_req_t &req,
         token = *reinterpret_cast<const int64_t *>(data);
         data += sizeof(token);
 
-        scoped_ptr_t<ql::query_params_t> q = json_protocol_t::parse_query_from_buffer(
+        scoped_ptr_t<ql::query_params_t> query = json_protocol_t::parse_query_from_buffer(
             std::move(body_buf), sizeof(token), conn->get_query_cache(), token);
 
-        if (!q.has()) {
+        if (!query.has()) {
             response.fill_error(Response::CLIENT_ERROR, Response::QUERY_LOGIC,
                                 wire_protocol_t::unparseable_query_message,
                                 ql::backtrace_registry_t::EMPTY_BACKTRACE);
         } else {
             // Check for noreply, which we don't support here, as it causes
             // problems with interruption
-            if (q->noreply) {
+            if (query->noreply) {
                 *result = http_res_t(http_status_code_t::BAD_REQUEST,
                                      "application/text",
                                      "noreply queries are not supported over HTTP\n");
@@ -537,7 +534,7 @@ void query_server_t::handle(const http_req_t &req,
             try {
                 ticks_t start = get_ticks();
                 // We don't throttle HTTP queries.
-                handler->run_query(q.get(), &response, &true_interruptor);
+                handler->run_query(query.get(), &response, &true_interruptor);
                 ticks_t ticks = get_ticks() - start;
 
                 if (!response.has_profile()) {
