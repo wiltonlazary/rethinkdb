@@ -27,6 +27,7 @@ public:
 
     // Getters
     Response::ResponseType type() const;
+    Response::ErrorType error_type() const;
     const std::vector<ql::datum_t> &data() const;
     const boost::optional<ql::datum_t> &profile() const;
     const std::vector<Response::ResponseNote> &notes() const;
@@ -34,6 +35,7 @@ public:
 
     // Clears the response and writes a valid error
     void fill_error(Response::ResponseType _type,
+                    Response::ErrorType _error_type,
                     const std::string &message,
                     const ql::datum_t &_backtrace);
 
@@ -41,6 +43,7 @@ private:
     Response::ResponseType type_;
     std::vector<ql::datum_t> data_;
     std::vector<Response::ResponseNote> notes_;
+    boost::optional<Response::ErrorType> error_type_;
     boost::optional<ql::datum_t> backtrace_;
     boost::optional<ql::datum_t> profile_;
 

@@ -2,29 +2,19 @@
 #ifndef RDB_PROTOCOL_QUERY_HPP_
 #define RDB_PROTOCOL_QUERY_HPP_
 
-#include <map>
-
-#include "errors.hpp"
-#include <boost/variant.hpp>
-
 #include "rapidjson/rapidjson.h"
-#include "rapidjson/document.h"
 
-#include "containers/counted.hpp"
+#include "concurrency/new_semaphore.hpp"
 #include "containers/intrusive_list.hpp"
-#include "containers/segmented_vector.hpp"
-#include "rdb_protocol/backtrace.hpp"
-#include "rdb_protocol/datum.hpp"
 #include "rdb_protocol/error.hpp"
 #include "rdb_protocol/ql2.pb.h"
 #include "rdb_protocol/term_storage.hpp"
-#include "version.hpp"
 
 namespace ql {
 
 class query_cache_t;
 
-struct query_params_t {
+class query_params_t {
 public:
     query_params_t(int64_t _token,
                    ql::query_cache_t *_query_cache,
@@ -59,9 +49,8 @@ public:
     bool profile;
 
     new_semaphore_acq_t throttler;
-private:
-    bool static_optarg_as_bool(const std::string &key, bool default_value);
 
+private:
     DISABLE_COPYING(query_params_t);
 };
 

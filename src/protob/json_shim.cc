@@ -15,9 +15,6 @@
 #include "utils.hpp"
 #include "arch/runtime/coroutines.hpp"
 
-// The minimum amount of stack space we require to be available on a coroutine
-// before attempting to extract a value.
-const size_t MIN_EXTRACT_STACK_SPACE = 16 * KILOBYTE;
 const uint32_t wire_protocol_t::TOO_LARGE_QUERY_SIZE = 64 * MEGABYTE;
 const uint32_t wire_protocol_t::TOO_LARGE_RESPONSE_SIZE =
     std::numeric_limits<uint32_t>::max();
@@ -28,56 +25,11 @@ const std::string wire_protocol_t::unparseable_query_message =
 std::string wire_protocol_t::too_large_query_message(uint32_t size) {
     return strprintf("Query size (%" PRIu32 ") greater than maximum (%" PRIu32 ").",
                      size, TOO_LARGE_QUERY_SIZE - 1);
+}
 
 std::string wire_protocol_t::too_large_response_message(size_t size) {
     return strprintf("Response size (%zu) greater than maximum (%" PRIu32 ").",
                      size, TOO_LARGE_RESPONSE_SIZE - 1);
-}
-
-namespace json_shim {
-
-class exc_t : public std::exception {
-public:
-    exc_t() { }
-    ~exc_t() throw () { }
-    const char *what() const throw () { return "json_shim::exc_t"; }
-};
-
-// The first value is != nullptr if this is a key/value pair from an object.
-// In that case it is the key and the second value the value.
-template<class T>
-typename std::enable_if<!((std::is_enum<T>::value || std::is_fundamental<T>::value)
-                          && !std::is_same<T, bool>::value)>::type
-extract(const Value *, const Value &, T *);
-
-template<class T>
-typename std::enable_if<(std::is_enum<T>::value || std::is_fundamental<T>::value)
-                        && !std::is_same<T, bool>::value>::type
-extract(const Value *, const Value &field, T *dest) {
-    if (!field.IsNumber()) {
-        throw exc_t();
-    }
-    T t = static_cast<T>(field.GetDouble());
-    if (static_cast<double>(t) != field.GetDouble()) {
-        throw exc_t();
-    }
-    *dest = t;
-}
-
-template<class T>
-void safe_extract(const Value *key, const Value &val, T *t) {
-    if (t != nullptr) {
-        call_with_enough_stack([&] () {
-                extract<T>(key, val, t);
-            }, MIN_EXTRACT_STACK_SPACE);
-    }
-}
-
-template<class T, class U>
-void transfer(const Value &json, T *dest, void (T::*setter)(U)) {
-    U tmp;
-    safe_extract(nullptr, json, &tmp);
-    (dest->*setter)(std::move(tmp));
 }
 
 scoped_ptr_t<ql::query_params_t> json_protocol_t::parse_query_from_buffer(
@@ -175,8 +127,8 @@ void write_response_internal(ql::response_t *response,
         writer.EndObject();
     } catch (const ql::base_exc_t &ex) {
         buffer_out->Pop(buffer_out->GetSize() - start_offset);
-        response->fill_error(Response::RUNTIME_ERROR, ex.what(),
-                             ql::backtrace_registry_t::EMPTY_BACKTRACE);
+        response->fill_error(Response::RUNTIME_ERROR, Response::INTERNAL,
+                             ex.what(), ql::backtrace_registry_t::EMPTY_BACKTRACE);
         write_response_internal(response, buffer_out, true);
     } catch (const std::exception &ex) {
         if (throw_errors) {

@@ -73,15 +73,15 @@ private:
 
             if (src->IsArray()) {
                 size_t size = src->Size();
-                rcheck_src(bt, size >= 1 && size <= 3, base_exc_t::GENERIC,
-                           "Expected between 1 and 3 elements in a raw term, "
-                           "but found %zu.", size);
+                rcheck_src(bt, size >= 1 && size <= 3, base_exc_t::LOGIC,
+                    strprintf("Expected between 1 and 3 elements in a raw term, "
+                              "but found %zu.", size));
                         
                 if (size >= 1) {
                     rapidjson::Value *val = (*src)[0];
-                    rcheck_src(bt, (*src)[0].IsInt(), base_exc_t::GENERIC,
-                               "Expected a TermType as a NUMBER but found %s.",
-                               rapidjson_type_to_str((*src)[0]));
+                    rcheck_src(bt, (*src)[0].IsInt(), base_exc_t::LOGIC,
+                        strprintf("Expected a TermType as a NUMBER but found %s.",
+                                  rapidjson_type_to_str((*src)[0])));
                     type = static_cast<Term::TermType>((*src)[0].AsInt());
                 }
                 if (size >= 2) {
@@ -91,14 +91,14 @@ private:
                     } else if (val->IsObject() && type != Term::DATUM) {
                         optargs = val;
                     } else {
-                        rcheck_str(bt, type == Term::DATUM, base_exc_t::GENEIRC,
+                        rcheck_src(bt, type == Term::DATUM, base_exc_t::LOGIC,
                                    "Second element in a non-DATUM Term is neither "
                                    "arguments nor optional arguments.");
                     }
                 }
                 if (size >= 3) {
                     rapidjson::Value *val = (*src)[2];
-                    rcheck_src(bt, val->IsObject(), base_exc_t::GENERIC,
+                    rcheck_src(bt, val->IsObject(), base_exc_t::LOGIC,
                                "Third element in a non-DATUM Term is not "
                                "optional arguments.");
                     optargs = val;
@@ -127,8 +127,7 @@ private:
                               (type == Term::ASC ? "ASC" : "DESC")));
             }
 
-            rcheck_src(bt,
-                !term_is_write_or_meta(type) || writes_legal,
+            rcheck_src(bt, !term_is_write_or_meta(type) || writes_legal,
                 base_exc_t::LOGIC,
                 strprintf("Cannot nest writes or meta ops in stream operations.  Use "
                           "FOR_EACH instead."));
@@ -183,9 +182,9 @@ private:
     datum_t start_time;
 };
 
-void preprocess_term_tree(rapidjson::Document *src, backtrace_registry_t *bt_reg) {
-    term_walker_t term_walker(src, bt_reg);
-    term_walker.walk(src);
+void preprocess_term_tree(rapidjson::Document *doc, backtrace_registry_t *bt_reg) {
+    term_walker_t term_walker(doc, bt_reg);
+    term_walker.walk(doc);
 }
 
 // Returns true if `t` is a write or a meta op.

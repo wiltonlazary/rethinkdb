@@ -8,16 +8,18 @@ response_t::response_t() {
 }
 
 void response_t::fill_error(Response::ResponseType _type,
-                const std::string &message,
-                const ql::datum_t &_backtrace) {
+                            Response::ErrorType _error_type,
+                            const std::string &message,
+                            const ql::datum_t &_backtrace) {
     clear();
     type_ = _type;
+    error_type_ = _error_type;
     backtrace_ = _backtrace;
     data_.push_back(ql::datum_t(datum_string_t(message)));
 
-    guarantee(type_ == Response::CLIENT_ERROR ||
-              type_ == Response::COMPILE_ERROR ||
-              type_ == Response::RUNTIME_ERROR);
+    rassert(type_ == Response::CLIENT_ERROR ||
+            type_ == Response::COMPILE_ERROR ||
+            type_ == Response::RUNTIME_ERROR);
 }
 
 void response_t::set_type(Response::ResponseType _type) {
@@ -47,6 +49,7 @@ void response_t::clear() {
     type_ = static_cast<Response::ResponseType>(-1);
     data_.clear();
     notes_.clear();
+    error_type_ = boost::optional<Response::ErrorType>();
     backtrace_ = boost::optional<ql::datum_t>();
     profile_ = boost::optional<ql::datum_t>();
 }

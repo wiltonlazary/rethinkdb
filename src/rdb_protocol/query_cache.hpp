@@ -31,7 +31,7 @@
 namespace ql {
 
 class query_cache_t : public home_thread_mixin_t {
-    struct entry_t;
+    class entry_t;
 public:
     query_cache_t(rdb_context_t *_rdb_ctx,
                   ip_and_port_t _client_addr_port,

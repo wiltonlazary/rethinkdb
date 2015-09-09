@@ -1456,8 +1456,8 @@ template void datum_t::write_json(
 template <class Allocator>
 void to_json(rapidjson::Value *val_out, Allocator *allocator) const {
     switch (get_type()) {
-    case MINVAL: rfail_datum(base_exc_t::GENERIC, "Cannot convert `r.minval` to JSON.");
-    case MAXVAL: rfail_datum(base_exc_t::GENERIC, "Cannot convert `r.maxval` to JSON.");
+    case MINVAL: rfail_datum(base_exc_t::LOGIC, "Cannot convert `r.minval` to JSON.");
+    case MAXVAL: rfail_datum(base_exc_t::LOGIC, "Cannot convert `r.maxval` to JSON.");
     case R_NULL: val_out->SetNull(); break;
     case R_BINARY: break;
     case R_BOOL: val_out->SetBool(as_bool()); break;

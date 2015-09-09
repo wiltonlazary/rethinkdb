@@ -20,8 +20,9 @@ public:
     global_optargs_t();
     global_optargs_t(global_optargs_t &&) = default;
     global_optargs_t(const global_optargs_t &) = default;
-    explicit global_optargs_t(rapidjson::Value &&src);
+    global_optargs_t &operator = (const global_optargs_t &) = default;
 
+    void add_optarg(const raw_term_t &optarg);
     bool has_optarg(const std::string &key) const;
 
     // returns NULL if no entry

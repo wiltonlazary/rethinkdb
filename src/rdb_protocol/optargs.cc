@@ -11,8 +11,7 @@ namespace ql {
 
 global_optargs_t::global_optargs_t() { }
 
-global_optargs_t::add_optarg(const raw_term_t &optarg) {
-    // TODO: lifetime of raw_term_t's source
+void global_optargs_t::add_optarg(const raw_term_t &optarg) {
     auto res = optargs.insert(std::make_pair(std::string(optarg.optarg_name()),
                                              wire_func_t(var_scope_t, optarg)));
     rcheck_toplevel(res.second, base_exc_t::LOGIC, strprintf(

@@ -48,7 +48,7 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(query_params_t *query_p
     global_optargs_t global_optargs;
     try {
         global_optargs = query_params->term_storage.global_optargs();
-        preprocess_term_tree(query_params->term_storage.root_term(), &bt_reg);
+        preprocess_term_tree(query_params->term_storage.json(), &bt_reg);
 
         compile_env_t compile_env((var_visibility_t()));
         term_tree = compile_term(&compile_env, query_params->term_storage.root_term());
@@ -190,8 +190,6 @@ void query_cache_t::ref_t::fill_response(response_t *res) {
                   &combined_interruptor,
                   entry->global_optargs,
                   trace.get_or_null());
-
-        scoped_term_storage_t scoped_term_storage(entry->term_storage, &env);
 
         if (entry->state == entry_t::state_t::START) {
             run(&env, res);

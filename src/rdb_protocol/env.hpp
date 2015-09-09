@@ -139,7 +139,6 @@ public:
 
     rdb_context_t *get_rdb_ctx() { return rdb_ctx_; }
 
-    counted_t<term_storage_t> term_storage;
 private:
     static const uint32_t EVALS_BEFORE_YIELD = 256;
     uint32_t evals_since_yield_;
@@ -153,30 +152,13 @@ private:
     DISABLE_COPYING(env_t);
 };
 
-// Places a given term_storage_t in the env_t for the duration of this object's lifetime
-class scoped_term_storage_t {
-public:
-    scoped_term_storage_t(counted_t<term_storage_t> _term_storage, env_t *_env) :
-            term_storage(std::move(_term_storage)), env(_env) {
-        term_storage.swap(env->term_storage);
-    }
-    ~scoped_term_storage_t() {
-        term_storage.swap(env->term_storage);
-    }
-private:
-    counted_t<term_storage_t> term_storage;
-    env_t *env;
-};
-
 // An environment in which expressions are compiled.  Since compilation doesn't
 // evaluate anything, it doesn't need an env_t *.
 class compile_env_t {
 public:
-    explicit compile_env_t(var_visibility_t &&_visibility,
-                           term_storage_t *_term_storage)
-        : visibility(std::move(_visibility)), term_storage(_term_storage) { }
+    explicit compile_env_t(var_visibility_t &&_visibility)
+        : visibility(std::move(_visibility)) { }
     var_visibility_t visibility;
-    term_storage_t *term_storage;
 };
 
 // This is an environment for evaluating things that use variables in scope.  It

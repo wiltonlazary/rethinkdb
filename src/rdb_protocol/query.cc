@@ -9,38 +9,10 @@
 
 namespace ql {
 
-const char *rapidjson_typestr(rapidjson::Type t) {
-    switch (t) {
-    case rapidjson::kNullType:   return "NULL";
-    case rapidjson::kFalseType:  return "BOOL";
-    case rapidjson::kTrueType:   return "BOOL";
-    case rapidjson::kObjectType: return "OBJECT";
-    case rapidjson::kArrayType:  return "ARRAY";
-    case rapidjson::kStringType: return "STRING";
-    case rapidjson::kNumberType: return "NUMBER";
-    default:                     break;
-    }
-    unreachable();
-}
+bool static_optarg_as_bool(rapidjson::Value *global_optargs,
+                           const std::string &key, bool default_value);
 
-void check_type(const rapidjson::Value &v,
-                rapidjson::Type expected_type,
-                backtrace_id_t bt) {
-    if (v.GetType() != expected_type) {
-        throw exc_t(base_exc_t::GENERIC,
-            strprintf("Query parse error: expected %s but found %s.",
-                      rapidjson_typestr(expected_type),
-                      rapidjson_typestr(v.GetType())), bt);
-    }
-}
-
-void check_term_size(const rapidjson::Value &v, backtrace_id_t bt) {
-    if (v.Size() == 0 || v.Size() > 3) {
-        throw exc_t(base_exc_t::GENERIC,
-            strprintf("Expected an array of 1, 2, or 3 elements, but found %d.",
-                      v.Size()), bt);
-    }
-}
+const char *rapidjson_typestr(rapidjson::Type t);
 
 query_params_t::query_id_t::query_id_t(query_params_t::query_id_t &&other) :
         intrusive_list_node_t(std::move(other)),
@@ -97,11 +69,12 @@ void query_params_t::maybe_release_query_id() {
 
 query_params_t::query_params_t(int64_t _token,
                                ql::query_cache_t *_query_cache,
-                               scoped_array_t<char> &&_original_data,
+                               scoped_array_t<char> &&original_data,
                                rapidjson::Document &&_query_json) :
-        query_cache(_query_cache), query_json(std::move(_query_json)), token(_token),
-        id(query_cache), noreply(false), profile(false), root_term_json(nullptr),
-        global_optargs_json(nullptr), original_data(std::move(_original_data)) {
+        query_cache(_query_cache),
+        term_storage(std::move(original_data), std::move(query_json)),
+        id(query_cache), token(_token), noreply(false), profile(false) {
+    const rapidjson::Value &query_json = *term_storage.json();
     if (!query_json.IsArray()) {
         throw bt_exc_t(Response::CLIENT_ERROR,
             strprintf("Expected a query to be an array, but found %s.",
@@ -123,31 +96,26 @@ query_params_t::query_params_t(int64_t _token,
     }
     type = static_cast<Query::QueryType>(query_json[0].GetInt());
 
-    if (query_json.Size() >= 2) {
-        root_term_json = &query_json[1];
-    }
-
     if (query_json.Size() >= 3) {
-        if (!query_json[2].IsObject()) {
+        rapidjson::Value *global_optargs = &query_json[2];
+        if (!global_optargs->IsObject()) {
             throw bt_exc_t(Response::CLIENT_ERROR,
                 strprintf("Expected global optargs as an object, but found %s.",
                           rapidjson_typestr(query_json[2].GetType())),
                 backtrace_registry_t::EMPTY_BACKTRACE);
         }
-        global_optargs_json = &query_json[2];
-    }
 
-    // Parse out optargs that are needed before query evaluation
-    if (global_optargs_json != nullptr) {
-        noreply = static_optarg_as_bool("noreply", noreply);
-        profile = static_optarg_as_bool("profile", profile);
+        // Parse out optargs that are needed before query evaluation
+        noreply = static_optarg_as_bool(global_optargs, "noreply", noreply);
+        profile = static_optarg_as_bool(global_optargs, "profile", profile);
     }
 }
 
-bool query_params_t::static_optarg_as_bool(const std::string &key, bool default_value) {
-    r_sanity_check(global_optargs_json != nullptr);
-    auto it = global_optargs_json->FindMember(key.c_str());
-    if (it == global_optargs_json->MemberEnd()) {
+bool static_optarg_as_bool(rapidjson::Value *global_optargs,
+                           const std::string &key, bool default_value) {
+    guarantee(global_optargs != nullptr);
+    auto it = global_optargs->FindMember(key.c_str());
+    if (it == global_optargs->MemberEnd()) {
         return default_value;
     } else if (it->value.IsBool()) {
         return it->value.GetBool();
@@ -160,6 +128,20 @@ bool query_params_t::static_optarg_as_bool(const std::string &key, bool default_
         return default_value;
     }
     return it->value[1].GetBool();
+}
+
+const char *rapidjson_typestr(rapidjson::Type t) {
+    switch (t) {
+    case rapidjson::kNullType:   return "NULL";
+    case rapidjson::kFalseType:  return "BOOL";
+    case rapidjson::kTrueType:   return "BOOL";
+    case rapidjson::kObjectType: return "OBJECT";
+    case rapidjson::kArrayType:  return "ARRAY";
+    case rapidjson::kStringType: return "STRING";
+    case rapidjson::kNumberType: return "NUMBER";
+    default:                     break;
+    }
+    unreachable();
 }
 
 } // namespace ql

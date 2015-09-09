@@ -2,11 +2,13 @@
 #ifndef RDB_PROTOCOL_TERM_WALKER_HPP_
 #define RDB_PROTOCOL_TERM_WALKER_HPP_
 
+#include "rapidjson/document.h"
+
 namespace ql {
 
-class raw_term_t;
+class backtrace_registry_t;
 
-void preprocess_term_tree(rapidjson::Value *src, backtrace_registry_t *bt_reg);
+void preprocess_term_tree(rapidjson::Document *doc, backtrace_registry_t *bt_reg);
 
 } // namespace ql
 
