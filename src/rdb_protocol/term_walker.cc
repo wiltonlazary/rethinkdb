@@ -39,7 +39,7 @@ private:
     public:
         walker_frame_t(term_walker_t *_parent,
                        bool is_zeroth_argument,
-                       const walker_frame_t *_prev_frame) {
+                       const walker_frame_t *_prev_frame) :
             parent(_parent),
             writes_legal(true),
             prev_frame(_prev_frame)
@@ -79,14 +79,14 @@ private:
                               "but found %zu.", size));
                         
                 if (size >= 1) {
-                    rapidjson::Value *val = (*src)[0];
+                    rapidjson::Value *val = &(*src)[0];
                     rcheck_src(bt, (*src)[0].IsInt(), base_exc_t::LOGIC,
                         strprintf("Expected a TermType as a NUMBER but found %s.",
                                   rapidjson_type_to_str((*src)[0])));
-                    type = static_cast<Term::TermType>((*src)[0].AsInt());
+                    type = static_cast<Term::TermType>((*src)[0].GetInt());
                 }
                 if (size >= 2) {
-                    rapidjson::Value *val = (*src)[1];
+                    rapidjson::Value *val = &(*src)[1];
                     if (val->IsArray()) {
                         args = val;
                     } else if (val->IsObject() && type != Term::DATUM) {
@@ -98,7 +98,7 @@ private:
                     }
                 }
                 if (size >= 3) {
-                    rapidjson::Value *val = (*src)[2];
+                    rapidjson::Value *val = &(*src)[2];
                     rcheck_src(bt, val->IsObject(), base_exc_t::LOGIC,
                                "Third element in a non-DATUM Term is not "
                                "optional arguments.");
@@ -118,7 +118,7 @@ private:
             }
 
             // Append a backtrace to the term
-            src->PushBack(rapidjson::Value(bt.value()), parent->allocator);
+            src->PushBack(rapidjson::Value(bt.get()), parent->allocator);
 
             if (type == Term::ASC || type == Term::DESC) {
                 rcheck_src(bt,
@@ -150,7 +150,8 @@ private:
                 for (auto it = optargs->MemberBegin();
                      it != optargs->MemberEnd(); ++it) {
                     backtrace_id_t child_bt = parent->bt_reg->new_frame(bt,
-                        datum_t(it->key.GetString(), it->key.GetStringLength()));
+                        datum_t(datum_string_t(it->name.GetStringLength(),
+                                               it->name.GetString()));
                     walker_frame_t child_frame(parent, false, this);
                     call_with_enough_stack([&] () {
                             child_frame.walk(&it->value, child_bt);
@@ -190,11 +191,11 @@ void preprocess_term_tree(Allocator *allocator,
                           backtrace_registry_t *bt_reg) {
     r_sanity_check(allocator != nullptr);
     r_sanity_check(root_term != nullptr);
-    term_walker_t term_walker(allocator, bt_reg);
+    term_walker_t<Allocator> term_walker(allocator, bt_reg);
     term_walker.walk(root_term);
 }
 
-template
+template <>
 void preprocess_term_tree<rapidjson::MemoryPoolAllocator<> >(
         rapidjson::MemoryPoolAllocator<> *allocator,
         rapidjson::Value *root_term,
@@ -313,6 +314,7 @@ bool term_is_write_or_meta(Term::TermType type) {
     case Term::DEFAULT:
     case Term::CONTAINS:
     case Term::KEYS:
+    case Term::VALUES:
     case Term::OBJECT:
     case Term::WITH_FIELDS:
     case Term::JSON:
@@ -503,6 +505,7 @@ bool term_forbids_writes(Term::TermType type) {
     case Term::DEFAULT:
     case Term::CONTAINS:
     case Term::KEYS:
+    case Term::VALUES:
     case Term::OBJECT:
     case Term::WITH_FIELDS:
     case Term::JSON:

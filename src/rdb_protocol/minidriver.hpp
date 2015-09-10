@@ -23,7 +23,7 @@ public:
      **/
     class reql_t {
     public:
-        counted_t<generated_term_t> release() RVALUE_THIS;
+        raw_term_t root_term();
         void copy_optargs_from_term(const raw_term_t &from);
         void copy_args_from_term(const raw_term_t &from, size_t start_index);
 
@@ -81,13 +81,12 @@ public:
 
         template <class T>
         void add_arg(T &&a) {
-            reql_t it(std::forward<T>(a));
-            term->args.push_back(std::move(it).release());
+            reql_t item(r, std::forward<T>(a));
+            add_arg(item);
         }
 
         friend class minidriver_t;
-        //reql_t(minidriver_t *_r, const generated_term_t &term_);
-        //reql_t(minidriver_t *_r, const raw_term_t &term_);
+        reql_t(minidriver_t *_r, const raw_term_t &term_);
         reql_t(minidriver_t *_r, const reql_t &other);
         reql_t(minidriver_t *_r, const double val);
         reql_t(minidriver_t *_r, const std::string &val);

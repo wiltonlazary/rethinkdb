@@ -15,7 +15,7 @@ global_optargs_t::global_optargs_t() { }
 
 void global_optargs_t::add_optarg(const raw_term_t &optarg) {
     minidriver_t r(backtrace_id_t::empty());
-    raw_term_t arg = r.fun(r.expr(optarg)).release();
+    raw_term_t arg = r.fun(r.expr(optarg)).root_term();
 
     auto res = optargs.insert(std::make_pair(std::string(optarg.optarg_name()),
                                              wire_func_t(arg, std::vector<sym_t>())));
@@ -102,6 +102,7 @@ bool global_optargs_t::optarg_is_valid(const std::string &key) {
     return acceptable_optargs.count(key) != 0;
 }
 
-RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(global_optargs_t, optargs);
+RDB_IMPL_SERIALIZABLE_1(global_optargs_t, optargs);
+INSTANTIATE_SERIALIZABLE_FOR_CLUSTER(global_optargs_t);
 
 } // namespace ql

@@ -162,11 +162,10 @@ void prepare_namespace(namespace_interface_t *nsi,
     const ql::sym_t arg(1);
     counted_t<ql::term_storage_t> term_storage = make_counted<ql::term_storage_t>();
     ql::minidriver_t r(ql::backtrace_id_t::empty());
-    scoped_ptr_t<ql::generated_term_t> mapping = r.var(arg).release();
+    ql::raw_term_t mapping = r.var(arg).root_term();
 
     sindex_config_t sindex(
-        ql::map_wire_func_t(std::move(mapping),
-                            make_vector(arg), ql::backtrace_id_t::empty()),
+        ql::map_wire_func_t(mapping, make_vector(arg), ql::backtrace_id_t::empty()),
         reql_version_t::LATEST,
         sindex_multi_bool_t::SINGLE,
         sindex_geo_bool_t::GEO);

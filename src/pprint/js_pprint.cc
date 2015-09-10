@@ -10,7 +10,7 @@
 
 #include "pprint/generic_term_walker.hpp"
 #include "rdb_protocol/datum.hpp"
-#include "rdb_protocol/pseudo_binary.hpp"
+#include "rdb_protocol/base64.hpp"
 #include "rdb_protocol/query.hpp"
 
 namespace pprint {
@@ -63,7 +63,7 @@ protected:
             doc = to_js_func(t);
             break;
         case Term::VAR: {
-            guarantee(t->num_args() == 1);
+            guarantee(t.num_args() == 1);
             ql::raw_term_t arg0 = t.arg(0);
             guarantee(arg0.type() == Term::DATUM);
             doc = var_name(arg0.datum());
@@ -128,7 +128,7 @@ private:
 
     counted_t<const document_t> to_js_natural_object(const ql::raw_term_t &t) {
         std::vector<counted_t<const document_t> > term;
-        t.each_optarg([&] (raw_term_t item) {
+        t.each_optarg([&] (ql::raw_term_t item) {
                 if (!term.empty()) { term.push_back(comma_linebreak); }
                 term.push_back(make_nc(
                     make_text(strprintf("\"%s\":", item.optarg_name().c_str())),
@@ -140,7 +140,7 @@ private:
 
     counted_t<const document_t> to_js_wrapped_object(const ql::raw_term_t &t) {
         std::vector<counted_t<const document_t> > term;
-        t.each_optarg([&] (raw_term_t item) {
+        t.each_optarg([&] (ql::raw_term_t item) {
                 if (!term.empty()) { term.push_back(comma_linebreak); }
                 term.push_back(make_text(
                     strprintf("\"%s\"", item.optarg_name().c_str())));
@@ -166,8 +166,8 @@ private:
                              : std::to_string(d.as_num()));
         case ql::datum_t::type_t::R_BINARY: {
             std::vector<counted_t<const document_t> > args;
-            args.push_back(make_text(ql::pseudo::encode_base64(d.as_binary().data(),
-                                                               d.as_binary().size())));
+            args.push_back(make_text(encode_base64(d.as_binary().data(),
+                                                   d.as_binary().size())));
             args.push_back(comma_linebreak);
             args.push_back(base64_str);
             return make_c(node_buffer, lparen, make_nc(std::move(args)), rparen);
@@ -206,7 +206,7 @@ private:
 
     counted_t<const document_t> render_optargs(const ql::raw_term_t &t) {
         std::vector<counted_t<const document_t> > optargs;
-        t.each_optarg([&] (raw_term_t item) {
+        t.each_optarg([&] (ql::raw_term_t item) {
                 if (!optargs.empty()) { optargs.push_back(comma_linebreak); }
                 counted_t<const document_t> inner = make_c(make_text(
                         strprintf("\"%s\":", to_js_name(item.optarg_name()).c_str())),
@@ -253,7 +253,7 @@ private:
             stack->push_back(dot_linebreak);
             *last_is_dot = true;
             *last_should_r_wrap = true;
-            return boost::optional(var.arg(1));
+            return boost::make_optional(var.arg(1));
         }
         case Term::DATUM:
             in_r_expr = true;
@@ -534,7 +534,7 @@ private:
             return false;
         case Term::TABLE:
         case Term::FUNCALL:
-            return t->num_args() == 2;
+            return t.num_args() == 2;
         default:
             return true;
         }
@@ -584,7 +584,7 @@ private:
         if (arg0.type() == Term::MAKE_ARRAY) {
             std::vector<counted_t<const document_t> > args;
             for (size_t i = 0; i < arg0.num_args(); ++i) {
-                raw_term_t item = arg0.arg(i);
+                ql::raw_term_t item = arg0.arg(i);
                 if (!args.empty()) { args.push_back(comma_linebreak); }
                 guarantee(item.type() == Term::DATUM);
                 ql::datum_t d = item.datum();
@@ -609,7 +609,7 @@ private:
         counted_t<const document_t> body =
             make_c(return_st,
                    sp,
-                   make_nest(visit_generic(arg_it.next())),
+                   make_nest(visit_generic(t.arg(1))),
                    semicolon);
         in_r_expr = old_r_expr;
         return make_nc(lambda_1,

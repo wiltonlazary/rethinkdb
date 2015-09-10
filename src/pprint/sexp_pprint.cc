@@ -52,7 +52,7 @@ protected:
                 term.push_back(sp);
                 std::vector<counted_t<const document_t> > args;
                 for (size_t i = 0; i < t.num_args(); ++i) {
-                    raw_term_t item = t.arg(i);
+                    ql::raw_term_t item = t.arg(i);
                     if (!args.empty()) args.push_back(cond_linebreak);
                     args.push_back(visit_generic(item));
                 }

@@ -68,10 +68,9 @@ public:
 
         term.each_optarg([&] (raw_term_t optarg) {
                 counted_t<const term_t> t = compile_term(env, optarg);
-                auto res = optargs.insert(std::make_pair(optarg.optarg_name(),
-                                                         std::move(t)));
+                auto res = optargs.push_back(t);
                 rcheck(res.second, base_exc_t::LOGIC,
-                       strprintf("Duplicate object key: %s",
+                       strprintf("Duplicate object key: %s.",
                                  optarg.optarg_name().c_str()));
             });
     }
@@ -82,12 +81,12 @@ public:
         datum_object_builder_t acc;
         {
             profile::sampler_t sampler("Evaluating elements in make_obj.", env->env->trace);
-            for (auto it = optargs.begin(); it != optargs.end(); ++it) {
-                bool dup = acc.add(datum_string_t(it->get_src().optarg_name()),
-                                   it->eval(env, new_flags)->as_datum());
+            for (auto const &o : optargs) {
+                bool dup = acc.add(datum_string_t(o->get_src().optarg_name()),
+                                   o->eval(env, new_flags)->as_datum());
                 rcheck(!dup, base_exc_t::LOGIC,
                        strprintf("Duplicate object key: %s.",
-                                 it->get_src().optarg_name().c_str()));
+                                 o->get_src().optarg_name().c_str()));
                 sampler.new_sample();
             }
         }
@@ -105,7 +104,7 @@ public:
     const char *name() const { return "make_obj"; }
 
 private:
-    std::vector<counted_t<const term_t> > optargs;
+    std::map<std::string, counted_t<const term_t> > optargs;
     DISABLE_COPYING(make_obj_term_t);
 };
 

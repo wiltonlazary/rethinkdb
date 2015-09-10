@@ -17,18 +17,13 @@
 
 namespace ql {
 
-obj_or_seq_op_impl_t::obj_or_seq_op_impl_t(
-        compile_env_t *env, const term_t *self,
-        poly_type_t _poly_type, const raw_term_t &term,
-        std::set<std::string> &&_acceptable_ptypes)
-    : poly_type(_poly_type), parent(self),
-      acceptable_ptypes(std::move(_acceptable_ptypes)) {
+// Returns a new reql expression similar to term except that the first argument
+// is replaced by a new variable.
+// For example, foo.pluck('a') becomes varnum.pluck('a')
+raw_term_t make_obj_or_seq_func(const raw_term_t &term,
+                                poly_type_t poly_type) {
+    minidriver_t r(parent->backtrace());
     auto varnum = pb::dummy_var_t::OBJORSEQ_VARNUM;
-
-    // body is a new reql expression similar to term except that the first argument
-    // is replaced by a new variable.
-    // For example, foo.pluck('a') becomes varnum.pluck('a')
-    minidriver_t r(self->backtrace());
 
     minidriver_t::reql_t body = r.var(varnum).call(term.type());
     body.copy_args_from_term(term, 1);
@@ -37,14 +32,19 @@ obj_or_seq_op_impl_t::obj_or_seq_op_impl_t(
     switch (poly_type) {
     case MAP: // fallthru
     case FILTER:
-        func = r.fun(varnum, body).release();
-        break;
+        return r.fun(varnum, body).root_term();
     case SKIP_MAP:
-        func = r.fun(varnum, r.array(body).default_(r.array())).release();
-        break;
+        return r.fun(varnum, r.array(body).default_(r.array())).root_term();
     default: unreachable();
     }
 }
+
+obj_or_seq_op_impl_t::obj_or_seq_op_impl_t(
+        const term_t *_parent, poly_type_t _poly_type,
+        std::set<std::string> &&_acceptable_ptypes)
+    : parent(_parent), poly_type(_poly_type),
+      func(make_obj_or_seq_func(parent->get_src(), poly_type)),
+      acceptable_ptypes(std::move(_acceptable_ptypes)) { }
 
 scoped_ptr_t<val_t> obj_or_seq_op_impl_t::eval_impl_dereferenced(
         const term_t *target, scope_env_t *env, args_t *args,
@@ -134,14 +134,14 @@ obj_or_seq_op_term_t::obj_or_seq_op_term_t(
         compile_env_t *env, const raw_term_t &term,
         poly_type_t _poly_type, argspec_t argspec)
     : grouped_seq_op_term_t(env, term, argspec, optargspec_t({"_NO_RECURSE_"})),
-      impl(env, this, _poly_type, term, std::set<std::string>()) {
+      impl(this, env, _poly_type, std::set<std::string>()) {
 }
 
 obj_or_seq_op_term_t::obj_or_seq_op_term_t(
         compile_env_t *env, const raw_term_t &term,
         poly_type_t _poly_type, argspec_t argspec, std::set<std::string> &&ptypes)
     : grouped_seq_op_term_t(env, term, argspec, optargspec_t({"_NO_RECURSE_"})),
-      impl(env, this, _poly_type, term, std::move(ptypes)) {
+      impl(this, env, _poly_type, std::move(ptypes)) {
 }
 
 scoped_ptr_t<val_t> obj_or_seq_op_term_t::eval_impl(scope_env_t *env, args_t *args,
@@ -321,7 +321,7 @@ public:
     bracket_term_t(compile_env_t *env, const raw_term_t &term)
         : grouped_seq_op_term_t(env, term, argspec_t(2),
                                 optargspec_t({"_NO_RECURSE_"})),
-          impl(env, this, SKIP_MAP, term, std::set<std::string>()) {}
+          impl(this, env, SKIP_MAP, std::set<std::string>()) {}
 private:
     scoped_ptr_t<val_t> obj_eval_dereferenced(
         const scoped_ptr_t<val_t> &v0, const scoped_ptr_t<val_t> &v1) const {

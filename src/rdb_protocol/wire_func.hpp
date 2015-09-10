@@ -39,8 +39,7 @@ public:
     template <cluster_version_t W>
     friend void serialize(write_message_t *wm, const wire_func_t &);
     template <cluster_version_t W>
-    friend archive_result_t deserialize(read_stream_t *s, wire_func_t *wf,
-                                        reql_version_t reql_version = reql_version_t::LATEST);
+    friend archive_result_t deserialize(read_stream_t *s, wire_func_t *wf);
 
 private:
     friend class maybe_wire_func_t;  // for has().

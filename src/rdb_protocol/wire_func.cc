@@ -94,8 +94,7 @@ INSTANTIATE_SERIALIZE_FOR_CLUSTER_AND_DISK(wire_func_t);
 
 // deserialize function for 2.0 and before
 template <cluster_version_t W>
-archive_result_t deserialize(read_stream_t *s, wire_func_t *wf,
-                             reql_version_t reql_version) {
+archive_result_t deserialize(read_stream_t *s, wire_func_t *wf) {
     archive_result_t res;
 
     // When deserializing a protobuf backtrace, we won't actually be able to use it
@@ -125,7 +124,7 @@ archive_result_t deserialize(read_stream_t *s, wire_func_t *wf,
 
         compile_env_t env(scope.compute_visibility().with_func_arg_name_list(arg_names));
         term_storage_t storage =
-            term_storage_t::from_wire_func(std::move(raw_json), std::move(json_doc)),
+            term_storage_t::from_wire_func(std::move(raw_json), std::move(json_doc));
         wf->func = make_counted<reql_func_t>(std::move(storage), scope, arg_names,
                                              compile_term(&env, storage.root_term()));
         return res;
@@ -152,18 +151,18 @@ archive_result_t deserialize(read_stream_t *s, wire_func_t *wf,
 }
 
 template archive_result_t deserialize<cluster_version_t::v1_14>(
-        read_stream_t *, wire_func_t *, reql_version_t);
+        read_stream_t *, wire_func_t *);
 template archive_result_t deserialize<cluster_version_t::v1_15>(
-        read_stream_t *, wire_func_t *, reql_version_t);
+        read_stream_t *, wire_func_t *);
 template archive_result_t deserialize<cluster_version_t::v1_16>(
-        read_stream_t *, wire_func_t *, reql_version_t);
+        read_stream_t *, wire_func_t *);
 template archive_result_t deserialize<cluster_version_t::v2_0>(
-        read_stream_t *, wire_func_t *, reql_version_t);
+        read_stream_t *, wire_func_t *);
 
 // deserialize function for 2.1
 template <>
 archive_result_t deserialize<cluster_version_t::v2_1>(
-        read_stream_t *s, wire_func_t *wf, reql_version_t reql_version) {
+        read_stream_t *s, wire_func_t *wf) {
     const cluster_version_t W = cluster_version_t::v2_1;
     archive_result_t res;
 
@@ -191,7 +190,7 @@ archive_result_t deserialize<cluster_version_t::v2_1>(
 
         compile_env_t env(scope.compute_visibility().with_func_arg_name_list(arg_names));
         term_storage_t storage =
-            term_storage_t::from_wire_func(std::move(raw_json), std::move(json_doc)),
+            term_storage_t::from_wire_func(std::move(raw_json), std::move(json_doc));
         wf->func = make_counted<reql_func_t>(std::move(storage), scope, arg_names,
                                              compile_term(&env, storage.root_term()));
         return res;
@@ -220,7 +219,7 @@ archive_result_t deserialize<cluster_version_t::v2_1>(
 // deserialize function for 2.2 and above
 template <>
 archive_result_t deserialize<cluster_version_t::v2_2_is_latest>(
-        read_stream_t *s, wire_func_t *wf, reql_version_t reql_version) {
+        read_stream_t *s, wire_func_t *wf) {
     const cluster_version_t W = cluster_version_t::v2_2_is_latest;
     archive_result_t res;
 
@@ -248,7 +247,7 @@ archive_result_t deserialize<cluster_version_t::v2_2_is_latest>(
 
         compile_env_t env(scope.compute_visibility().with_func_arg_name_list(arg_names));
         term_storage_t storage =
-            term_storage_t::from_wire_func(std::move(raw_json), std::move(json_doc)),
+            term_storage_t::from_wire_func(std::move(raw_json), std::move(json_doc));
         wf->func = make_counted<reql_func_t>(std::move(storage), scope, arg_names,
                                              compile_term(&env, storage.root_term()));
         return res;

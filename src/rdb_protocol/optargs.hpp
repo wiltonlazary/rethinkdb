@@ -35,6 +35,7 @@ private:
     RDB_DECLARE_ME_SERIALIZABLE(global_optargs_t);
 };
 
+
 } // namespace ql
 
 #endif // RDB_PROTOCOL_OPTARGS_HPP_

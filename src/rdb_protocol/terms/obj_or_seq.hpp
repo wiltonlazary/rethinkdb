@@ -20,8 +20,7 @@ enum poly_type_t {
 
 class obj_or_seq_op_impl_t {
 public:
-    obj_or_seq_op_impl_t(compile_env_t *env,
-                         const term_t *self,
+    obj_or_seq_op_impl_t(const term_t *_parent,
                          poly_type_t _poly_type,
                          const raw_term_t &term,
                          std::set<std::string> &&_acceptable_ptypes);
@@ -32,9 +31,9 @@ public:
                                                std::function<scoped_ptr_t<val_t>()> helper) const;
 
 private:
-    poly_type_t poly_type;
-    const raw_term_t &func; // TODO: what should this be?
     const term_t *parent;
+    poly_type_t poly_type;
+    const raw_term_t func;
     const std::set<std::string> acceptable_ptypes;
 
     DISABLE_COPYING(obj_or_seq_op_impl_t);

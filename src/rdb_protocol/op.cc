@@ -83,12 +83,12 @@ private:
 
 arg_terms_t::arg_terms_t(const raw_term_t &_src, argspec_t _argspec,
                          std::vector<counted_t<const term_t> > _original_args)
-    : bt_rcheckable_t(_src.backtrace()),
+    : bt_rcheckable_t(_src.bt()),
       src(_src),
       argspec(std::move(_argspec)),
       original_args(std::move(_original_args)) {
-    for (auto it = original_args.begin(); it != original_args.end(); ++it) {
-        if ((*it)->get_src()->type == Term::ARGS) {
+    for (auto const &arg : original_args) {
+        if (arg->get_src().type() == Term::ARGS) {
             return;
         }
     }
@@ -104,10 +104,10 @@ argvec_t arg_terms_t::start_eval(scope_env_t *env, eval_flags_t flags) const {
     eval_flags_t new_flags = static_cast<eval_flags_t>(
         flags | argspec.get_eval_flags());
     std::vector<counted_t<const runtime_term_t> > args;
-    for (auto it = original_args.begin(); it != original_args.end(); ++it) {
-        if ((*it)->get_src()->type == Term::ARGS) {
-            bool det = (*it)->is_deterministic();
-            scoped_ptr_t<val_t> v = (*it)->eval(env, new_flags);
+    for (auto const &arg : original_args) {
+        if (arg->get_src().type() == Term::ARGS) {
+            bool det = arg->is_deterministic();
+            scoped_ptr_t<val_t> v = arg->eval(env, new_flags);
             datum_t d = v->as_datum();
             for (size_t i = 0; i < d.arr_size(); ++i) {
                 // This is a little hacky because the determinism flag is for
@@ -116,7 +116,7 @@ argvec_t arg_terms_t::start_eval(scope_env_t *env, eval_flags_t flags) const {
                 args.push_back(make_counted<faux_term_t>(backtrace(), d.get(i), det));
             }
         } else {
-            args.push_back(counted_t<const runtime_term_t>(*it));
+            args.push_back(counted_t<const runtime_term_t>(arg));
         }
     }
     rcheck(argspec.contains(args.size()),
@@ -183,13 +183,13 @@ op_term_t::op_term_t(compile_env_t *env, const raw_term_t &term,
     arg_terms.init(new arg_terms_t(term, std::move(argspec), std::move(original_args)));
 
     term.each_optarg([&] (raw_term_t o) {
-            rcheck_src(o.backtrace(), optargspec.contains(o.optarg_name()),
+            rcheck_src(o.bt(), optargspec.contains(o.optarg_name()),
                        base_exc_t::LOGIC,
                        strprintf("Unrecognized optional argument `%s`.",
                                  o.optarg_name().c_str()));
             counted_t<const term_t> t = compile_term(env, o);
             auto res = optargs.insert(std::make_pair(o.optarg_name(), std::move(t)));
-            rcheck_src(o.backtrace(), res.second,
+            rcheck_src(o.bt(), res.second,
                        base_exc_t::LOGIC,
                        strprintf("Duplicate optional argument: %s",
                                  o.optarg_name().c_str()));
@@ -240,10 +240,12 @@ scoped_ptr_t<val_t> op_term_t::optarg(scope_env_t *env, const std::string &key) 
     return env->env->get_optarg(env->env, key);
 }
 
-scoped_ptr_t<generated_term_t> op_term_t::lazy_literal_optarg(const std::string &key) const {
+counted_t<const func_term_t> op_term_t::lazy_literal_optarg(
+        compile_env_t *env, const std::string &key) const {
     std::map<std::string, counted_t<const term_t> >::const_iterator it = optargs.find(key);
     if (it != optargs.end()) {
-        return r.fun(r.expr(it->second->get_src())).release();
+        minidriver_t r(backtrace());
+        return make_counted<func_term_t>(env, r.fun(r.expr(it->second->get_src())).root_term());
     }
     return counted_t<func_term_t>();
 }
@@ -259,8 +261,8 @@ void accumulate_all_captures(
 void op_term_t::accumulate_captures(var_captures_t *captures) const {
     const std::vector<counted_t<const term_t> > &original_args
         = arg_terms->get_original_args();
-    for (auto it = original_args.begin(); it != original_args.end(); ++it) {
-        (*it)->accumulate_captures(captures);
+    for (auto const &arg : original_args) {
+        item->accumulate_captures(captures);
     }
     accumulate_all_captures(optargs, captures);
 }

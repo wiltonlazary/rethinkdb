@@ -17,17 +17,21 @@ class rewrite_term_t : public term_t {
 public:
     rewrite_term_t(compile_env_t *env, const raw_term_t &term,
                    argspec_t argspec,
-                   minidriver_t::reql_t (*rewrite)(const raw_term_t &in))
-            : term_t(term) {
+                   minidriver_t::reql_t (*rewrite)(const raw_term_t &))
+            : term_t(term), rewrite_src(do_rewrite(term, rewrite)) {
+        real = compile_term(env, rewrite_src);
+    }
+
+private:
+    static raw_term_t do_rewrite(const raw_term_t &term, 
+                                 minidriver_t::reql_t (*rewrite)(const raw_term_t &)) {
         rcheck(argspec.contains(term.num_args()),
                base_exc_t::LOGIC,
                strprintf("Expected %s but found %zu.",
                          argspec.print().c_str(), term.num_args()));
-        rewrite_src = rewrite(term).release();
-        real = compile_term(env, raw_term_t(rewrite_src));
+        return rewrite(term).root_term();
     }
 
-private:
     virtual void accumulate_captures(var_captures_t *captures) const {
         return real->accumulate_captures(captures);
     }
@@ -39,7 +43,7 @@ private:
         return real->eval(env);
     }
 
-    counted_t<generated_term_t> rewrite_src;
+    raw_term_t rewrite_src;
     counted_t<const term_t> real;
 };
 

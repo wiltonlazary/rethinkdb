@@ -273,9 +273,11 @@ private:
                 // Attach a transformation to `ds` to pull out the primary key.
                 minidriver_t r(backtrace());
                 auto x = pb::dummy_var_t::REPLACE_HELPER_ROW;
+                compile_env_t compile_env((var_visibility_t()));
+                func_term_t func_term(&compile_env,
+                                      r.fun(x, r.expr(x)[tbl->get_pkey()]).root_term());
                 ds->add_transformation(
-                    map_wire_func_t(var_scope_t(),
-                                    r.fun(x, r.expr(x)[tbl->get_pkey()]).release()),
+                    map_wire_func_t(func_term.eval_to_func(var_scope_t())),
                     backtrace());
             }
 

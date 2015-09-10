@@ -135,9 +135,9 @@ private:
 
 TEST(RDBInterrupt, InsertOp) {
     ql::minidriver_t r(ql::backtrace_id_t::empty());
-    scoped_ptr_t<ql::generated_term_t> insert_term =
+    ql::raw_term_t insert_term =
         r.db("db").table("table").insert(r.object(r.optarg("id", "key"),
-                                                  r.optarg("value", "stuff"))).release();
+                                                  r.optarg("value", "stuff"))).root_term();
 
     uint32_t eval_count;
     {
@@ -148,7 +148,7 @@ TEST(RDBInterrupt, InsertOp) {
             "db", "table", ql::datum_t("key"), true);
         unittest::run_in_thread_pool(std::bind(count_evals,
                                                &test_env,
-                                               raw_term_t(insert_term),
+                                               insert_term,
                                                &eval_count,
                                                &verify_callback));
     }
@@ -160,7 +160,7 @@ TEST(RDBInterrupt, InsertOp) {
             "db", "table", ql::datum_t("key"), false);
         unittest::run_in_thread_pool(std::bind(interrupt_test,
                                                &test_env,
-                                               raw_term_t(insert_term),
+                                               insert_term,
                                                i,
                                                &verify_callback));
     }
@@ -184,8 +184,8 @@ TEST(RDBInterrupt, GetOp) {
     initial_data.insert(std::move(row).to_datum());
 
     ql::minidriver_t r(ql::backtrace_id_t::empty());
-    scoped_ptr_t<ql::generated_term_t> get_term =
-        r.db("db").table("table").get_("key").release();
+    ql::raw_term_t get_term =
+        r.db("db").table("table").get_("key").root_term();
 
     {
         test_rdb_env_t test_env;
@@ -194,7 +194,7 @@ TEST(RDBInterrupt, GetOp) {
         test_env.add_table("db", "table", "id", initial_data);
         unittest::run_in_thread_pool(std::bind(count_evals,
                                                &test_env,
-                                               raw_term_t(get_term),
+                                               get_term,
                                                &eval_count,
                                                &dummy_callback));
     }
@@ -205,7 +205,7 @@ TEST(RDBInterrupt, GetOp) {
         test_env.add_table("db", "table", "id", initial_data);
         unittest::run_in_thread_pool(std::bind(interrupt_test,
                                                &test_env,
-                                               raw_term_t(get_term),
+                                               get_term,
                                                i,
                                                &dummy_callback));
     }
@@ -221,8 +221,8 @@ TEST(RDBInterrupt, DeleteOp) {
     initial_data.insert(std::move(row).to_datum());
 
     ql::minidriver_t r(ql::backtrace_id_t::empty());
-    scoped_ptr_t<ql::generated_term_t> delete_term =
-        r.db("db").table("table").get_("key").delete_().release();
+    ql::raw_term_t delete_term =
+        r.db("db").table("table").get_("key").delete_().root_term();
 
     {
         test_rdb_env_t test_env;
@@ -232,7 +232,7 @@ TEST(RDBInterrupt, DeleteOp) {
             "db", "table", ql::datum_t(datum_string_t("key")), false);
         unittest::run_in_thread_pool(std::bind(count_evals,
                                                &test_env,
-                                               raw_term_t(delete_term),
+                                               delete_term,
                                                &eval_count,
                                                &verify_callback));
     }
@@ -244,7 +244,7 @@ TEST(RDBInterrupt, DeleteOp) {
             "db", "table", ql::datum_t(datum_string_t("key")), true);
         unittest::run_in_thread_pool(std::bind(interrupt_test,
                                                &test_env,
-                                               raw_term_t(delete_term),
+                                               delete_term,
                                                i,
                                                &verify_callback));
     }

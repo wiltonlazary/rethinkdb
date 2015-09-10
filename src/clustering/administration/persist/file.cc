@@ -56,7 +56,7 @@ superblock_version_t magic_to_version(block_magic_t magic) {
     }
     // This is here so you don't forget to add new versions above.
     // Please also update the value of metadata_sb_magic at the top of this file!
-    static_assert(cluster_version_t::v2_1_is_latest_disk == cluster_version_t::v2_1,
+    static_assert(cluster_version_t::v2_2_is_latest_disk == cluster_version_t::v2_2,
         "Please add new version to magic_to_version.");
 }
 

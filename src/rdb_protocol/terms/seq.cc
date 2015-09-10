@@ -233,7 +233,7 @@ private:
             counted_t<table_slice_t> slice;
             if (index_str == tbl->get_pkey()) {
                 auto field = index->as_datum();
-                funcs.push_back(new_get_field_func(field, backtrace());
+                funcs.push_back(new_get_field_func(field, backtrace()));
                 slice = make_counted<table_slice_t>(tbl, index_str);
             } else {
                 slice = make_counted<table_slice_t>(
@@ -278,7 +278,7 @@ private:
         counted_t<const func_t> f = v1->as_func(env->env, CONSTANT_SHORTCUT);
         boost::optional<wire_func_t> defval;
         if (default_filter_term.has()) {
-            defval = wire_func_t(env->scope, default_filter_term);
+            defval = wire_func_t(default_filter_term->eval_to_func(env->scope));
         }
 
         if (v0->get_type().is_convertible(val_t::type_t::SELECTION)) {
@@ -295,7 +295,7 @@ private:
 
     virtual const char *name() const { return "filter"; }
 
-    generated_term_t default_filter_term;
+    counted_t<const func_term_t> default_filter_term;
 };
 
 class reduce_term_t : public grouped_seq_op_term_t {

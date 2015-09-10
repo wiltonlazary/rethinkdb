@@ -219,10 +219,8 @@ private:
                 auto row = pb::dummy_var_t::DISTINCT_ROW;
                 std::vector<sym_t> distinct_args{dummy_var_to_sym(row)}; // NOLINT(readability/braces) yes we bloody well do need the ;
                 minidriver_t r(backtrace());
-                scoped_ptr_t<generated_term_t> body = r.var(row)[idx_str].release();
-                map_wire_func_t mwf(std::move(body),
-                                    std::vector<sym_t>(1, dummy_var_to_sym(row)),
-                                    backtrace());
+                map_wire_func_t mwf(r.var(row)[idx_str].root_term(),
+                                    std::vector<sym_t>(1, dummy_var_to_sym(row)));
 
                 counted_t<datum_stream_t> s = tbl_slice->as_seq(env->env, backtrace());
                 s->add_transformation(std::move(mwf), backtrace());

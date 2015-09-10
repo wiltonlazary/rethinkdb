@@ -219,7 +219,7 @@ scoped_ptr_t<val_t> func_term_t::term_eval(scope_env_t *env,
 
 counted_t<const func_t> func_term_t::eval_to_func(const var_scope_t &env_scope) const {
     return make_counted<reql_func_t>(backtrace(),
-                                     env->scope.filtered_by_captures(external_captures),
+                                     env_scope.filtered_by_captures(external_captures),
                                      arg_names, body);
 }
 
@@ -255,8 +255,8 @@ bool filter_match(datum_t predicate, datum_t value,
 bool reql_func_t::filter_helper(env_t *env, datum_t arg) const {
     datum_t d = call(env, make_vector(arg), NO_FLAGS)->as_datum();
     if (d.get_type() == datum_t::R_OBJECT &&
-        (body->get_src()->type == Term::MAKE_OBJ ||
-         body->get_src()->type == Term::DATUM)) {
+        (body->get_src().type() == Term::MAKE_OBJ ||
+         body->get_src().type() == Term::DATUM)) {
         return filter_match(d, arg, this);
     } else {
         return d.as_bool();

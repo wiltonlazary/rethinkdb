@@ -15,11 +15,12 @@ minidriver_t::reql_t &minidriver_t::reql_t::operator=(const minidriver_t::reql_t
 minidriver_t::reql_t::reql_t(const reql_t &other) :
         r(other.r), term(other.term) { }
 
-//minidriver_t::reql_t::reql_t(minidriver_t *_r, const raw_term_t &term) :
-//        r(_r) {
-//
-//    // TODO: copy or reference the other term
-//}
+minidriver_t::reql_t::reql_t(minidriver_t *_r, const raw_term_t &other) :
+        r(_r), term(make_counted<generated_term_t>(other.type(), other.bt())) {
+    term->datum = other.datum();
+    copy_args_from_term(other, 0);
+    copy_optargs_from_term(other);
+}
 
 minidriver_t::reql_t::reql_t(minidriver_t *_r, const reql_t &other) :
         r(_r), term(other.term) { }
@@ -58,8 +59,8 @@ minidriver_t::reql_t minidriver_t::boolean(bool b) {
     return reql_t(this, datum_t(datum_t::construct_boolean_t(), b));
 }
 
-counted_t<generated_term_t> minidriver_t::reql_t::root_term() {
-    return term;
+raw_term_t minidriver_t::reql_t::root_term() {
+    return raw_term_t(term);
 }
 
 void minidriver_t::reql_t::copy_optargs_from_term(const raw_term_t &from) {

@@ -615,8 +615,7 @@ counted_t<single_selection_t> val_t::as_single_selection() {
     return single_selection();
 }
 
-counted_t<const func_t> val_t::as_func(env_t *env, function_shortcut_t shortcut) {
-    r_sanity_check(env->term_storage.has());
+counted_t<const func_t> val_t::as_func(function_shortcut_t shortcut) {
     if (get_type().is_convertible(type_t::FUNC)) {
         r_sanity_check(func().has());
         return func();

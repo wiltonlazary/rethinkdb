@@ -1454,7 +1454,7 @@ template void datum_t::write_json(
     rapidjson::PrettyWriter<rapidjson::StringBuffer> *writer) const;
 
 template <class Allocator>
-void to_json(rapidjson::Value *val_out, Allocator *allocator) const {
+void datum_t::to_json(rapidjson::Value *val_out, Allocator *allocator) const {
     switch (get_type()) {
     case MINVAL: rfail_datum(base_exc_t::LOGIC, "Cannot convert `r.minval` to JSON.");
     case MAXVAL: rfail_datum(base_exc_t::LOGIC, "Cannot convert `r.maxval` to JSON.");
@@ -1463,9 +1463,11 @@ void to_json(rapidjson::Value *val_out, Allocator *allocator) const {
     case R_BOOL: val_out->SetBool(as_bool()); break;
     case R_NUM: break;
     case R_STR: break;
-    case R_ARRAY: break;
-    case R_OBJECT: break;
-    case R_UNINITIALIZED: // fallthrough
+    case R_ARRAY: {
+    } break;
+    case R_OBJECT: {
+    } break;
+    case UNINITIALIZED: // fallthrough
     default: unreachable();
     }
 }
