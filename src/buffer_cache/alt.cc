@@ -720,13 +720,17 @@ repli_timestamp_t buf_lock_t::get_recency() const {
     ASSERT_FINITE_CORO_WAITING;
     guarantee(!empty());
     repli_timestamp_t ret = cpa->recency();
-    // You may not call this on a buf lock that was marked deleted.a
+    // You may not call this on a buf lock that was marked deleted, and you
+    // shouldn't call it on an aux block either.
     guarantee(ret != repli_timestamp_t::invalid);
     return ret;
 }
 
 void buf_lock_t::set_recency(repli_timestamp_t recency) {
     guarantee(!empty());
+    // You should never need to set the recency of an aux block. It will be
+    // discarded anyway.
+    guarantee(!is_aux_block_id(block_id()));
     rassert(snapshot_node_ == NULL);
 
     // We only wait here so that we can guarantee(!empty()) after it's pulsed.

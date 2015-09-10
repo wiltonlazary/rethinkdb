@@ -241,7 +241,7 @@ void lba_list_t::move_inline_entries_to_extents(file_account_t *io_account, exte
         since our changes are also being put into the in_memory_index, they will be
         incorporated into the new disk_structure that the GC creates, so they won't get lost. */
         // TODO! Explain this assert
-        CT_ASSERT(AUX_BLOCK_BIT % LBA_SHARD_FACTOR == 0);
+        CT_ASSERT(FIRST_AUX_BLOCK_ID % LBA_SHARD_FACTOR == 0);
         disk_structures[e.block_id % LBA_SHARD_FACTOR]->add_entry(
                 e.block_id,
                 e.recency,
@@ -336,8 +336,8 @@ void lba_list_t::gc(int lba_shard, auto_drainer_t::lock_t) {
     for (block_id_t id = lba_shard; id < aux_end_id; id += LBA_SHARD_FACTOR) {
         // Once we are done with the regular block IDs, continue with the aux
         // block IDs.
-        if (!is_aux_block(id) && id >= end_id) {
-            id = lba_shard + AUX_BLOCK_BIT;
+        if (!is_aux_block_id(id) && id >= end_id) {
+            id = lba_shard + FIRST_AUX_BLOCK_ID;
         }
         
         flagged_off64_t off = get_block_offset(id);

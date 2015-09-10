@@ -305,9 +305,9 @@ struct ls_start_existing_fsm_t :
             int batch = 0;
             for (; next_block_to_reconstruct < ser->lba_index->end_aux_block_id(); next_block_to_reconstruct++) {
                 // Once we are done with the normal blocks, switch over to the aux blocks.
-                if (!is_aux_block(next_block_to_reconstruct)
+                if (!is_aux_block_id(next_block_to_reconstruct)
                     && next_block_to_reconstruct >= ser->lba_index->end_block_id()) {
-                    next_block_to_reconstruct = AUX_BLOCK_BIT;
+                    next_block_to_reconstruct = FIRST_AUX_BLOCK_ID;
                 }
                 flagged_off64_t offset = ser->lba_index->get_block_offset(next_block_to_reconstruct);
                 if (offset.has_value()) {
@@ -775,8 +775,8 @@ counted_t<ls_block_token_pointee_t> log_serializer_t::index_read(block_id_t bloc
 
     rassert(state == state_ready);
 
-    if ((is_aux_block(block_id) && block_id >= lba_index->end_aux_block_id())
-        || (!is_aux_block(block_id) && block_id >= lba_index->end_block_id())) {
+    if ((is_aux_block_id(block_id) && block_id >= lba_index->end_aux_block_id())
+        || (!is_aux_block_id(block_id) && block_id >= lba_index->end_block_id())) {
         return counted_t<ls_block_token_pointee_t>();
     }
 

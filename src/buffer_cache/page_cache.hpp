@@ -5,6 +5,7 @@
 #include <functional>
 #include <map>
 #include <set>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -416,8 +417,11 @@ private:
 
     friend class current_page_acq_t;
     repli_timestamp_t recency_for_block_id(block_id_t id) {
-        if (is_aux_block(id)) {
-            return repli_timestamp_t::distant_past;
+        // This `if` is redundant, since `recencies_.size()` will always be smaller
+        // than any aux block ID. It's probably a good idea to be explicit about this
+        // though.
+        if (is_aux_block_id(id)) {
+            return repli_timestamp_t::invalid;
         }
         return recencies_.size() <= id
             ? repli_timestamp_t::invalid
@@ -425,9 +429,8 @@ private:
     }
 
     void set_recency_for_block_id(block_id_t id, repli_timestamp_t recency) {
-        if (is_aux_block(id)) {
-            // TODO! I should probably put a similar assert somewhere else
-            //rassert(recency == repli_timestamp_t::invalid);
+        if(is_aux_block_id(id)) {
+            guarantee(recency == repli_timestamp_t::invalid);
             return;
         }
         while (recencies_.size() <= id) {
@@ -459,8 +462,7 @@ private:
     serializer_t *serializer_;
     segmented_vector_t<repli_timestamp_t> recencies_;
 
-    // TODO! Test that this doesn't use too much memory for large caches, or is inefficient.
-    std::map<block_id_t, current_page_t *> current_pages_;
+    std::unordered_map<block_id_t, current_page_t *> current_pages_;
 
     free_list_t free_list_;
 

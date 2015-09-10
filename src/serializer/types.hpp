@@ -19,14 +19,20 @@ class buf_ptr_t;
 class printf_buffer_t;
 
 typedef uint64_t block_id_t;
+// The block ID space is divided into two sub-ranges:
+//  1. Regular block IDs starting at 0 up to FIRST_AUX_BLOCK_ID-1
+//  2. Aux block IDs starting at FIRST_AUX_BLOCK_ID up to NULL_BLOCK_ID-1
+#define FIRST_AUX_BLOCK_ID ((uint64_t)1 << 63)
 #define NULL_BLOCK_ID (block_id_t(-1))
-#define AUX_BLOCK_BIT ((uint64_t)1 << 63)
-inline bool is_aux_block(const block_id_t id) {
-    return id & AUX_BLOCK_BIT;
+inline bool is_aux_block_id(const block_id_t id) {
+    return id >= FIRST_AUX_BLOCK_ID && id != NULL_BLOCK_ID;
 }
+// Maps from the aux block ID space into a block ID space that starts at 0.
+// This is useful if you want to use an aux block ID to index into an array for
+// example.
 inline block_id_t convert_aux_block_id(const block_id_t id) {
-    rassert(is_aux_block(id));
-    return id & ~AUX_BLOCK_BIT;
+    rassert(is_aux_block_id(id));
+    return id - FIRST_AUX_BLOCK_ID;
 }
 
 #define PR_BLOCK_ID PRIu64

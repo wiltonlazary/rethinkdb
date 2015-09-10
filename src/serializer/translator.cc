@@ -191,15 +191,15 @@ serializer_multiplexer_t::~serializer_multiplexer_t() {
 /* translator_serializer_t */
 
 block_id_t translator_serializer_t::translate_block_id(block_id_t id, int mod_count, int mod_id, config_block_id_t cfgid) {
-    if (is_aux_block(id)) {
-        return AUX_BLOCK_BIT | translate_block_id(convert_aux_block_id(id), mod_count, mod_id, cfgid);
+    if (is_aux_block_id(id)) {
+        return FIRST_AUX_BLOCK_ID | translate_block_id(convert_aux_block_id(id), mod_count, mod_id, cfgid);
     } else {
         return id * mod_count + mod_id + cfgid.subsequent_ser_id();
     }
 }
 
 int translator_serializer_t::untranslate_block_id_to_mod_id(block_id_t inner_id, int mod_count, config_block_id_t cfgid) {
-    if (is_aux_block(inner_id)) {
+    if (is_aux_block_id(inner_id)) {
         return untranslate_block_id_to_mod_id(convert_aux_block_id(inner_id), mod_count, cfgid);
     } else {
         // We know that inner_id == id * mod_count + mod_id + min.
@@ -212,8 +212,8 @@ int translator_serializer_t::untranslate_block_id_to_mod_id(block_id_t inner_id,
 }
 
 block_id_t translator_serializer_t::untranslate_block_id_to_id(block_id_t inner_id, int mod_count, int mod_id, config_block_id_t cfgid) {
-    if (is_aux_block(inner_id)) {
-        return AUX_BLOCK_BIT | untranslate_block_id_to_id(
+    if (is_aux_block_id(inner_id)) {
+        return FIRST_AUX_BLOCK_ID | untranslate_block_id_to_id(
             convert_aux_block_id(inner_id), mod_count, mod_id, cfgid);
     } else {
         // (simply dividing by mod_count should be sufficient, but this is cleaner)
@@ -314,9 +314,9 @@ block_id_t translator_serializer_t::end_aux_block_id() {
         x /= mod_count;
     }
 
-    block_id_t id = static_cast<block_id_t>(x) | AUX_BLOCK_BIT;
+    block_id_t id = static_cast<block_id_t>(x) | FIRST_AUX_BLOCK_ID;
     rassert(translate_block_id(id) >= inner->end_aux_block_id());
-    while (id > AUX_BLOCK_BIT) {
+    while (id > FIRST_AUX_BLOCK_ID) {
         --id;
         if (!get_delete_bit(id)) {
             ++id;

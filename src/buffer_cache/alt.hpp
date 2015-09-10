@@ -197,8 +197,8 @@ public:
         return current_page_acq()->block_id();
     }
 
-    // It is illegal to call this on a buf lock that has been mark_deleted.  This
-    // never returns repli_timestamp_t::invalid.
+    // It is illegal to call this on a buf lock that has been mark_deleted, or that
+    // is a lock on an aux block.  This never returns repli_timestamp_t::invalid.
     repli_timestamp_t get_recency() const;
 
     // Sets the buf's recency to `superceding_recency`, which must be greater than or

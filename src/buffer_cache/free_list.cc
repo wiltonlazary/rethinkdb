@@ -14,7 +14,7 @@ free_list_t::free_list_t(serializer_t *serializer) {
             free_ids_.push_back(i);
         }
     }
-    for (block_id_t i = AUX_BLOCK_BIT; i < next_new_aux_block_id_; ++i) {
+    for (block_id_t i = FIRST_AUX_BLOCK_ID; i < next_new_aux_block_id_; ++i) {
         if (serializer->get_delete_bit(i)) {
             free_aux_ids_.push_back(i);
         }
@@ -48,10 +48,10 @@ block_id_t free_list_t::acquire_aux_block_id() {
 }
 
 void free_list_t::acquire_chosen_block_id(block_id_t block_id) {
-    block_id_t *next_new_id = is_aux_block(block_id)
+    block_id_t *next_new_id = is_aux_block_id(block_id)
                               ? &next_new_aux_block_id_
                               : &next_new_block_id_;
-    segmented_vector_t<block_id_t> *free_ids = is_aux_block(block_id)
+    segmented_vector_t<block_id_t> *free_ids = is_aux_block_id(block_id)
                                                ? &free_aux_ids_
                                                : &free_ids_;
     if (block_id >= *next_new_id) {
@@ -75,7 +75,7 @@ void free_list_t::acquire_chosen_block_id(block_id_t block_id) {
 }
 
 void free_list_t::release_block_id(block_id_t block_id) {
-    if (is_aux_block(block_id)) {
+    if (is_aux_block_id(block_id)) {
         free_aux_ids_.push_back(block_id);
     } else {
         free_ids_.push_back(block_id);
