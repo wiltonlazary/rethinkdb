@@ -23,24 +23,6 @@ store_key_t key_max(sorting_t sorting) {
     return !reversed(sorting) ? store_key_t::max() : store_key_t::min();
 }
 
-#define RDB_IMPL_PROTOB_DESERIALIZABLE(pb_t)                            \
-    MUST_USE archive_result_t deserialize_protobuf(read_stream_t *s, pb_t *p) { \
-        CT_ASSERT(sizeof(int) == sizeof(int32_t));                      \
-        int32_t size;                                                   \
-        archive_result_t res = deserialize_universal(s, &size);         \
-        if (bad(res)) { return res; }                                   \
-        if (size < 0) { return archive_result_t::RANGE_ERROR; }         \
-        scoped_array_t<char> data(size);                                \
-        int64_t read_res = force_read(s, data.data(), data.size());     \
-        if (read_res != size) { return archive_result_t::SOCK_ERROR; }  \
-        p->ParseFromArray(data.data(), data.size());                    \
-        return archive_result_t::SUCCESS;                               \
-    }
-
-RDB_IMPL_PROTOB_DESERIALIZABLE(Term);
-RDB_IMPL_PROTOB_DESERIALIZABLE(Datum);
-RDB_IMPL_PROTOB_DESERIALIZABLE(Backtrace);
-
 namespace rdb_protocol {
 
 void post_construct_and_drain_queue(
@@ -676,7 +658,7 @@ void rdb_r_unshard_visitor_t::unshard_range_batch(const query_t &q, sorting_t so
     }
     scoped_ptr_t<profile::trace_t> trace = ql::maybe_make_profile_trace(profile);
     ql::env_t env(ctx, ql::return_empty_normal_batches_t::NO,
-                  interruptor, q.optargs, trace.get_or_null());
+                  interruptor, q.optargs, q.start_time, trace.get_or_null());
 
     // Initialize response.
     response_out->response = query_response_t();
@@ -997,7 +979,7 @@ struct rdb_w_shard_visitor_t : public boost::static_visitor<bool> {
         if (!shard_keys.empty()) {
             *payload_out = batched_replace_t(std::move(shard_keys), br.pkey,
                                              br.f.compile_wire_func(), br.optargs,
-                                             br.return_changes);
+                                             br.start_time, br.return_changes);
             return true;
         } else {
             return false;

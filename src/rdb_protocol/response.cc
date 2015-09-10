@@ -59,6 +59,11 @@ Response::ResponseType response_t::type() const {
     return type_;
 }
 
+const boost::optional<Response::ErrorType> &response_t::error_type() const {
+    guarantee(type_ != -1);
+    return error_type_;
+}
+
 const std::vector<ql::datum_t> &response_t::data() const {
     guarantee(type_ != -1);
     return data_;

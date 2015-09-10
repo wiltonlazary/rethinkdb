@@ -291,10 +291,6 @@ public:
     // or rapidjson::PrettyWriter<rapidjson::StringBuffer>
     template <class json_writer_t> void write_json(json_writer_t *writer) const;
 
-    // Used by rewrites and protobuf deserialization
-    template <class alloc_t>
-    void to_json(rapidjson::Value *val_out, alloc_t *allocator) const;
-
     // DEPRECATED: Used for backwards compatibility with reql_versions before 2.1
     cJSON *as_json_raw() const;
     scoped_cJSON_t as_json() const;

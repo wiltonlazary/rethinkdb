@@ -26,7 +26,7 @@ class term_walker_t {
 public:
     term_walker_t(Allocator *_allocator,
                   backtrace_registry_t *_bt_reg) :
-        allocator(_allocator), bt_reg(_bt_reg) { }
+        bt_reg(_bt_reg), allocator(_allocator) { }
 
     void walk(rapidjson::Value *src) {
         r_sanity_check(frames.size() == 0);
@@ -46,7 +46,7 @@ private:
         {
             if (prev_frame != nullptr) {
                 writes_legal = prev_frame->writes_legal &&
-                    (is_zeroth_argument || !term_forbids_writes(prev_frame->term->type));
+                    (is_zeroth_argument || !term_forbids_writes(prev_frame->type));
             }
             parent->frames.push_back(this);
         }
@@ -59,11 +59,11 @@ private:
             type = _type;
             rapidjson::Value rewritten;
             rewritten.SetArray();
-            rewritten.Reserve(2, parent->allocator);
+            rewritten.Reserve(2, *parent->allocator);
             rewritten.PushBack(rapidjson::Value(static_cast<int>(type)),
-                               parent->allocator);
+                               *parent->allocator);
             src->Swap(rewritten);
-            src->PushBack(std::move(rewritten), parent->allocator);
+            src->PushBack(std::move(rewritten), *parent->allocator);
         }
 
         // RSI (grey): we should make these checks for minidriver term trees
@@ -111,14 +111,8 @@ private:
                 rewrite(src, Term::DATUM);
             }
 
-            // Convert all 'NOW' terms to the same literal time
-            if (type == Term::NOW) {
-                rewrite(src, Term::DATUM);
-                get_time().to_json(&(*src)[1], parent->allocator);
-            }
-
             // Append a backtrace to the term
-            src->PushBack(rapidjson::Value(bt.get()), parent->allocator);
+            src->PushBack(rapidjson::Value(bt.get()), *parent->allocator);
 
             if (type == Term::ASC || type == Term::DESC) {
                 rcheck_src(bt,
@@ -172,16 +166,8 @@ private:
         Term::TermType type;
     };
 
-    const datum_t &get_time() {
-        if (!start_time.has()) {
-            start_time = pseudo::time_now();
-        }
-        return start_time;
-    }
-
     backtrace_registry_t *bt_reg;
     intrusive_list_t<walker_frame_t> frames;
-    datum_t start_time;
     Allocator *allocator;
 };
 
@@ -195,7 +181,7 @@ void preprocess_term_tree(Allocator *allocator,
     term_walker.walk(root_term);
 }
 
-template <>
+template
 void preprocess_term_tree<rapidjson::MemoryPoolAllocator<> >(
         rapidjson::MemoryPoolAllocator<> *allocator,
         rapidjson::Value *root_term,

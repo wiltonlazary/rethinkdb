@@ -108,7 +108,7 @@ private:
         backtrace_registry_t bt_reg;
         const term_storage_t term_storage;
         const global_optargs_t global_optargs;
-        const microtime_t start_time;
+        const datum_t start_time;
 
         cond_t persistent_interruptor;
 

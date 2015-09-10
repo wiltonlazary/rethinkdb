@@ -99,7 +99,7 @@ void write_response_internal(ql::response_t *response,
         if (response->type() == Response::RUNTIME_ERROR &&
             response->error_type()) {
             writer.Key("e", 1);
-            writer.Int(response->error_type());
+            writer.Int(*response->error_type());
         }
         writer.Key("r", 1);
         writer.StartArray();

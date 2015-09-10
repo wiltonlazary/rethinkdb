@@ -1,7 +1,10 @@
+// Copyright 2010-2015 RethinkDB, all rights reserved.
 #include "rdb_protocol/configured_limits.hpp"
+
 #include <limits>
-#include "rdb_protocol/wire_func.hpp"
 #include "rdb_protocol/func.hpp"
+#include "rdb_protocol/pseudo_time.hpp"
+#include "rdb_protocol/wire_func.hpp"
 
 namespace ql {
 
@@ -24,6 +27,7 @@ configured_limits_t from_optargs(
                       return_empty_normal_batches_t::NO,
                       interruptor,
                       global_optargs_t(),
+                      pseudo::time_now(),
                       nullptr);
             if (has_changefeed_queue_size) {
                 int64_t sz = args->get_optarg(&env, "changefeed_queue_size")->as_int();

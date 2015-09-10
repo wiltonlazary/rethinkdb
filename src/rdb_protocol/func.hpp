@@ -71,7 +71,13 @@ private:
 class reql_func_t : public func_t {
 public:
     // Used when constructing in an existing environment - reusing another term storage
-    reql_func_t(const raw_term_t &_root_term, // for bt_rcheckable_t
+    reql_func_t(const raw_term_t &_root_term,
+                const var_scope_t &captured_scope,
+                std::vector<sym_t> arg_names,
+                counted_t<const term_t> body);
+
+    // Used when constructing from a function read off the wire
+    reql_func_t(term_storage_t &&_storage,
                 const var_scope_t &captured_scope,
                 std::vector<sym_t> arg_names,
                 counted_t<const term_t> body);
@@ -102,7 +108,7 @@ private:
     std::vector<sym_t> arg_names;
 
     // Term storage used when this was deserialized off the wire
-    boost::optional<term_storage_t> term_storage;
+    term_storage_t term_storage;
 
     // Reference to the root term of the function
     raw_term_t root_term;

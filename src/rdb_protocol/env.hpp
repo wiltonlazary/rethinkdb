@@ -47,6 +47,7 @@ public:
           return_empty_normal_batches_t return_empty_normal_batches,
           signal_t *interruptor,
           global_optargs_t optargs,
+          datum_t start_time,
           profile::trace_t *trace);
 
     // Used in unittest and for some secondary index environments (hence the
@@ -82,6 +83,10 @@ public:
     void do_eval_callback();
 
 
+    const datum_t &start_time() const {
+        return start_time_;
+    }
+
     const global_optargs_t &get_all_optargs() const {
         return global_optargs_;
     }
@@ -114,6 +119,9 @@ private:
     // The global optargs values passed to .run(...) in the Python, Ruby, and JS
     // drivers.
     global_optargs_t global_optargs_;
+
+    // The time the query was initially started
+    datum_t start_time_;
 
     // User specified configuration limits; e.g. array size limits
     const configured_limits_t limits_;

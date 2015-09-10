@@ -17,6 +17,7 @@
 #include "rdb_protocol/geo/primitives.hpp"
 #include "rdb_protocol/minidriver.hpp"
 #include "rdb_protocol/protocol.hpp"
+#include "rdb_protocol/pseudo_time.hpp"
 #include "rdb_protocol/shards.hpp"
 #include "rdb_protocol/store.hpp"
 #include "stl_utils.hpp"
@@ -160,12 +161,11 @@ void prepare_namespace(namespace_interface_t *nsi,
     std::string index_id = "geo";
 
     const ql::sym_t arg(1);
-    counted_t<ql::term_storage_t> term_storage = make_counted<ql::term_storage_t>();
     ql::minidriver_t r(ql::backtrace_id_t::empty());
     ql::raw_term_t mapping = r.var(arg).root_term();
 
     sindex_config_t sindex(
-        ql::map_wire_func_t(mapping, make_vector(arg), ql::backtrace_id_t::empty()),
+        ql::map_wire_func_t(mapping, make_vector(arg)),
         reql_version_t::LATEST,
         sindex_multi_bool_t::SINGLE,
         sindex_geo_bool_t::GEO);
@@ -193,7 +193,7 @@ std::vector<nearest_geo_read_response_t::dist_pair_t> perform_get_nearest(
     std::string idx_name = "geo";
     read_t read(nearest_geo_read_t(region_t::universe(), center, max_distance,
                                    max_results, WGS84_ELLIPSOID, table_name, idx_name,
-                                   ql::global_optargs_t()),
+                                   ql::global_optargs_t(), ql::pseudo::time_now()),
                 profile_bool_t::PROFILE,
                 read_mode_t::SINGLE);
     read_response_t response;
@@ -316,6 +316,7 @@ std::vector<datum_t> perform_get_intersecting(
     read_t read(intersecting_geo_read_t(boost::optional<changefeed_stamp_t>(),
                                         region_t::universe(),
                                         ql::global_optargs_t(),
+                                        ql::pseudo::time_now(),
                                         table_name, ql::batchspec_t::all(),
                                         std::vector<ql::transform_variant_t>(),
                                         boost::optional<ql::terminal_variant_t>(),

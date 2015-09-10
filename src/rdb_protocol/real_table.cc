@@ -158,7 +158,7 @@ ql::datum_t real_table_t::read_nearest(
     nearest_geo_read_t geo_read(
         region_t::universe(),
         center, max_dist, max_results, geo_system, table_name, sindex,
-        env->get_all_optargs());
+        env->get_all_optargs(), env->start_time());
     read_t read(geo_read, env->profile(), read_mode);
     read_response_t res;
     try {
@@ -247,8 +247,9 @@ ql::datum_t real_table_t::write_batched_replace(
     bool batch_succeeded = false;
     for (auto &&batch : batches) {
         try {
-            batched_replace_t write(
-                std::move(batch), pkey, func, env->get_all_optargs(), return_changes);
+            batched_replace_t write(std::move(batch), pkey, func,
+                                    env->get_all_optargs(), env->start_time(),
+                                    return_changes);
             write_t w(std::move(write), durability, env->profile(), env->limits());
             write_response_t response;
             write_with_profile(env, &w, &response);

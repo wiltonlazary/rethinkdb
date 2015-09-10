@@ -281,6 +281,7 @@ public:
     rget_read_t(boost::optional<changefeed_stamp_t> &&_stamp,
                 region_t _region,
                 ql::global_optargs_t _optargs,
+                ql::datum_t _start_time,
                 std::string _table_name,
                 ql::batchspec_t _batchspec,
                 std::vector<ql::transform_variant_t> _transforms,
@@ -290,6 +291,7 @@ public:
     : stamp(std::move(_stamp)),
       region(std::move(_region)),
       optargs(std::move(_optargs)),
+      start_time(std::move(_start_time)),
       table_name(std::move(_table_name)),
       batchspec(std::move(_batchspec)),
       transforms(std::move(_transforms)),
@@ -301,6 +303,7 @@ public:
 
     region_t region; // We need this even for sindex reads due to sharding.
     ql::global_optargs_t optargs;
+    ql::datum_t start_time;
     std::string table_name;
     ql::batchspec_t batchspec; // used to size batches
 
@@ -325,6 +328,7 @@ public:
         boost::optional<changefeed_stamp_t> &&_stamp,
         region_t _region,
         ql::global_optargs_t _optargs,
+        ql::datum_t _start_time,
         std::string _table_name,
         ql::batchspec_t _batchspec,
         std::vector<ql::transform_variant_t> _transforms,
@@ -334,6 +338,7 @@ public:
         : stamp(std::move(_stamp)),
           region(std::move(_region)),
           optargs(std::move(_optargs)),
+          start_time(std::move(_start_time)),
           table_name(std::move(_table_name)),
           batchspec(std::move(_batchspec)),
           transforms(std::move(_transforms)),
@@ -345,6 +350,7 @@ public:
 
     region_t region; // Primary key range. We need this because of sharding.
     ql::global_optargs_t optargs;
+    ql::datum_t start_time;
     std::string table_name;
     ql::batchspec_t batchspec; // used to size batches
 
@@ -367,13 +373,17 @@ public:
             lon_lat_point_t _center, double _max_dist, uint64_t _max_results,
             const ellipsoid_spec_t &_geo_system, const std::string &_table_name,
             const std::string &_sindex_id,
-            ql::global_optargs_t _optargs)
-        : optargs(std::move(_optargs)), center(_center), max_dist(_max_dist),
+            ql::global_optargs_t _optargs,
+            ql::datum_t _start_time)
+        : optargs(std::move(_optargs)),
+          start_time(std::move(_start_time)),
+          center(_center), max_dist(_max_dist),
           max_results(_max_results), geo_system(_geo_system),
           region(_region), table_name(_table_name),
           sindex_id(_sindex_id) { }
 
     ql::global_optargs_t optargs;
+    ql::datum_t start_time;
 
     lon_lat_point_t center;
     double max_dist;
@@ -420,18 +430,21 @@ struct changefeed_limit_subscribe_t {
         ql::changefeed::keyspec_t::limit_t _spec,
         std::string _table,
         ql::global_optargs_t _optargs,
+        ql::datum_t _start_time,
         region_t pkey_region)
         : addr(std::move(_addr)),
           uuid(std::move(_uuid)),
           spec(std::move(_spec)),
           table(std::move(_table)),
           optargs(std::move(_optargs)),
+          start_time(std::move(_start_time)),
           region(std::move(pkey_region)) { }
     ql::changefeed::client_t::addr_t addr;
     uuid_u uuid;
     ql::changefeed::keyspec_t::limit_t spec;
     std::string table;
     ql::global_optargs_t optargs;
+    ql::datum_t start_time;
     region_t region;
 };
 RDB_DECLARE_SERIALIZABLE(changefeed_limit_subscribe_t);
@@ -539,15 +552,19 @@ struct batched_replace_t {
             const std::string &_pkey,
             const counted_t<const ql::func_t> &func,
             ql::global_optargs_t _optargs,
+            ql::datum_t _start_time,
             return_changes_t _return_changes)
         : keys(std::move(_keys)), pkey(_pkey), f(func),
-          optargs(std::move(_optargs)), return_changes(_return_changes) {
+          optargs(std::move(_optargs)),
+          start_time(std::move(_start_time)),
+          return_changes(_return_changes) {
         r_sanity_check(keys.size() != 0);
     }
     std::vector<store_key_t> keys;
     std::string pkey;
     ql::wire_func_t f;
     ql::global_optargs_t optargs;
+    ql::datum_t start_time;
     return_changes_t return_changes;
 };
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(batched_replace_t);

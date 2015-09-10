@@ -9,6 +9,7 @@
 #include "arch/runtime/starter.hpp"
 #include "rdb_protocol/datum.hpp"
 #include "rdb_protocol/protocol.hpp"
+#include "rdb_protocol/pseudo_time.hpp"
 #include "unittest/gtest.hpp"
 #include "utils.hpp"
 
@@ -37,6 +38,7 @@ struct make_sindex_read_t {
                 boost::optional<changefeed_stamp_t>(),
                 region_t::universe(),
                 ql::global_optargs_t(),
+                ql::pseudo::time_now(),
                 "",
                 ql::batchspec_t::default_for(ql::batch_type_t::NORMAL),
                 std::vector<ql::transform_variant_t>(),

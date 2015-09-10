@@ -199,7 +199,7 @@ std::string create_sindex(const std::vector<scoped_ptr_t<store_t> > *stores) {
     ql::raw_term_t mapping = r.var(arg)["sid"].root_term();
 
     sindex_config_t sindex(
-        ql::map_wire_func_t(mapping, make_vector(arg), ql::backtrace_id_t::empty()),
+        ql::map_wire_func_t(mapping, make_vector(arg)),
         reql_version_t::LATEST,
         sindex_multi_bool_t::SINGLE,
         sindex_geo_bool_t::REGULAR);

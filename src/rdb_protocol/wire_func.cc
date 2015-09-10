@@ -159,11 +159,10 @@ template archive_result_t deserialize<cluster_version_t::v1_16>(
 template archive_result_t deserialize<cluster_version_t::v2_0>(
         read_stream_t *, wire_func_t *);
 
-// deserialize function for 2.1
-template <>
-archive_result_t deserialize<cluster_version_t::v2_1>(
+// deserialize function for 2.1 and above
+template <cluster_version_t W>
+archive_result_t deserialize_wire_func(
         read_stream_t *s, wire_func_t *wf) {
-    const cluster_version_t W = cluster_version_t::v2_1;
     archive_result_t res;
 
     wire_func_type_t type;
@@ -216,61 +215,16 @@ archive_result_t deserialize<cluster_version_t::v2_1>(
     }
 }
 
-// deserialize function for 2.2 and above
+template <>
+archive_result_t deserialize<cluster_version_t::v2_1>(
+        read_stream_t *s, wire_func_t *wf) {
+    return deserialize_wire_func<cluster_version_t::v2_1>(s, wf);
+}
+
 template <>
 archive_result_t deserialize<cluster_version_t::v2_2_is_latest>(
         read_stream_t *s, wire_func_t *wf) {
-    const cluster_version_t W = cluster_version_t::v2_2_is_latest;
-    archive_result_t res;
-
-    wire_func_type_t type;
-    res = deserialize<W>(s, &type);
-    if (bad(res)) { return res; }
-    switch (type) {
-    case wire_func_type_t::REQL: {
-        var_scope_t scope;
-        res = deserialize<W>(s, &scope);
-        if (bad(res)) { return res; }
-
-        std::vector<sym_t> arg_names;
-        res = deserialize<W>(s, &arg_names);
-        if (bad(res)) { return res; }
-
-        scoped_array_t<char> raw_json;
-        rapidjson::Document json_doc;
-        res = deserialize_term_tree<W>(s, &raw_json, &json_doc);
-        if (bad(res)) { return res; }
-
-        backtrace_id_t bt;
-        res = deserialize<W>(s, &bt);
-        if (bad(res)) { return res; }
-
-        compile_env_t env(scope.compute_visibility().with_func_arg_name_list(arg_names));
-        term_storage_t storage =
-            term_storage_t::from_wire_func(std::move(raw_json), std::move(json_doc));
-        wf->func = make_counted<reql_func_t>(std::move(storage), scope, arg_names,
-                                             compile_term(&env, storage.root_term()));
-        return res;
-    }
-    case wire_func_type_t::JS: {
-        std::string js_source;
-        res = deserialize<W>(s, &js_source);
-        if (bad(res)) { return res; }
-
-        uint64_t js_timeout_ms;
-        res = deserialize<W>(s, &js_timeout_ms);
-        if (bad(res)) { return res; }
-
-        backtrace_id_t bt;
-        res = deserialize<W>(s, &bt);
-        if (bad(res)) { return res; }
-
-        wf->func = make_counted<js_func_t>(js_source, js_timeout_ms, bt);
-        return res;
-    }
-    default:
-        unreachable();
-    }
+    return deserialize_wire_func<cluster_version_t::v2_2_is_latest>(s, wf);
 }
 
 template <cluster_version_t W>

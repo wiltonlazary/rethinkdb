@@ -27,7 +27,7 @@ public:
 
     // Getters
     Response::ResponseType type() const;
-    Response::ErrorType error_type() const;
+    const boost::optional<Response::ErrorType> &error_type() const;
     const std::vector<ql::datum_t> &data() const;
     const boost::optional<ql::datum_t> &profile() const;
     const std::vector<Response::ResponseNote> &notes() const;

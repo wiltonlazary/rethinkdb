@@ -11,6 +11,7 @@
 #include "extproc/http_runner.hpp"
 #include "logger.hpp"
 #include "rdb_protocol/env.hpp"
+#include "rdb_protocol/pseudo_time.hpp"
 
 namespace ql {
 void dispatch_http(ql::env_t *env,
@@ -42,6 +43,7 @@ void version_checker_t::do_check(bool is_initial, auto_drainer_t::lock_t keepali
                   ql::return_empty_normal_batches_t::NO,
                   keepalive.get_drain_signal(),
                   ql::global_optargs_t(),
+                  ql::pseudo::time_now(),
                   nullptr);
     http_opts_t opts;
     opts.limits = env.limits();

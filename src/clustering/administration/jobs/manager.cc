@@ -7,6 +7,7 @@
 #include "concurrency/watchable.hpp"
 #include "pprint/js_pprint.hpp"
 #include "rdb_protocol/context.hpp"
+#include "rdb_protocol/pseudo_time.hpp"
 #include "rdb_protocol/query_cache.hpp"
 
 const size_t jobs_manager_t::printed_query_columns = 89;
@@ -71,7 +72,8 @@ void jobs_manager_t::on_get_job_reports(
 
     // Note, as `time` is retrieved here a job may actually report to be started after
     // fetching the time, leading to a negative duration which we round to zero.
-    microtime_t time = current_microtime();
+    ql::datum_t time_datum = ql::pseudo::time_now();
+    double time = ql::pseudo::time_to_epoch_time(time_datum);
 
     pmap(get_num_threads(), [&](int32_t threadnum) {
         // Here we need to store `query_job_report_t` locally to prevent multiple threads
@@ -90,9 +92,12 @@ void jobs_manager_t::on_get_job_reports(
                     auto render = pprint::render_as_javascript(
                         pair.second->term_storage.root_term());
 
+                    ql::datum_t duration =
+                        ql::pseudo::time_sub(time_datum, pair.second->start_time);
+
                     query_job_reports_inner.emplace_back(
                         pair.second->job_id,
-                        time - std::min(pair.second->start_time, time),
+                        ql::pseudo::time_to_epoch_time(duration),
                         server_id,
                         query_cache->get_client_addr_port(),
                         pretty_print(printed_query_columns, render));
@@ -127,8 +132,8 @@ void jobs_manager_t::on_get_job_reports(
             /* Note that we only calculate the duration if the index construction is
                still in progress. */
             double duration = status.second.second.ready
-                ? 0
-                : time - std::min(status.second.second.start_time, time);
+                ? 0.0
+                : time - std::min<double>(status.second.second.start_time, time);
 
             index_construction_job_reports.emplace_back(
                 id,
@@ -152,8 +157,8 @@ void jobs_manager_t::on_get_job_reports(
             /* As above we only calculate the duration if the backfill is still in
                progress. */
             double duration = backfill.second.is_ready
-                ? 0
-                : time - std::min(backfill.second.start_time, time);
+                ? 0.0
+                : time - std::min<double>(backfill.second.start_time, time);
 
             backfill_job_reports.emplace_back(
                 id,

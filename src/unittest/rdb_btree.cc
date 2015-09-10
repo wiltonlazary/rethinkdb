@@ -87,11 +87,10 @@ void insert_rows_and_pulse_when_done(int start, int finish,
 sindex_name_t create_sindex(store_t *store) {
     std::string name = uuid_to_str(generate_uuid());
     ql::sym_t one(1);
-    counted_t<ql::term_storage_t> term_storage = make_counted<ql::term_storage_t>();
-    ql::minidriver_t r(term_storage.get(), ql::backtrace_id_t::empty());
+    ql::minidriver_t r(ql::backtrace_id_t::empty());
     ql::raw_term_t mapping = r.var(one)["sid"].root_term();
     sindex_config_t config(
-        ql::map_wire_func_t(mapping, make_vector(one), ql::backtrace_id_t::empty()),
+        ql::map_wire_func_t(mapping, make_vector(one)),
         reql_version_t::LATEST,
         sindex_multi_bool_t::SINGLE,
         sindex_geo_bool_t::REGULAR);

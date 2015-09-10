@@ -47,6 +47,17 @@ reql_func_t::reql_func_t(const raw_term_t &_root_term,
       arg_names(std::move(_arg_names)), root_term(_root_term),
       body(std::move(_body)) { }
 
+reql_func_t::reql_func_t(term_storage_t &&_storage,
+                         const var_scope_t &_captured_scope,
+                         std::vector<sym_t> _arg_names,
+                         counted_t<const term_t> _body)
+    : func_t(_storage.root_term().bt()),
+      captured_scope(_captured_scope),
+      arg_names(std::move(_arg_names)),
+      term_storage(std::move(_storage)),
+      root_term(term_storage.root_term()),
+      body(std::move(_body)) { }
+
 reql_func_t::~reql_func_t() { }
 
 scoped_ptr_t<val_t> reql_func_t::call(env_t *env,
@@ -218,7 +229,7 @@ scoped_ptr_t<val_t> func_term_t::term_eval(scope_env_t *env,
 }
 
 counted_t<const func_t> func_term_t::eval_to_func(const var_scope_t &env_scope) const {
-    return make_counted<reql_func_t>(backtrace(),
+    return make_counted<reql_func_t>(get_src(),
                                      env_scope.filtered_by_captures(external_captures),
                                      arg_names, body);
 }
