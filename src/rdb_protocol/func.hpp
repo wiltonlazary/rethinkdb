@@ -71,8 +71,7 @@ private:
 class reql_func_t : public func_t {
 public:
     // Used when constructing in an existing environment - reusing another term storage
-    reql_func_t(counted_t<term_storage_t> term_storage,
-                backtrace_id_t backtrace, // for bt_rcheckable_t
+    reql_func_t(const raw_term_t &_root_term, // for bt_rcheckable_t
                 const var_scope_t &captured_scope,
                 std::vector<sym_t> arg_names,
                 counted_t<const term_t> body);
@@ -102,8 +101,11 @@ private:
     // The argument names, for the corresponding positional argument number.
     std::vector<sym_t> arg_names;
 
-    // Reference to where the raw terms for this function are stored
-    counted_t<term_storage_t> term_storage;
+    // Term storage used when this was deserialized off the wire
+    boost::optional<term_storage_t> term_storage;
+
+    // Reference to the root term of the function
+    raw_term_t root_term;
 
     // The body of the function, which gets ->eval(...) called when call(...) is called.
     counted_t<const term_t> body;
@@ -154,21 +156,11 @@ protected:
 
 // Some queries, like filter, can take a shortcut object instead of a
 // function as their argument.
-
-counted_t<const func_t> new_constant_func(datum_t obj, backtrace_id_t bt,
-                                          counted_t<term_storage_t> term_storage);
-
-counted_t<const func_t> new_pluck_func(datum_t obj, backtrace_id_t bt,
-                                       counted_t<term_storage_t> term_storage);
-
-counted_t<const func_t> new_get_field_func(datum_t obj, backtrace_id_t bt,
-                                           counted_t<term_storage_t> term_storage);
-
-counted_t<const func_t> new_eq_comparison_func(datum_t obj, backtrace_id_t bt,
-                                               counted_t<term_storage_t> term_storage);
-
-counted_t<const func_t> new_page_func(datum_t method, backtrace_id_t bt,
-                                      counted_t<term_storage_t> term_storage);
+counted_t<const func_t> new_constant_func(datum_t obj, backtrace_id_t bt);
+counted_t<const func_t> new_pluck_func(datum_t obj, backtrace_id_t bt);
+counted_t<const func_t> new_get_field_func(datum_t obj, backtrace_id_t bt);
+counted_t<const func_t> new_eq_comparison_func(datum_t obj, backtrace_id_t bt);
+counted_t<const func_t> new_page_func(datum_t method, backtrace_id_t bt);
 
 class js_result_visitor_t : public boost::static_visitor<val_t *> {
 public:
@@ -199,6 +191,10 @@ private:
 class func_term_t : public term_t {
 public:
     func_term_t(compile_env_t *env, const raw_term_t &term);
+
+    // eval(scoped_env_t *env) is a dumb wrapper for this.  Evaluates the func_t without
+    // going by way of val_t, and without requiring a full-blown env.
+    counted_t<const func_t> eval_to_func(const var_scope_t &env_scope) const;
 
 private:
     virtual void accumulate_captures(var_captures_t *captures) const;

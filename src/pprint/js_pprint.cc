@@ -166,7 +166,8 @@ private:
                              : std::to_string(d.as_num()));
         case ql::datum_t::type_t::R_BINARY: {
             std::vector<counted_t<const document_t> > args;
-            args.push_back(make_text(ql::pseudo::encode_base64(d.as_binary())));
+            args.push_back(make_text(ql::pseudo::encode_base64(d.as_binary().data(),
+                                                               d.as_binary().size())));
             args.push_back(comma_linebreak);
             args.push_back(base64_str);
             return make_c(node_buffer, lparen, make_nc(std::move(args)), rparen);

@@ -97,7 +97,7 @@ private:
         entry_t(query_params_t *params,
                 backtrace_registry_t _bt_reg,
                 global_optargs_t _global_optargs,
-                counted_t<const term_t> _root_term);
+                counted_t<const term_t> _term_tree);
         ~entry_t();
 
         enum class state_t { START, STREAM, DONE, DELETING } state;
@@ -106,14 +106,14 @@ private:
         const bool noreply;
         const profile_bool_t profile;
         backtrace_registry_t bt_reg;
-        counted_t<term_storage_t> term_storage;
+        const term_storage_t term_storage;
         const global_optargs_t global_optargs;
         const microtime_t start_time;
 
         cond_t persistent_interruptor;
 
         // This will be empty if the root term has already been run
-        counted_t<const term_t> root_term;
+        counted_t<const term_t> term_tree;
 
         // This will be empty until the root term has been evaluated
         // If this resulted in a stream, this will not be empty until the

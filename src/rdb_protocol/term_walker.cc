@@ -21,11 +21,12 @@ const size_t MIN_WALK_STACK_SPACE = 16 * KILOBYTE;
 // backtraces, rewriting certain terms, and verifying correct placement
 // of some terms.
 
+template <typename Allocator>
 class term_walker_t {
 public:
-    term_walker_t(rapidjson::Document *_doc,
+    term_walker_t(Allocator *_allocator,
                   backtrace_registry_t *_bt_reg) :
-        doc(_doc), bt_reg(_bt_reg) { }
+        allocator(_allocator), bt_reg(_bt_reg) { }
 
     void walk(rapidjson::Value *src) {
         r_sanity_check(frames.size() == 0);
@@ -58,11 +59,11 @@ private:
             type = _type;
             rapidjson::Value rewritten;
             rewritten.SetArray();
-            rewritten.Reserve(2, parent->doc->GetAllocator());
+            rewritten.Reserve(2, parent->allocator);
             rewritten.PushBack(rapidjson::Value(static_cast<int>(type)),
-                               parent->doc->GetAllocator());
+                               parent->allocator);
             src->Swap(rewritten);
-            src->PushBack(std::move(rewritten), parent->doc->GetAllocator());
+            src->PushBack(std::move(rewritten), parent->allocator);
         }
 
         // RSI (grey): we should make these checks for minidriver term trees
@@ -113,11 +114,11 @@ private:
             // Convert all 'NOW' terms to the same literal time
             if (type == Term::NOW) {
                 rewrite(src, Term::DATUM);
-                get_time().to_json(&(*src)[1], parent->doc->GetAllocator());
+                get_time().to_json(&(*src)[1], parent->allocator);
             }
 
             // Append a backtrace to the term
-            src->PushBack(rapidjson::Value(bt.value()), parent->doc->GetAllocator());
+            src->PushBack(rapidjson::Value(bt.value()), parent->allocator);
 
             if (type == Term::ASC || type == Term::DESC) {
                 rcheck_src(bt,
@@ -180,12 +181,24 @@ private:
     backtrace_registry_t *bt_reg;
     intrusive_list_t<walker_frame_t> frames;
     datum_t start_time;
+    Allocator *allocator;
 };
 
-void preprocess_term_tree(rapidjson::Document *doc, backtrace_registry_t *bt_reg) {
-    term_walker_t term_walker(doc, bt_reg);
-    term_walker.walk(doc);
+template <typename Allocator>
+void preprocess_term_tree(Allocator *allocator,
+                          rapidjson::Value *root_term,
+                          backtrace_registry_t *bt_reg) {
+    r_sanity_check(allocator != nullptr);
+    r_sanity_check(root_term != nullptr);
+    term_walker_t term_walker(allocator, bt_reg);
+    term_walker.walk(root_term);
 }
+
+template
+void preprocess_term_tree<rapidjson::MemoryPoolAllocator<> >(
+        rapidjson::MemoryPoolAllocator<> *allocator,
+        rapidjson::Value *root_term,
+        backtrace_registry_t *bt_reg);
 
 // Returns true if `t` is a write or a meta op.
 bool term_is_write_or_meta(Term::TermType type) {

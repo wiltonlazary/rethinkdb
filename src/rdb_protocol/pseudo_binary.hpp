@@ -17,8 +17,6 @@ namespace pseudo {
 extern const char *const binary_string;
 extern const char *const data_key;
 
-std::string encode_base64(const datum_string_t &data);
-
 // Given a raw data string, encodes it into a `r.binary` pseudotype with base64 encoding
 void encode_base64_ptype(
         const datum_string_t &data,

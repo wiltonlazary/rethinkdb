@@ -12,10 +12,10 @@ class var_term_t : public term_t {
 public:
     var_term_t(compile_env_t *env, const raw_term_t &term)
             : term_t(term) {
-        rcheck(term->num_args() == 1, base_exc_t::LOGIC,
+        rcheck(term.num_args() == 1, base_exc_t::LOGIC,
                "A variable term has the wrong number of arguments.");
 
-        raw_term_t arg0 = raw_term.arg(0);
+        raw_term_t arg0 = term.arg(0);
         rcheck(arg0.type() == Term::DATUM, base_exc_t::LOGIC,
                "A variable term has a non-datum argument.");
         datum_t d = arg0.datum();
@@ -47,8 +47,7 @@ class implicit_var_term_t : public term_t {
 public:
     implicit_var_term_t(compile_env_t *env, const raw_term_t &term)
         : term_t(term) {
-        rcheck(
-            term->num_args() == 0 && term->num_optargs() == 0, base_exc_t::LOGIC,
+        rcheck(term.num_args() == 0 && term.num_optargs() == 0, base_exc_t::LOGIC,
             "Expected no arguments or optional arguments on implicit variable term.");
 
         rcheck(env->visibility.implicit_is_accessible(), base_exc_t::LOGIC,

@@ -21,26 +21,26 @@ obj_or_seq_op_impl_t::obj_or_seq_op_impl_t(
         compile_env_t *env, const term_t *self,
         poly_type_t _poly_type, const raw_term_t &term,
         std::set<std::string> &&_acceptable_ptypes)
-    : poly_type(_poly_type), func(nullptr), parent(self),
+    : poly_type(_poly_type), parent(self),
       acceptable_ptypes(std::move(_acceptable_ptypes)) {
     auto varnum = pb::dummy_var_t::OBJORSEQ_VARNUM;
 
     // body is a new reql expression similar to term except that the first argument
     // is replaced by a new variable.
     // For example, foo.pluck('a') becomes varnum.pluck('a')
-    minidriver_t r(env->term_storage, self->backtrace());
+    minidriver_t r(self->backtrace());
 
-    minidriver_t::reql_t body = r.var(varnum).call(term->type);
+    minidriver_t::reql_t body = r.var(varnum).call(term.type());
     body.copy_args_from_term(term, 1);
     body.add_arg(r.optarg("_NO_RECURSE_", r.boolean(true)));
 
     switch (poly_type) {
     case MAP: // fallthru
     case FILTER:
-        func = r.fun(varnum, body).raw_term();
+        func = r.fun(varnum, body).release();
         break;
     case SKIP_MAP:
-        func = r.fun(varnum, r.array(body).default_(r.array())).raw_term();
+        func = r.fun(varnum, r.array(body).default_(r.array())).release();
         break;
     default: unreachable();
     }
@@ -87,12 +87,11 @@ scoped_ptr_t<val_t> obj_or_seq_op_impl_t::eval_impl_dereferenced(
                                     target->name()));
         }
 
-        compile_env_t compile_env(env->scope.compute_visibility(),
-                                  env->env->term_storage.get());
+        compile_env_t compile_env(env->scope.compute_visibility());
         counted_t<func_term_t> func_term =
             make_counted<func_term_t>(&compile_env, func);
         counted_t<const func_t> f =
-            func_term->eval_to_func(env->scope, env->env->term_storage);
+            func_term->eval_to_func(env->scope);
 
         counted_t<datum_stream_t> stream;
         counted_t<selection_t> sel; // may be empty

@@ -430,8 +430,7 @@ void query_server_t::connection_loop(tcp_conn_t *conn,
 
                 save_exception(&err, &err_str, &abort, [&]() {
                     handler->run_query(query.get(), &response, &cb_interruptor);
-                    if (!q->noreply) {
-                        response.set_token(query->token);
+                    if (!query->noreply) {
                         new_mutex_acq_t send_lock(&send_mutex, &cb_interruptor);
                         protocol_t::send_response(&response, query->token,
                                                   conn, &cb_interruptor);
@@ -537,15 +536,14 @@ void query_server_t::handle(const http_req_t &req,
                 handler->run_query(query.get(), &response, &true_interruptor);
                 ticks_t ticks = get_ticks() - start;
 
-                if (!response.has_profile()) {
+                if (!response.profile()) {
                     ql::datum_array_builder_t array_builder(
                         ql::configured_limits_t::unlimited);
                     ql::datum_object_builder_t object_builder;
                     object_builder.overwrite("duration(ms)",
                         ql::datum_t(static_cast<double>(ticks) / MILLION));
                     array_builder.add(std::move(object_builder).to_datum());
-                    std::move(array_builder).to_datum().write_to_protobuf(
-                        response.mutable_profile(), ql::use_json_t::YES);
+                    response.set_profile(std::move(array_builder).to_datum());
                 }
             } catch (const interrupted_exc_t &ex) {
                 if (http_conn_cache.is_expired(*conn)) {

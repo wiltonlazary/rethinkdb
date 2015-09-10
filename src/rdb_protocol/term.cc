@@ -23,8 +23,8 @@ const size_t MIN_EVAL_STACK_SPACE = 16 * KILOBYTE;
 
 counted_t<const term_t> compile_on_current_stack(
         compile_env_t *env,
-        const protob_t<const Term> t) {
-    switch (t->type()) {
+        const raw_term_t &t) {
+    switch (t.type()) {
     case Term::DATUM:              return make_datum_term(t);
     case Term::MAKE_ARRAY:         return make_make_array_term(env, t);
     case Term::MAKE_OBJ:           return make_make_obj_term(env, t);
@@ -210,6 +210,12 @@ counted_t<const term_t> compile_on_current_stack(
     unreachable();
 }
 
+counted_t<const term_t> compile_term(compile_env_t *env, const raw_term_t &t) {
+    return call_with_enough_stack<counted_t<const term_t> >([&] () {
+            return compile_on_current_stack(env, std::move(t));
+        }, MIN_COMPILE_STACK_SPACE);
+}
+
 void run(query_params_t *query_params,
          response_t *response_out,
          signal_t *interruptor) {
@@ -247,7 +253,7 @@ runtime_term_t::runtime_term_t(backtrace_id_t bt)
 runtime_term_t::~runtime_term_t() { }
 
 term_t::term_t(const raw_term_t &_src)
-    : runtime_term_t(_src.backtrace()),
+    : runtime_term_t(_src.bt()),
       src(_src) { }
 
 term_t::~term_t() { }

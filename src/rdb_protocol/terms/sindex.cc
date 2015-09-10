@@ -145,8 +145,13 @@ public:
         } else {
             minidriver_t r(backtrace());
             pb::dummy_var_t x = pb::dummy_var_t::SINDEXCREATE_X;
-            config.func = ql::map_wire_func_t(env->scope,
-                                              r.fun(x, r.var(x)[name_datum]).release());
+            
+            compile_env_t empty_compile_env((var_visitibility_t()));
+            counted_t<func_term_t> func_term_term =
+                make_counted<func_term_t>(&empty_compile_env,
+                                          r.fun(x, r.var(x)[name_datum]).root_term());
+
+            config.func = ql::map_wire_func_t(func_term_term->eval_to_func(env->scope));
             config.func_version = reql_version_t::LATEST;
         }
 

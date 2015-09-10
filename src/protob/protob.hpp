@@ -96,7 +96,6 @@ public:
 
     virtual void run_query(ql::query_params_t *query_params,
                            ql::response_t *response_out,
-                           new_semaphore_acq_t *throttler,
                            signal_t *interruptor) = 0;
 };
 

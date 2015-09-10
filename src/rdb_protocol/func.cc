@@ -39,12 +39,12 @@ void func_t::assert_deterministic(const char *extra_msg) const {
            strprintf("Could not prove function deterministic.  %s", extra_msg));
 }
 
-reql_func_t::reql_func_t(generated_term_t &&generated,
+reql_func_t::reql_func_t(const raw_term_t &_root_term,
                          const var_scope_t &_captured_scope,
                          std::vector<sym_t> _arg_names,
                          counted_t<const term_t> _body)
-    : func_t(backtrace), captured_scope(_captured_scope),
-      arg_names(std::move(_arg_names)), term_storage(std::move(_term_storage)),
+    : func_t(_root_term.bt()), captured_scope(_captured_scope),
+      arg_names(std::move(_arg_names)), root_term(_root_term),
       body(std::move(_body)) { }
 
 reql_func_t::~reql_func_t() { }
@@ -143,24 +143,22 @@ void js_func_t::visit(func_visitor_t *visitor) const {
     visitor->on_js_func(this);
 }
 
-func_term_t::func_term_t(compile_env_t *env, const raw_term_t *t)
+func_term_t::func_term_t(compile_env_t *env, const raw_term_t &t)
         : term_t(t) {
-    r_sanity_check(t != nullptr);
-    r_sanity_check(t->type == Term::FUNC);
-    rcheck(t->num_optargs() == 0,
+    r_sanity_check(t.type() == Term::FUNC);
+    rcheck(t.num_optargs() == 0,
            base_exc_t::LOGIC,
            "FUNC takes no optional arguments.");
-    rcheck(t->num_args() == 2,
+    rcheck(t.num_args() == 2,
            base_exc_t::LOGIC,
-           strprintf("FUNC takes exactly two arguments (got %zu)", t->num_args()));
+           strprintf("FUNC takes exactly two arguments (got %zu)", t.num_args()));
 
-    auto it = t->args();
-    const raw_term_t *vars = it.next();
-    const raw_term_t *raw_body = it.next();
+    raw_term_t vars = t.arg(0);
+    raw_term_t raw_body = t.arg(1);
 
     std::vector<sym_t> args;
-    if (vars->type == Term::DATUM) {
-        datum_t d = vars->datum();
+    if (vars.type() == Term::DATUM) {
+        datum_t d = vars.datum();
         rcheck(d.get_type() == datum_t::type_t::R_ARRAY,
                base_exc_t::LOGIC,
                "CLIENT ERROR: FUNC variables must be a literal *array* of numbers.");
@@ -171,13 +169,13 @@ func_term_t::func_term_t(compile_env_t *env, const raw_term_t *t)
                    "CLIENT ERROR: FUNC variables must be a literal array of *numbers*.");
             args.push_back(sym_t(dnum.as_num()));
         }
-    } else if (vars->type == Term::MAKE_ARRAY) {
-        auto vars_it = vars->args();
-        while (const raw_term_t *v = vars_it.next()) {
-            rcheck(v->type == Term::DATUM,
+    } else if (vars.type() == Term::MAKE_ARRAY) {
+        for (size_t i = 0; i < vars.num_args(); ++i) {
+            raw_term_t v = vars.arg(i);
+            rcheck(v.type() == Term::DATUM,
                    base_exc_t::LOGIC,
                    "CLIENT ERROR: FUNC variables must be a *literal* array of numbers.");
-            datum_t d = v->datum();
+            datum_t d = v.datum();
             rcheck(d.get_type() == datum_t::type_t::R_NUM,
                    base_exc_t::LOGIC,
                    "CLIENT ERROR: FUNC variables must be a literal array of *numbers*.");
@@ -189,7 +187,7 @@ func_term_t::func_term_t(compile_env_t *env, const raw_term_t *t)
     }
 
     var_visibility_t varname_visibility = env->visibility.with_func_arg_name_list(args);
-    compile_env_t body_env(std::move(varname_visibility), env->term_storage);
+    compile_env_t body_env(std::move(varname_visibility));
 
     counted_t<const term_t> compiled_body = compile_term(&body_env, raw_body);
     r_sanity_check(compiled_body.has());
@@ -216,10 +214,13 @@ void func_term_t::accumulate_captures(var_captures_t *captures) const {
 
 scoped_ptr_t<val_t> func_term_t::term_eval(scope_env_t *env,
                                            UNUSED eval_flags_t flags) const {
-    return new_val(make_counted<reql_func_t>(
-        backtrace(),
-        env->scope.filtered_by_captures(external_captures),
-        arg_names, body);
+    return new_val(eval_to_func(env->scope));
+}
+
+counted_t<const func_t> func_term_t::eval_to_func(const var_scope_t &env_scope) const {
+    return make_counted<reql_func_t>(backtrace(),
+                                     env->scope.filtered_by_captures(external_captures),
+                                     arg_names, body);
 }
 
 bool func_term_t::is_deterministic() const {
@@ -323,25 +324,41 @@ bool func_t::filter_call(env_t *env, datum_t arg, counted_t<const func_t> defaul
 
 counted_t<const func_t> new_constant_func(datum_t obj, backtrace_id_t bt) {
     minidriver_t r(bt);
-    return wire_func_t(var_scope_t(), r.fun(r.expr(obj)).release());
+    compile_env_t empty_compile_env((var_visibility_t()));
+    counted_t<func_term_t> func_term =
+        make_counted<func_term_t>(&empty_compile_env,
+                                  r.fun(r.expr(obj)).root_term());
+    return func_term->eval_to_func(var_scope_t());
 }
 
 counted_t<const func_t> new_get_field_func(datum_t key, backtrace_id_t bt) {
     minidriver_t r(bt);
     pb::dummy_var_t obj = pb::dummy_var_t::FUNC_GETFIELD;
-    return wire_func_t(var_scope_t(), r.fun(obj, r.expr(obj)[key]).release());
+    compile_env_t empty_compile_env((var_visibility_t()));
+    counted_t<func_term_t> func_term =
+        make_counted<func_term_t>(&empty_compile_env,
+                                  r.fun(obj, r.expr(obj)[key]).root_term());
+    return func_term->eval_to_func(var_scope_t());
 }
 
 counted_t<const func_t> new_pluck_func(datum_t obj, backtrace_id_t bt) {
-    minidriver_t r(term_storage.get(), bt);
+    minidriver_t r(bt);
     pb::dummy_var_t var = pb::dummy_var_t::FUNC_PLUCK;
-    return wire_func_t(var_scope_t(), r.fun(var, r.expr(var).pluck(obj)).release());
+    compile_env_t empty_compile_env((var_visibility_t()));
+    counted_t<func_term_t> func_term =
+        make_counted<func_term_t>(&empty_compile_env,
+                                  r.fun(var, r.expr(var).pluck(obj)).root_term());
+    return func_term->eval_to_func(var_scope_t());
 }
 
 counted_t<const func_t> new_eq_comparison_func(datum_t obj, backtrace_id_t bt) {
-    minidriver_t r(term_storage.get(), bt);
+    minidriver_t r(bt);
     pb::dummy_var_t var = pb::dummy_var_t::FUNC_EQCOMPARISON;
-    return wire_func_t(var_scope_t(), r.fun(var, r.expr(var) == obj).release());
+    compile_env_t empty_compile_env((var_visibility_t()));
+    counted_t<func_term_t> func_term =
+        make_counted<func_term_t>(&empty_compile_env,
+                                  r.fun(var, r.expr(var) == obj).root_term());
+    return func_term->eval_to_func(var_scope_t());
 }
 
 counted_t<const func_t> new_page_func(datum_t method, backtrace_id_t bt) {
@@ -350,11 +367,13 @@ counted_t<const func_t> new_page_func(datum_t method, backtrace_id_t bt) {
         if (name == "link-next") {
             minidriver_t r(bt);
             pb::dummy_var_t info = pb::dummy_var_t::FUNC_PAGE;
-            return wire_func_t(var_scope_t(),
-                r.fun(info,
-                       r.expr(info)["header"]["link"]["rel=\"next\""]
-                        .default_(r.null()))
-                .release());
+            compile_env_t empty_compile_env((var_visibility_t()));
+            counted_t<func_term_t> func_term =
+                make_counted<func_term_t>(&empty_compile_env,
+                    r.fun(info,
+                          r.expr(info)["header"]["link"]["rel=\"next\""]
+                           .default_(r.null())).root_term());
+            return func_term->eval_to_func(var_scope_t());
         } else {
             std::string msg = strprintf("`page` method '%s' not recognized, "
                                         "only 'link-next' is available.", name.c_str());

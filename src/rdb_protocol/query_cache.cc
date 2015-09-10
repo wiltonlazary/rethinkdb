@@ -48,7 +48,10 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(query_params_t *query_p
     global_optargs_t global_optargs;
     try {
         global_optargs = query_params->term_storage.global_optargs();
-        preprocess_term_tree(query_params->term_storage.json(), &bt_reg);
+        preprocess_term_tree(
+            query_params->term_storage.json()->GetAllocator(),
+            boost::get<rapidjson::Value *>(query_params->term_storage.root_term().get_src()),
+            &bt_reg);
 
         compile_env_t compile_env((var_visibility_t()));
         term_tree = compile_term(&compile_env, query_params->term_storage.root_term());
@@ -234,7 +237,7 @@ void query_cache_t::ref_t::fill_response(response_t *res) {
     }
 }
 
-void query_cache_t::ref_t::run(env_t *env, Response *res) {
+void query_cache_t::ref_t::run(env_t *env, response_t *res) {
     scope_env_t scope_env(env, var_scope_t());
     scoped_ptr_t<val_t> val = entry->term_tree->eval(&scope_env);
 

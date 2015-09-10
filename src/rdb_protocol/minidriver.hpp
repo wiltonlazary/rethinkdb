@@ -23,7 +23,7 @@ public:
      **/
     class reql_t {
     public:
-        scoped_ptr_t<generated_term_t> release() RVALUE_THIS;
+        counted_t<generated_term_t> release() RVALUE_THIS;
         void copy_optargs_from_term(const raw_term_t &from);
         void copy_args_from_term(const raw_term_t &from, size_t start_index);
 
@@ -74,9 +74,20 @@ public:
         reql_t &operator= (const reql_t &other);
 
     private:
+        template <class... T>
+        void add_args(T &&... args) {
+            UNUSED int _[] = { (add_arg(std::forward<T>(args)), 1)... };
+        }
+
+        template <class T>
+        void add_arg(T &&a) {
+            reql_t it(std::forward<T>(a));
+            term->args.push_back(std::move(it).release());
+        }
+
         friend class minidriver_t;
-        reql_t(minidriver_t *_r, const generated_term_t &term_);
-        reql_t(minidriver_t *_r, const raw_term_t &term_);
+        //reql_t(minidriver_t *_r, const generated_term_t &term_);
+        //reql_t(minidriver_t *_r, const raw_term_t &term_);
         reql_t(minidriver_t *_r, const reql_t &other);
         reql_t(minidriver_t *_r, const double val);
         reql_t(minidriver_t *_r, const std::string &val);
@@ -87,16 +98,13 @@ public:
         template <class... T>
         reql_t(minidriver_t *_r, Term::TermType type, T &&... args) :
                 r(_r) {
-            term = make_scoped<generated_term_t>(type, r->bt);
-            if (type == Term::TermType::DATUM) {
-                term->datum = datum_t(std::forward<T>(args)...);      
-            } else {
-                add_args(std::forward<T>(args)...);
-            }
+            r_sanity_check(type != Term::DATUM);
+            term = make_counted<generated_term_t>(type, r->bt);
+            add_args(std::forward<T>(args)...);
         }
 
         minidriver_t *r;
-        scoped_ptr_t<generated_term_t> term;
+        counted_t<generated_term_t> term;
     };
 
     minidriver_t(backtrace_id_t bt);
@@ -150,7 +158,6 @@ public:
 
 private:
     friend class reql_t;
-    raw_term_t *new_term(Term::TermType type);
     backtrace_id_t bt;
 };
 
@@ -159,14 +166,12 @@ private:
 template <>
 inline void minidriver_t::reql_t::add_arg(
         std::pair<std::string, minidriver_t::reql_t> &&optarg) {
-    raw_term_t *optarg_term = r->new_ref(optarg.second.raw_term_);
-    optarg_term->optarg_name = optarg.first;
-    raw_term_->mutable_optargs().push_back(optarg_term);
+    term->optargs[optarg.first] = std::move(optarg.second).term;
 }
 
 template <>
 inline void minidriver_t::reql_t::add_arg(minidriver_t::reql_t &&arg) {
-    raw_term_->mutable_args().push_back(r->new_ref(arg.raw_term_));
+    term->args.push_back(arg.term);
 }
 
 }  // namespace ql

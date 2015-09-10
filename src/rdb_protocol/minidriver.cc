@@ -3,93 +3,75 @@
 
 namespace ql {
 
-minidriver_t::minidriver_t(term_storage_t *_term_storage, backtrace_id_t _bt) :
-        term_storage(_term_storage), bt(_bt) { }
-
-raw_term_t *minidriver_t::new_term(Term::TermType type) {
-    return term_storage->new_term(type, bt);
-}
+minidriver_t::minidriver_t(backtrace_id_t _bt) :
+    bt(_bt) { }
 
 minidriver_t::reql_t &minidriver_t::reql_t::operator=(const minidriver_t::reql_t &other) {
     r = other.r;
-    raw_term_ = other.raw_term_;
+    term = other.term;
     return *this;
 }
 
 minidriver_t::reql_t::reql_t(const reql_t &other) :
-        r(other.r), term(other.raw_term_) { }
+        r(other.r), term(other.term) { }
 
-minidriver_t::reql_t::reql_t(minidriver_t *_r, const raw_term_t *term) :
-        r(_r), raw_term_(r->new_ref(term)) { }
+//minidriver_t::reql_t::reql_t(minidriver_t *_r, const raw_term_t &term) :
+//        r(_r) {
+//
+//    // TODO: copy or reference the other term
+//}
 
 minidriver_t::reql_t::reql_t(minidriver_t *_r, const reql_t &other) :
-        r(_r), raw_term_(r->new_ref(other.raw_term_)) { }
+        r(_r), term(other.term) { }
 
 minidriver_t::reql_t::reql_t(minidriver_t *_r, double val) :
-        r(_r), raw_term_(r->new_term(Term::DATUM)) {
-    raw_term_->mutable_datum() = datum_t(val);
+        r(_r), term(make_counted<generated_term_t>(Term::DATUM, r->bt)) {
+    term->datum = datum_t(val);
 }
 
 minidriver_t::reql_t::reql_t(minidriver_t *_r, const std::string &val) :
-        r(_r), raw_term_(r->new_term(Term::DATUM)) {
-    raw_term_->mutable_datum() = datum_t(val.c_str());
+        r(_r), term(make_counted<generated_term_t>(Term::DATUM, r->bt)) {
+    term->datum = datum_t(val.c_str());
 }
 
 minidriver_t::reql_t::reql_t(minidriver_t *_r, const datum_t &d) :
-        r(_r), raw_term_(r->new_term(Term::DATUM)) {
-    raw_term_->mutable_datum() = d;
+        r(_r), term(make_counted<generated_term_t>(Term::DATUM, r->bt)) {
+    term->datum = d;
 }
 
 minidriver_t::reql_t::reql_t(minidriver_t *_r, std::vector<reql_t> &&val) :
-        r(_r), raw_term_(r->new_term(Term::MAKE_ARRAY)) {
-    for (auto i = val.begin(); i != val.end(); i++) {
-        add_arg(std::move(*i));
+        r(_r), term(make_counted<generated_term_t>(Term::MAKE_ARRAY, r->bt)) {
+    for (auto const &item : val) {
+        term->args.push_back(item.term);
     }
 }
 
 minidriver_t::reql_t::reql_t(minidriver_t *_r, pb::dummy_var_t var) :
-        r(_r), raw_term_(r->new_term(Term::VAR)) {
-    raw_term_t *arg_term = r->new_term(Term::DATUM);
-    arg_term->mutable_datum() =
-        datum_t(static_cast<double>(dummy_var_to_sym(var).value));
-    raw_term_->mutable_args().push_back(arg_term);
+        r(_r), term(make_counted<generated_term_t>(Term::VAR, r->bt)) {
+    counted_t<generated_term_t> arg_term =
+        make_counted<generated_term_t>(Term::DATUM, r->bt);
+    arg_term->datum = datum_t(static_cast<double>(dummy_var_to_sym(var).value));
+    term->args.push_back(arg_term);
 }
 
 minidriver_t::reql_t minidriver_t::boolean(bool b) {
     return reql_t(this, datum_t(datum_t::construct_boolean_t(), b));
 }
 
-scoped_ptr_t<generated_term_t> minidriver_t::reql_t::release() RVALUE_THIS {
-
+counted_t<generated_term_t> minidriver_t::reql_t::root_term() {
+    return term;
 }
 
 void minidriver_t::reql_t::copy_optargs_from_term(const raw_term_t &from) {
     from.each_optarg([&] (raw_term_t optarg) {
-            term->optargs[o.optarg_name()] = optarg.
+            add_arg(r->optarg(optarg.optarg_name(), optarg));
         });
 }
 
 void minidriver_t::reql_t::copy_args_from_term(const raw_term_t &from,
                                                size_t start_index) {
-
-
-}
-
-void minidriver_t::reql_t::copy_optargs_from_term(const raw_term_t *from) {
-    auto optarg_it = from->optargs();
-    while (const raw_term_t *optarg = optarg_it.next()) {
-        add_arg(r->optarg(optarg_it.optarg_name(), optarg));
-    }
-}
-
-void minidriver_t::reql_t::copy_args_from_term(const raw_term_t *from,
-                                               size_t start_index) {
-    auto arg_it = from->args();
-    for (size_t i = 0; i < start_index; ++i) {
-        arg_it.next();
-    }
-    while (const raw_term_t *arg = arg_it.next()) {
-        add_arg(arg);
+    for (size_t i = start_index; i < from.num_args(); ++i) {
+        add_arg(from.arg(i));
     }
 }
 
@@ -116,11 +98,6 @@ minidriver_t::reql_t minidriver_t::fun(pb::dummy_var_t a,
 
 minidriver_t::reql_t minidriver_t::null() {
     return reql_t(this, datum_t::null());
-}
-
-const raw_term_t *minidriver_t::reql_t::raw_term() const {
-    guarantee(raw_term_ != nullptr);
-    return raw_term_;
 }
 
 minidriver_t::reql_t minidriver_t::reql_t::operator !() {

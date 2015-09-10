@@ -145,8 +145,7 @@ private:
                 return stream->run_terminal(env->env, count_wire_func_t());
             } else {
                 counted_t<const func_t> f =
-                    new_eq_comparison_func(v1->as_datum(), backtrace(),
-                                           env->env->term_storage);
+                    new_eq_comparison_func(v1->as_datum(), backtrace());
                 counted_t<datum_stream_t> stream = v0->as_seq(env->env);
                 stream->add_transformation(
                         filter_wire_func_t(f, boost::none), backtrace());
@@ -234,8 +233,7 @@ private:
             counted_t<table_slice_t> slice;
             if (index_str == tbl->get_pkey()) {
                 auto field = index->as_datum();
-                funcs.push_back(new_get_field_func(field, backtrace(),
-                                                   env->env->term_storage));
+                funcs.push_back(new_get_field_func(field, backtrace());
                 slice = make_counted<table_slice_t>(tbl, index_str);
             } else {
                 slice = make_counted<table_slice_t>(

@@ -563,8 +563,7 @@ private:
         if (v->get_type().is_convertible(val_t::type_t::FUNC)) {
             fun = v->as_func(env->env);
         } else {
-            fun = new_eq_comparison_func(v->as_datum(), backtrace(),
-                                         env->env->term_storage);
+            fun = new_eq_comparison_func(v->as_datum(), backtrace());
         }
         return new_val(env->env, args->arg(env, 0)->as_seq(env->env)->offsets_of(fun));
     }

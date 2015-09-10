@@ -7,6 +7,7 @@
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/protocol.hpp"
+#include "rdb_protocol/ql2.pb.h"
 #include "rdb_protocol/query.hpp"
 #include "rdb_protocol/term_walker.hpp"
 #include "stl_utils.hpp"
@@ -19,13 +20,10 @@ wire_func_t::wire_func_t(const counted_t<const func_t> &f) : func(f) {
     r_sanity_check(func.has());
 }
 
-wire_func_t::wire_func_t(const raw_term_t *body,
-                         counted_t<term_storage_t> term_storage,
-                         std::vector<sym_t> arg_names,
-                         backtrace_id_t bt) {
-    compile_env_t env(var_visibility_t().with_func_arg_name_list(arg_names),
-                      term_storage.get());
-    func = make_counted<reql_func_t>(std::move(term_storage), bt, var_scope_t(),
+wire_func_t::wire_func_t(const raw_term_t &body,
+                         std::vector<sym_t> arg_names) {
+    compile_env_t env(var_visibility_t().with_func_arg_name_list(arg_names));
+    func = make_counted<reql_func_t>(body, var_scope_t(),
                                      arg_names, compile_term(&env, body));
 }
 
@@ -65,7 +63,7 @@ public:
         serialize<W>(wm, scope);
         const std::vector<sym_t> &arg_names = reql_func->arg_names;
         serialize<W>(wm, arg_names);
-        const raw_term_t *body = reql_func->body->get_src();
+        const raw_term_t &body = reql_func->root_term;
         serialize_term_tree<W>(wm, body);
         backtrace_id_t backtrace = reql_func->backtrace();
         serialize<W>(wm, backtrace);
@@ -117,19 +115,19 @@ archive_result_t deserialize(read_stream_t *s, wire_func_t *wf,
         res = deserialize<W>(s, &arg_names);
         if (bad(res)) { return res; }
 
-        counted_t<term_storage_t> term_storage = make_counted<term_storage_t>();
-        raw_term_t *body;
-        res = term_storage->deserialize_term_tree<W>(s, &body, reql_version);
+        scoped_array_t<char> raw_json;
+        rapidjson::Document json_doc;
+        res = deserialize_term_tree<W>(s, &raw_json, &json_doc);
+        if (bad(res)) { return res; }
 
         res = deserialize_protobuf(s, &dummy_bt);
         if (bad(res)) { return res; }
 
-        compile_env_t env(
-            scope.compute_visibility().with_func_arg_name_list(arg_names),
-            term_storage.get());
-        wf->func = make_counted<reql_func_t>(
-            std::move(term_storage), backtrace_id_t::empty(),
-            scope, arg_names, compile_term(&env, body));
+        compile_env_t env(scope.compute_visibility().with_func_arg_name_list(arg_names));
+        term_storage_t storage =
+            term_storage_t::from_wire_func(std::move(raw_json), std::move(json_doc)),
+        wf->func = make_counted<reql_func_t>(std::move(storage), scope, arg_names,
+                                             compile_term(&env, storage.root_term()));
         return res;
     }
     case wire_func_type_t::JS: {
@@ -162,11 +160,11 @@ template archive_result_t deserialize<cluster_version_t::v1_16>(
 template archive_result_t deserialize<cluster_version_t::v2_0>(
         read_stream_t *, wire_func_t *, reql_version_t);
 
-// deserialize function for 2.1 and above
+// deserialize function for 2.1
 template <>
-archive_result_t deserialize<cluster_version_t::v2_1_is_latest>(
+archive_result_t deserialize<cluster_version_t::v2_1>(
         read_stream_t *s, wire_func_t *wf, reql_version_t reql_version) {
-    const cluster_version_t W = cluster_version_t::v2_1_is_latest;
+    const cluster_version_t W = cluster_version_t::v2_1;
     archive_result_t res;
 
     wire_func_type_t type;
@@ -182,19 +180,77 @@ archive_result_t deserialize<cluster_version_t::v2_1_is_latest>(
         res = deserialize<W>(s, &arg_names);
         if (bad(res)) { return res; }
 
-        counted_t<term_storage_t> term_storage = make_counted<term_storage_t>();
-        raw_term_t *body;
-        res = term_storage->deserialize_term_tree<W>(s, &body, reql_version);
+        scoped_array_t<char> raw_json;
+        rapidjson::Document json_doc;
+        res = deserialize_term_tree<W>(s, &raw_json, &json_doc);
         if (bad(res)) { return res; }
 
         backtrace_id_t bt;
         res = deserialize<W>(s, &bt);
         if (bad(res)) { return res; }
 
-        compile_env_t env(scope.compute_visibility().with_func_arg_name_list(arg_names),
-                          term_storage.get());
-        wf->func = make_counted<reql_func_t>(
-            std::move(term_storage), bt, scope, arg_names, compile_term(&env, body));
+        compile_env_t env(scope.compute_visibility().with_func_arg_name_list(arg_names));
+        term_storage_t storage =
+            term_storage_t::from_wire_func(std::move(raw_json), std::move(json_doc)),
+        wf->func = make_counted<reql_func_t>(std::move(storage), scope, arg_names,
+                                             compile_term(&env, storage.root_term()));
+        return res;
+    }
+    case wire_func_type_t::JS: {
+        std::string js_source;
+        res = deserialize<W>(s, &js_source);
+        if (bad(res)) { return res; }
+
+        uint64_t js_timeout_ms;
+        res = deserialize<W>(s, &js_timeout_ms);
+        if (bad(res)) { return res; }
+
+        backtrace_id_t bt;
+        res = deserialize<W>(s, &bt);
+        if (bad(res)) { return res; }
+
+        wf->func = make_counted<js_func_t>(js_source, js_timeout_ms, bt);
+        return res;
+    }
+    default:
+        unreachable();
+    }
+}
+
+// deserialize function for 2.2 and above
+template <>
+archive_result_t deserialize<cluster_version_t::v2_2_is_latest>(
+        read_stream_t *s, wire_func_t *wf, reql_version_t reql_version) {
+    const cluster_version_t W = cluster_version_t::v2_2_is_latest;
+    archive_result_t res;
+
+    wire_func_type_t type;
+    res = deserialize<W>(s, &type);
+    if (bad(res)) { return res; }
+    switch (type) {
+    case wire_func_type_t::REQL: {
+        var_scope_t scope;
+        res = deserialize<W>(s, &scope);
+        if (bad(res)) { return res; }
+
+        std::vector<sym_t> arg_names;
+        res = deserialize<W>(s, &arg_names);
+        if (bad(res)) { return res; }
+
+        scoped_array_t<char> raw_json;
+        rapidjson::Document json_doc;
+        res = deserialize_term_tree<W>(s, &raw_json, &json_doc);
+        if (bad(res)) { return res; }
+
+        backtrace_id_t bt;
+        res = deserialize<W>(s, &bt);
+        if (bad(res)) { return res; }
+
+        compile_env_t env(scope.compute_visibility().with_func_arg_name_list(arg_names));
+        term_storage_t storage =
+            term_storage_t::from_wire_func(std::move(raw_json), std::move(json_doc)),
+        wf->func = make_counted<reql_func_t>(std::move(storage), scope, arg_names,
+                                             compile_term(&env, storage.root_term()));
         return res;
     }
     case wire_func_type_t::JS: {

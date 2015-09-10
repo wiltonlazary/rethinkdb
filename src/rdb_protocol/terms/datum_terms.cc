@@ -12,13 +12,13 @@ class datum_term_t : public term_t {
 public:
     explicit datum_term_t(const raw_term_t &term)
             : term_t(term) {
-        r_sanity_check(term->datum().has());
+        r_sanity_check(term.datum().has());
     }
 private:
     virtual void accumulate_captures(var_captures_t *) const { /* do nothing */ }
     virtual bool is_deterministic() const { return true; }
     virtual scoped_ptr_t<val_t> term_eval(scope_env_t *, eval_flags_t) const {
-        return new_val(get_src()->datum());
+        return new_val(get_src().datum());
     }
     virtual const char *name() const { return "datum"; }
 };
@@ -62,11 +62,11 @@ public:
     make_obj_term_t(compile_env_t *env, const raw_term_t &term)
         : term_t(term) {
         // An F.Y.I. for driver developers.
-        rcheck(term->num_args() == 0,
+        rcheck(term.num_args() == 0,
                base_exc_t::LOGIC,
                "MAKE_OBJ term must not have any args.");
 
-        raw_term.each_optarg([&] (raw_term_t optarg) {
+        term.each_optarg([&] (raw_term_t optarg) {
                 counted_t<const term_t> t = compile_term(env, optarg);
                 auto res = optargs.insert(std::make_pair(optarg.optarg_name(),
                                                          std::move(t)));
@@ -83,11 +83,11 @@ public:
         {
             profile::sampler_t sampler("Evaluating elements in make_obj.", env->env->trace);
             for (auto it = optargs.begin(); it != optargs.end(); ++it) {
-                bool dup = acc.add(datum_string_t(it->raw_term().optarg_name()),
+                bool dup = acc.add(datum_string_t(it->get_src().optarg_name()),
                                    it->eval(env, new_flags)->as_datum());
                 rcheck(!dup, base_exc_t::LOGIC,
                        strprintf("Duplicate object key: %s.",
-                                 it->raw_term().optarg_name().c_str()));
+                                 it->get_src().optarg_name().c_str()));
                 sampler.new_sample();
             }
         }

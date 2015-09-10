@@ -29,11 +29,9 @@ public:
     wire_func_t(const wire_func_t &copyee);
     wire_func_t &operator=(const wire_func_t &assignee);
 
-    // Constructs a wire_func_t with a body and arglist and backtrace, but no scope.
-    wire_func_t(const raw_term_t *body,
-                counted_t<term_storage_t> term_storage,
-                std::vector<sym_t> arg_names,
-                backtrace_id_t backtrace);
+    // Constructs a wire_func_t with a body and arglist, but no scope.
+    wire_func_t(const raw_term_t &body,
+                std::vector<sym_t> arg_names);
 
     counted_t<const func_t> compile_wire_func() const;
     backtrace_id_t get_bt() const;

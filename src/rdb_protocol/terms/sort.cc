@@ -112,11 +112,12 @@ private:
     virtual scoped_ptr_t<val_t>
     eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
         std::vector<std::pair<order_direction_t, counted_t<const func_t> > > comparisons;
-        r_sanity_check(get_src()->num_args() == args->num_args());
+        const raw_term_t &raw_term = get_src();
+        r_sanity_check(raw_term.num_args() == args->num_args());
         // RSI (grey): get this working with r.args
         for (size_t i = 1; i < raw_term.num_args(); ++i) {
-            raw_term_t t = raw_term.args(i);
-            if (t.type() == Term::DESC) {
+            raw_term_t item = raw_term.arg(i);
+            if (item.type() == Term::DESC) {
                 comparisons.push_back(
                     std::make_pair(
                         DESC, args->arg(env, i)->as_func(env->env, GET_FIELD_SHORTCUT)));
@@ -156,7 +157,7 @@ private:
                    "Indexed order_by can only be performed on a TABLE or TABLE_SLICE.");
             sorting_t sorting = sorting_t::UNORDERED;
             if (auto optarg = raw_term.optarg("index")) {
-                sorting = optarg.type() == Term::DESC ?
+                sorting = (optarg->type() == Term::DESC) ?
                     sorting_t::DESCENDING : sorting_t::ASCENDING;
             }
             r_sanity_check(sorting != sorting_t::UNORDERED);

@@ -34,7 +34,7 @@ public:
     predicate_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(2, -1)),
           namestr(0), invert(false), pred(0) {
-        switch (static_cast<int>(term->type)) {
+        switch (term.type()) {
         case Term::EQ:
             namestr = "EQ";
             pred = &datum_eq;

@@ -52,10 +52,11 @@ protected:
                 term.push_back(sp);
                 std::vector<counted_t<const document_t> > args;
                 for (size_t i = 0; i < t.num_args(); ++i) {
+                    raw_term_t item = t.arg(i);
                     if (!args.empty()) args.push_back(cond_linebreak);
                     args.push_back(visit_generic(item));
                 }
-                t.each_optarg([&] (raw_term_t item) {
+                t.each_optarg([&] (ql::raw_term_t item) {
                         if (!args.empty()) args.push_back(cond_linebreak);
                         args.push_back(make_text(strprintf(
                             ":%s", to_lisp_name(item.optarg_name()).c_str())));
@@ -171,11 +172,13 @@ private:
     }
 
     counted_t<const document_t> string_branches_together(const ql::raw_term_t &t) {
+        guarantee(t.num_args() == 3);
+
         std::vector<counted_t<const document_t> > term;
         term.push_back(lparen);
         term.push_back(cond);
-        guarantee(var.num_args() == 3);
         term.push_back(sp);
+
         std::vector<counted_t<const document_t> > branches;
         ql::raw_term_t var = t;
         while (var.type() == Term::BRANCH) {
@@ -236,7 +239,7 @@ private:
         if (arg0.type() == Term::MAKE_ARRAY) {
             std::vector<counted_t<const document_t> > args;
             for (size_t i = 0; i < arg0.num_args(); ++i) {
-                raw_term_t item = arg0.arg(i);
+                ql::raw_term_t item = arg0.arg(i);
                 if (!args.empty()) args.push_back(cond_linebreak);
                 guarantee(item.type() == Term::DATUM);
                 ql::datum_t d = item.datum();
