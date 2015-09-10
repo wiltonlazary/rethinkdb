@@ -73,16 +73,16 @@ public:
         reql_t(const reql_t &other);
         reql_t &operator= (const reql_t &other);
 
-    private:
-        template <class... T>
-        void add_args(T &&... args) {
-            UNUSED int _[] = { (add_arg(std::forward<T>(args)), 1)... };
-        }
-
         template <class T>
         void add_arg(T &&a) {
             reql_t item(r, std::forward<T>(a));
             add_arg(item);
+        }
+
+    private:
+        template <class... T>
+        void add_args(T &&... args) {
+            UNUSED int _[] = { (add_arg(std::forward<T>(args)), 1)... };
         }
 
         friend class minidriver_t;

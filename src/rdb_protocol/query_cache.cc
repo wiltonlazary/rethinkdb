@@ -49,7 +49,7 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(query_params_t *query_p
     try {
         global_optargs = query_params->term_storage.global_optargs();
         preprocess_term_tree(
-            query_params->term_storage.json()->GetAllocator(),
+            &query_params->term_storage.json()->GetAllocator(),
             boost::get<rapidjson::Value *>(query_params->term_storage.root_term().get_src()),
             &bt_reg);
 

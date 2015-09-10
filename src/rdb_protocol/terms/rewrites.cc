@@ -18,13 +18,14 @@ public:
     rewrite_term_t(compile_env_t *env, const raw_term_t &term,
                    argspec_t argspec,
                    minidriver_t::reql_t (*rewrite)(const raw_term_t &))
-            : term_t(term), rewrite_src(do_rewrite(term, rewrite)) {
+            : term_t(term), rewrite_src(do_rewrite(term, argspec, rewrite)) {
         real = compile_term(env, rewrite_src);
     }
 
 private:
-    static raw_term_t do_rewrite(const raw_term_t &term, 
-                                 minidriver_t::reql_t (*rewrite)(const raw_term_t &)) {
+    raw_term_t do_rewrite(const raw_term_t &term, 
+                          argspec_t argspec,
+                          minidriver_t::reql_t (*rewrite)(const raw_term_t &)) {
         rcheck(argspec.contains(term.num_args()),
                base_exc_t::LOGIC,
                strprintf("Expected %s but found %zu.",

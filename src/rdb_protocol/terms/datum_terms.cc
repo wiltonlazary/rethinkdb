@@ -66,12 +66,12 @@ public:
                base_exc_t::LOGIC,
                "MAKE_OBJ term must not have any args.");
 
-        term.each_optarg([&] (raw_term_t optarg) {
-                counted_t<const term_t> t = compile_term(env, optarg);
-                auto res = optargs.push_back(t);
+        term.each_optarg([&] (raw_term_t o) {
+                counted_t<const term_t> t = compile_term(env, o);
+                auto res = optargs.insert(std::make_pair(o.optarg_name(), t));
                 rcheck(res.second, base_exc_t::LOGIC,
                        strprintf("Duplicate object key: %s.",
-                                 optarg.optarg_name().c_str()));
+                                 o.optarg_name().c_str()));
             });
     }
 
@@ -81,12 +81,12 @@ public:
         datum_object_builder_t acc;
         {
             profile::sampler_t sampler("Evaluating elements in make_obj.", env->env->trace);
-            for (auto const &o : optargs) {
-                bool dup = acc.add(datum_string_t(o->get_src().optarg_name()),
-                                   o->eval(env, new_flags)->as_datum());
+            for (auto const &pair : optargs) {
+                bool dup = acc.add(datum_string_t(pair.first),
+                                   pair.second->eval(env, new_flags)->as_datum());
                 rcheck(!dup, base_exc_t::LOGIC,
                        strprintf("Duplicate object key: %s.",
-                                 o->get_src().optarg_name().c_str()));
+                                 pair.first.c_str()));
                 sampler.new_sample();
             }
         }

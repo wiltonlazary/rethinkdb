@@ -249,7 +249,7 @@ private:
                    "Maybe you want to use the non_atomic flag?");
         }
         counted_t<const func_t> f =
-            args->arg(env, 1)->as_func(env->env, CONSTANT_SHORTCUT);
+            args->arg(env, 1)->as_func(CONSTANT_SHORTCUT);
         if (!nondet_ok) {
             // If this isn't true we should have caught it in the `rcheck` above.
             rassert(f->is_deterministic());
@@ -333,7 +333,7 @@ private:
             profile::sampler_t sampler("Evaluating elements in for each.",
                                        env->env->trace);
             counted_t<const func_t> f =
-                args->arg(env, 1)->as_func(env->env, CONSTANT_SHORTCUT);
+                args->arg(env, 1)->as_func(CONSTANT_SHORTCUT);
             datum_t row;
             while (row = ds->next(env->env, batchspec), row.has()) {
                 scoped_ptr_t<val_t> v = f->call(env->env, row);

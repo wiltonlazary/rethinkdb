@@ -139,7 +139,7 @@ public:
             // We do it this way so that if someone passes a string, we produce
             // a type error asking for a function rather than BINARY.
             if (!got_func) {
-                config.func = ql::map_wire_func_t(v->as_func(env->env));
+                config.func = ql::map_wire_func_t(v->as_func());
                 config.func_version = reql_version_t::LATEST;
             }
         } else {

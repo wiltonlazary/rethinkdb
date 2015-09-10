@@ -22,7 +22,7 @@ namespace ql {
 // For example, foo.pluck('a') becomes varnum.pluck('a')
 raw_term_t make_obj_or_seq_func(const raw_term_t &term,
                                 poly_type_t poly_type) {
-    minidriver_t r(parent->backtrace());
+    minidriver_t r(term.bt());
     auto varnum = pb::dummy_var_t::OBJORSEQ_VARNUM;
 
     minidriver_t::reql_t body = r.var(varnum).call(term.type());
@@ -134,14 +134,14 @@ obj_or_seq_op_term_t::obj_or_seq_op_term_t(
         compile_env_t *env, const raw_term_t &term,
         poly_type_t _poly_type, argspec_t argspec)
     : grouped_seq_op_term_t(env, term, argspec, optargspec_t({"_NO_RECURSE_"})),
-      impl(this, env, _poly_type, std::set<std::string>()) {
+      impl(this, _poly_type, std::set<std::string>()) {
 }
 
 obj_or_seq_op_term_t::obj_or_seq_op_term_t(
         compile_env_t *env, const raw_term_t &term,
         poly_type_t _poly_type, argspec_t argspec, std::set<std::string> &&ptypes)
     : grouped_seq_op_term_t(env, term, argspec, optargspec_t({"_NO_RECURSE_"})),
-      impl(this, env, _poly_type, std::move(ptypes)) {
+      impl(this, _poly_type, std::move(ptypes)) {
 }
 
 scoped_ptr_t<val_t> obj_or_seq_op_term_t::eval_impl(scope_env_t *env, args_t *args,
@@ -255,7 +255,7 @@ private:
                 }
                 d = d.merge(d0);
             } else {
-                auto f = v->as_func(env->env, CONSTANT_SHORTCUT);
+                auto f = v->as_func(CONSTANT_SHORTCUT);
                 datum_t d0 = f->call(env->env, d, LITERAL_OK)->as_datum();
                 if (d0.get_type() == datum_t::R_OBJECT) {
                     switch (env->env->reql_version()) {
@@ -321,7 +321,7 @@ public:
     bracket_term_t(compile_env_t *env, const raw_term_t &term)
         : grouped_seq_op_term_t(env, term, argspec_t(2),
                                 optargspec_t({"_NO_RECURSE_"})),
-          impl(this, env, SKIP_MAP, std::set<std::string>()) {}
+          impl(this, SKIP_MAP, std::set<std::string>()) {}
 private:
     scoped_ptr_t<val_t> obj_eval_dereferenced(
         const scoped_ptr_t<val_t> &v0, const scoped_ptr_t<val_t> &v1) const {

@@ -120,11 +120,11 @@ private:
             if (item.type() == Term::DESC) {
                 comparisons.push_back(
                     std::make_pair(
-                        DESC, args->arg(env, i)->as_func(env->env, GET_FIELD_SHORTCUT)));
+                        DESC, args->arg(env, i)->as_func(GET_FIELD_SHORTCUT)));
             } else {
                 comparisons.push_back(
                     std::make_pair(
-                        ASC, args->arg(env, i)->as_func(env->env, GET_FIELD_SHORTCUT)));
+                        ASC, args->arg(env, i)->as_func(GET_FIELD_SHORTCUT)));
             }
         }
         lt_cmp_t lt_cmp(comparisons);

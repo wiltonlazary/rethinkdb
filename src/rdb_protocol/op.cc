@@ -262,7 +262,7 @@ void op_term_t::accumulate_captures(var_captures_t *captures) const {
     const std::vector<counted_t<const term_t> > &original_args
         = arg_terms->get_original_args();
     for (auto const &arg : original_args) {
-        item->accumulate_captures(captures);
+        arg->accumulate_captures(captures);
     }
     accumulate_all_captures(optargs, captures);
 }

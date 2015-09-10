@@ -80,10 +80,10 @@ private:
                         
                 if (size >= 1) {
                     rapidjson::Value *val = &(*src)[0];
-                    rcheck_src(bt, (*src)[0].IsInt(), base_exc_t::LOGIC,
+                    rcheck_src(bt, val->IsInt(), base_exc_t::LOGIC,
                         strprintf("Expected a TermType as a NUMBER but found %s.",
-                                  rapidjson_type_to_str((*src)[0])));
-                    type = static_cast<Term::TermType>((*src)[0].GetInt());
+                                  rapidjson_typestr(val->GetType())));
+                    type = static_cast<Term::TermType>(val->GetInt());
                 }
                 if (size >= 2) {
                     rapidjson::Value *val = &(*src)[1];
@@ -151,7 +151,7 @@ private:
                      it != optargs->MemberEnd(); ++it) {
                     backtrace_id_t child_bt = parent->bt_reg->new_frame(bt,
                         datum_t(datum_string_t(it->name.GetStringLength(),
-                                               it->name.GetString()));
+                                               it->name.GetString())));
                     walker_frame_t child_frame(parent, false, this);
                     call_with_enough_stack([&] () {
                             child_frame.walk(&it->value, child_bt);

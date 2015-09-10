@@ -54,6 +54,9 @@ private:
     DISABLE_COPYING(query_params_t);
 };
 
+// Also used by the term walker
+const char *rapidjson_typestr(rapidjson::Type t);
+
 } // namespace ql
 
 #endif // RDB_PROTOCOL_QUERY_HPP_

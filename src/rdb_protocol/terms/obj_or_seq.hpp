@@ -22,7 +22,6 @@ class obj_or_seq_op_impl_t {
 public:
     obj_or_seq_op_impl_t(const term_t *_parent,
                          poly_type_t _poly_type,
-                         const raw_term_t &term,
                          std::set<std::string> &&_acceptable_ptypes);
 
     scoped_ptr_t<val_t> eval_impl_dereferenced(const term_t *target, scope_env_t *env,

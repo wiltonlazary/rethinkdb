@@ -414,7 +414,7 @@ void http_term_t::get_page_and_limit(scope_env_t *env,
                      "(a positive number performs that many requests, -1 is unlimited).");
     }
 
-    *depaginate_fn_out = page->as_func(env->env, PAGE_SHORTCUT);
+    *depaginate_fn_out = page->as_func(PAGE_SHORTCUT);
     *depaginate_limit_out = page_limit->as_int<int64_t>();
 
     if (*depaginate_limit_out < -1) {

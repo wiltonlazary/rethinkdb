@@ -195,7 +195,6 @@ std::string create_sindex(const std::vector<scoped_ptr_t<store_t> > *stores) {
 
     const ql::sym_t arg(1);
 
-    counted_t<ql::term_storage_t> term_storage = make_counted<ql::term_storage_t>();
     ql::minidriver_t r(ql::backtrace_id_t::empty());
     ql::raw_term_t mapping = r.var(arg)["sid"].root_term();
 

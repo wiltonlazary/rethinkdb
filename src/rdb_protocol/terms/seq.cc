@@ -24,7 +24,7 @@ private:
         scoped_ptr_t<val_t> idx = args->optarg(env, "index");
         counted_t<const func_t> func;
         if (args->num_args() == 2) {
-            func = args->arg(env, 1)->as_func(env->env, GET_FIELD_SHORTCUT);
+            func = args->arg(env, 1)->as_func(GET_FIELD_SHORTCUT);
         }
         if (!func.has() && !idx.has()) {
             // TODO: make this use a table slice.
@@ -140,7 +140,7 @@ private:
             if (v1->get_type().is_convertible(val_t::type_t::FUNC)) {
                 counted_t<datum_stream_t> stream = v0->as_seq(env->env);
                 stream->add_transformation(
-                        filter_wire_func_t(v1->as_func(env->env), boost::none),
+                        filter_wire_func_t(v1->as_func(), boost::none),
                         backtrace());
                 return stream->run_terminal(env->env, count_wire_func_t());
             } else {
@@ -170,7 +170,7 @@ private:
         }
 
         counted_t<const func_t> func =
-            args->arg(env, args->num_args() - 1)->as_func(env->env);
+            args->arg(env, args->num_args() - 1)->as_func();
         boost::optional<std::size_t> func_arity = func->arity();
         if (!!func_arity) {
             rcheck(func_arity.get() == 0 || func_arity.get() == args->num_args() - 1,
@@ -205,7 +205,7 @@ private:
         counted_t<datum_stream_t> stream = args->arg(env, 0)->as_seq(env->env);
         stream->add_transformation(
             concatmap_wire_func_t(result_hint_t::NO_HINT,
-                                  args->arg(env, 1)->as_func(env->env)),
+                                  args->arg(env, 1)->as_func()),
                 backtrace());
         return new_val(env->env, stream);
     }
@@ -222,7 +222,7 @@ private:
         std::vector<counted_t<const func_t> > funcs;
         funcs.reserve(args->num_args() - 1);
         for (size_t i = 1; i < args->num_args(); ++i) {
-            funcs.push_back(args->arg(env, i)->as_func(env->env, GET_FIELD_SHORTCUT));
+            funcs.push_back(args->arg(env, i)->as_func(GET_FIELD_SHORTCUT));
         }
 
         counted_t<datum_stream_t> seq;
@@ -275,7 +275,7 @@ private:
         scope_env_t *env, args_t *args, eval_flags_t) const {
         scoped_ptr_t<val_t> v0 = args->arg(env, 0);
         scoped_ptr_t<val_t> v1 = args->arg(env, 1, LITERAL_OK);
-        counted_t<const func_t> f = v1->as_func(env->env, CONSTANT_SHORTCUT);
+        counted_t<const func_t> f = v1->as_func(CONSTANT_SHORTCUT);
         boost::optional<wire_func_t> defval;
         if (default_filter_term.has()) {
             defval = wire_func_t(default_filter_term->eval_to_func(env->scope));
@@ -307,7 +307,7 @@ private:
     virtual scoped_ptr_t<val_t> eval_impl(
         scope_env_t *env, args_t *args, eval_flags_t) const {
         return args->arg(env, 0)->as_seq(env->env)->run_terminal(
-            env->env, reduce_wire_func_t(args->arg(env, 1)->as_func(env->env)));
+            env->env, reduce_wire_func_t(args->arg(env, 1)->as_func()));
     }
     virtual const char *name() const { return "reduce"; }
 };
