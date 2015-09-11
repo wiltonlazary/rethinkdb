@@ -34,7 +34,7 @@ struct index_write_op_t {
 void debug_print(printf_buffer_t *buf, const index_write_op_t &write_op);
 
 /* serializer_t is an abstract interface that describes how each serializer should
-behave. It is implemented by log_serializer_t, semantic_checking_serializer_t, and
+behave. It is implemented by merger_serializer_t, log_serializer_t, and
 translator_serializer_t. */
 
 /* Except as otherwise noted, the serializer's methods should only be

@@ -8,7 +8,6 @@
 #include "concurrency/pmap.hpp"
 #include "debug.hpp"
 #include "serializer/buf_ptr.hpp"
-#include "serializer/config.hpp"
 #include "serializer/types.hpp"
 
 /* serializer_multiplexer_t */

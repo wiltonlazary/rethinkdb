@@ -406,8 +406,8 @@ void check_for_obsolete_sindexes(io_backender_t *io_backender,
                 perfmon_collection_t dummy_stats;
                 serializer_filepath_t table_path(base_path, uuid_to_str(info.first));
                 filepath_file_opener_t file_opener(table_path, io_backender);
-                scoped_ptr_t<standard_serializer_t> inner_serializer(
-                    new standard_serializer_t(standard_serializer_t::dynamic_config_t(),
+                scoped_ptr_t<log_serializer_t> inner_serializer(
+                    new log_serializer_t(log_serializer_t::dynamic_config_t(),
                                               &file_opener, &dummy_stats));
                 merger_serializer_t merger_serializer(std::move(inner_serializer),
                                                       MERGER_SERIALIZER_MAX_ACTIVE_WRITES);
@@ -450,8 +450,8 @@ void migrate_tables(io_backender_t *io_backender,
                 perfmon_collection_t dummy_stats;
                 serializer_filepath_t table_path(base_path, uuid_to_str(info.first));
                 filepath_file_opener_t file_opener(table_path, io_backender);
-                scoped_ptr_t<standard_serializer_t> inner_serializer(
-                    new standard_serializer_t(standard_serializer_t::dynamic_config_t(),
+                scoped_ptr_t<log_serializer_t> inner_serializer(
+                    new log_serializer_t(log_serializer_t::dynamic_config_t(),
                                               &file_opener, &dummy_stats));
                 merger_serializer_t merger_serializer(std::move(inner_serializer),
                                                       MERGER_SERIALIZER_MAX_ACTIVE_WRITES);
@@ -602,7 +602,7 @@ void migrate_auth_metadata_to_v2_1(io_backender_t *io_backender,
     logNTC("Migrating auth metadata");
     perfmon_collection_t dummy_stats;
     filepath_file_opener_t file_opener(path, io_backender);
-    standard_serializer_t serializer(standard_serializer_t::dynamic_config_t(), &file_opener, &dummy_stats);
+    log_serializer_t serializer(log_serializer_t::dynamic_config_t(), &file_opener, &dummy_stats);
 
     if (!serializer.coop_lock_and_check()) {
         throw file_in_use_exc_t();

@@ -97,23 +97,6 @@ void filepath_file_opener_t::unlink_serializer_file() {
     guarantee_err(res == 0, "unlink() failed");
 }
 
-#ifdef SEMANTIC_SERIALIZER_CHECK
-void filepath_file_opener_t::open_semantic_checking_file(scoped_ptr_t<semantic_checking_file_t> *file_out) {
-    const std::string semantic_filepath = filepath_.permanent_path() + "_semantic";
-    int semantic_fd;
-    do {
-        semantic_fd = open(semantic_filepath.c_str(),
-                           O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO);
-    } while (semantic_fd == -1 && get_errno() == EINTR);
-
-    if (semantic_fd == INVALID_FD) {
-        fail_due_to_user_error("Inaccessible semantic checking file: \"%s\": %s", semantic_filepath.c_str(), errno_string(get_errno()).c_str());
-    } else {
-        file_out->init(new linux_semantic_checking_file_t(semantic_fd));
-    }
-}
-#endif  // SEMANTIC_SERIALIZER_CHECK
-
 
 
 log_serializer_stats_t::log_serializer_stats_t(perfmon_collection_t *parent)
