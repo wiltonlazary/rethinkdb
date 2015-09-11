@@ -338,6 +338,7 @@ rapidjson::Value convert_term_tree(const Term &src,
         if (src.optargs_size() > 0) {
             dest.PushBack(convert_optargs(src, allocator), *allocator);
         }
+        dest.PushBack(rapidjson::Value(backtrace_id_t::empty().get()), *allocator);
     }
     return dest;
 }
@@ -382,7 +383,7 @@ MUST_USE archive_result_t deserialize_term_tree<cluster_version_t::v2_2_is_lates
 
     rapidjson::Document doc;
     doc.ParseInsitu(data_out->data());
-    *json_out = std::move(doc);
+    json_out->Swap(doc);
     return archive_result_t::SUCCESS;
 }
 
@@ -390,9 +391,33 @@ void write_term(rapidjson::Writer<rapidjson::StringBuffer> *writer,
                 const raw_term_t &term) {
     maybe_generated_term_t src = term.get_src();
     if (auto json = boost::get<const rapidjson::Value *>(&src)) {
-
-    } else if (auto gen = boost::get<counted_t<generated_term_t> >(&src)) {
-
+        (*json)->Accept(*writer);
+    } else if (boost::get<counted_t<generated_term_t> >(&src)) {
+        if (term.type() == Term::DATUM) {
+            guarantee(term.num_args() == 0);
+            guarantee(term.num_optargs() == 0);
+            term.datum().write_json(writer);
+        } else {
+            writer->StartArray();
+            writer->Int(term.type());
+            if (term.num_args() > 0) {
+                writer->StartArray();
+                for (size_t i = 0; i < term.num_args(); ++i) {
+                    write_term(writer, term.arg(i));
+                }
+                writer->EndArray();
+            }
+            if (term.num_optargs() > 0) {
+                writer->StartObject();
+                term.each_optarg([&] (const raw_term_t &subterm) {
+                        writer->Key(subterm.optarg_name().c_str(),
+                                    subterm.optarg_name().size(), true);
+                        write_term(writer, subterm);
+                    });
+                writer->EndObject();
+            }
+            writer->EndArray();
+        }
     } else {
         unreachable();
     }
@@ -410,5 +435,8 @@ void serialize_term_tree(write_message_t *wm, const raw_term_t &root_term) {
 
     wm->append(buffer.GetString(), size);
 }
+
+template void serialize_term_tree<cluster_version_t::LATEST_OVERALL>(
+        write_message_t *, const raw_term_t &);
 
 } // namespace ql

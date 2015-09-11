@@ -33,10 +33,10 @@ struct generated_term_t : public slow_atomic_countable_t<generated_term_t> {
     generated_term_t(Term::TermType _type, backtrace_id_t _bt);
 
     const Term::TermType type;
-    const backtrace_id_t bt;
     std::vector<maybe_generated_term_t> args;
     std::map<std::string, maybe_generated_term_t> optargs;
     datum_t datum;
+    const backtrace_id_t bt;
 };
 
 class raw_term_t {
