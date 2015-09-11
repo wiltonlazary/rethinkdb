@@ -21,10 +21,9 @@ const size_t MIN_WALK_STACK_SPACE = 16 * KILOBYTE;
 // backtraces, rewriting certain terms, and verifying correct placement
 // of some terms.
 
-template <typename Allocator>
 class term_walker_t {
 public:
-    term_walker_t(Allocator *_allocator,
+    term_walker_t(rapidjson::Value::AllocatorType *_allocator,
                   backtrace_registry_t *_bt_reg) :
         bt_reg(_bt_reg), allocator(_allocator) { }
 
@@ -130,7 +129,7 @@ private:
                 r_sanity_check(args->IsArray());
                 for (size_t i = 0; i < args->Size(); ++i) {
                     backtrace_id_t child_bt 
-                        = parent->bt_reg->new_frame(bt, datum_t(static_cast<double>(i)));
+                        = make_bt(bt, datum_t(static_cast<double>(i)));
                     walker_frame_t child_frame(parent, i == 0, this);
                     call_with_enough_stack([&] () {
                             child_frame.walk(&(*args)[i], child_bt);
@@ -142,7 +141,7 @@ private:
                 r_sanity_check(optargs->IsObject());
                 for (auto it = optargs->MemberBegin();
                      it != optargs->MemberEnd(); ++it) {
-                    backtrace_id_t child_bt = parent->bt_reg->new_frame(bt,
+                    backtrace_id_t child_bt = make_bt(bt,
                         datum_t(datum_string_t(it->name.GetStringLength(),
                                                it->name.GetString())));
                     walker_frame_t child_frame(parent, false, this);
@@ -151,6 +150,13 @@ private:
                         }, MIN_WALK_STACK_SPACE);
                 }
             }
+        }
+
+        backtrace_id_t make_bt(backtrace_id_t prev, const datum_t &d) {
+            if (parent->bt_reg == nullptr) {
+                return backtrace_id_t::empty();
+            }
+            return parent->bt_reg->new_frame(prev, d);
         }
 
         // True if writes are still legal at this node.  Basically:
@@ -167,25 +173,23 @@ private:
 
     backtrace_registry_t *bt_reg;
     intrusive_list_t<walker_frame_t> frames;
-    Allocator *allocator;
+    rapidjson::Value::AllocatorType *allocator;
 };
 
 void preprocess_term_tree(rapidjson::Document *query_json,
                           backtrace_registry_t *bt_reg) {
     r_sanity_check(query_json != nullptr);
-    term_walker_t<rapidjson::MemoryPoolAllocator<> >
-        term_walker(&query_json->GetAllocator(), bt_reg);
+    term_walker_t term_walker(&query_json->GetAllocator(), bt_reg);
 
     r_sanity_check(query_json->IsArray());
     r_sanity_check(query_json->Size() >= 2);
     term_walker.walk(&(*query_json)[1]);
+}
 
-    // TODO: walk global optargs, but don't attach backtraces?
-    //if (query_json->Size() >= 3) {
-    //    rapidjson::Value *optargs = &(*query_json)[2];
-    //    for (auto it = optargs->MemberBegin(); it != optargs->MemberEnd(); ++it) {
-    //    }
-    //}
+void preprocess_global_optarg(rapidjson::Value *optarg,
+                              rapidjson::Value::AllocatorType *allocator) {
+    term_walker_t term_walker(allocator, nullptr);
+    term_walker.walk(optarg);
 }
 
 // Returns true if `t` is a write or a meta op.

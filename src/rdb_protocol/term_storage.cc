@@ -2,6 +2,7 @@
 #include "rdb_protocol/term_storage.hpp"
 
 #include "rdb_protocol/optargs.hpp"
+#include "rdb_protocol/term_walker.hpp"
 
 namespace ql {
 
@@ -38,8 +39,8 @@ raw_term_t::raw_term_t(const rapidjson::Value *source, std::string _optarg_name)
 
 raw_term_t::raw_term_t(const maybe_generated_term_t &source, std::string _optarg_name) :
         optarg_name_(std::move(_optarg_name)) {
-    if (auto json_source = boost::get<rapidjson::Value *>(source)) {
-        init_json(json_source);
+    if (auto json_source = boost::get<rapidjson::Value *>(&source)) {
+        init_json(*json_source);
     } else {
         info = boost::get<counted_t<generated_term_t> >(source);
     }
@@ -116,7 +117,7 @@ raw_term_t raw_term_t::arg(size_t index) const {
         },
         [&] (const std::vector<maybe_generated_term_t> &args) {
             guarantee(args.size() > index);
-            res = raw_term_t(args[index], nullptr);
+            res = raw_term_t(args[index], std::string());
         });
     return res;
 }
@@ -240,16 +241,35 @@ raw_term_t term_storage_t::root_term() const {
     return raw_term_t(root_term_, std::string());
 }
 
-global_optargs_t term_storage_t::global_optargs() const {
+global_optargs_t term_storage_t::global_optargs() {
+    rapidjson::Document doc;
+    rapidjson::Value *src;
+
     global_optargs_t res;
     r_sanity_check(query_json.IsArray());
     if (query_json.Size() >= 3) {
-        const rapidjson::Value *src = &query_json[2];
+        src = &query_json[2];
         r_sanity_check(src->IsObject());
         for (auto it = src->MemberBegin(); it != src->MemberEnd(); ++it) {
+            preprocess_global_optarg(&it->value, &doc.GetAllocator());
             res.add_optarg(raw_term_t(&it->value, it->name.GetString()));
         }
+    } else {
+        query_json.PushBack(rapidjson::Value(rapidjson::kObjectType),
+                            doc.GetAllocator());
+        src = &query_json[query_json.Size() - 1];
     }
+
+    // Create a default db global optarg
+    if (!res.has_optarg("db")) {
+        src->AddMember(rapidjson::Value("db", doc.GetAllocator()),
+                       rapidjson::Value("test", doc.GetAllocator()),
+                       doc.GetAllocator());
+        auto it = src->FindMember("db");
+        preprocess_global_optarg(&it->value, &doc.GetAllocator());
+        res.add_optarg(raw_term_t(&it->value, it->name.GetString()));
+    }
+
     return res;
 }
 

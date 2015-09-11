@@ -75,8 +75,7 @@ public:
 
         template <class T>
         void add_arg(T &&a) {
-            reql_t item(r, std::forward<T>(a));
-            add_arg(item);
+            add_arg(reql_t(r, std::forward<T>(a)));
         }
 
     private:

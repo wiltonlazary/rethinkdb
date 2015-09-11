@@ -11,6 +11,9 @@ class backtrace_registry_t;
 void preprocess_term_tree(rapidjson::Document *query_json,
                           backtrace_registry_t *bt_reg);
 
+void preprocess_global_optarg(rapidjson::Value *optarg,
+                              rapidjson::Value::AllocatorType *allocator);
+
 } // namespace ql
 
 #endif // RDB_PROTOCOL_TERM_WALKER_HPP_

@@ -133,7 +133,7 @@ public:
     term_storage_t &operator=(term_storage_t &&other) = default;
 
     raw_term_t root_term() const;
-    global_optargs_t global_optargs() const;
+    global_optargs_t global_optargs();
 
 private:
     scoped_array_t<char> wire_str;
