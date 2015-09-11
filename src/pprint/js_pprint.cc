@@ -11,7 +11,7 @@
 #include "pprint/generic_term_walker.hpp"
 #include "rdb_protocol/datum.hpp"
 #include "rdb_protocol/base64.hpp"
-#include "rdb_protocol/query.hpp"
+#include "rdb_protocol/term_storage.hpp"
 
 namespace pprint {
 

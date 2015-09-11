@@ -503,6 +503,7 @@ datum_t to_datum(const rapidjson::Value &json, const configured_limits_t &limits
     case rapidjson::kNumberType: {
         return datum_t(json.GetDouble());
     } break;
+        debugf("unknown rapidjson type: %d\n", json.GetType());
     default: unreachable();
     }
 }

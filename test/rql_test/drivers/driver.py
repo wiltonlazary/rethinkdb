@@ -435,20 +435,8 @@ class PyTestDriver:
                 print_test_failure(name, src, "Error result not equal to expected err:\n\tERROR:    %r\n\tEXPECTED: %r" % (result, exp_val))
             else:
                 passed_count += 1
-<<<<<<< HEAD
-        elif exp_val != ():
-            if isinstance(result, r.Cursor):
-                print_debug('Evaluating cursor: %s %r' % (src, runopts))
-                result = list(result)
-            if not eq(exp_val, **compOptions)(result):
-                print_test_failure(name, src, "Result is not equal to expected result:\n\tVALUE: %s\n\tEXPECTED: %s" % (str(result), str(exp_val)))
-||||||| merged common ancestors
-        elif not eq(exp_val, **compOptions)(result):
-            print_test_failure(name, src, "Result is not equal to expected result:\n\tVALUE: %s\n\tEXPECTED: %s" % (str(result), str(exp_val)))
-=======
         elif not eq(exp_val, **compOptions)(result):
             print_test_failure(name, src, "Result is not equal to expected result:\n\tVALUE:    %r\n\tEXPECTED: %r" % (result, exp_val))
->>>>>>> next
         else:
             passed_count += 1
 

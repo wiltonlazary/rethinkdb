@@ -2,13 +2,12 @@
 #ifndef RDB_PROTOCOL_QUERY_HPP_
 #define RDB_PROTOCOL_QUERY_HPP_
 
-#include "rapidjson/rapidjson.h"
+#include "rapidjson/document.h"
 
 #include "concurrency/new_semaphore.hpp"
 #include "containers/intrusive_list.hpp"
 #include "rdb_protocol/error.hpp"
 #include "rdb_protocol/ql2.pb.h"
-#include "rdb_protocol/term_storage.hpp"
 
 namespace ql {
 

@@ -13,6 +13,7 @@
 #include "rdb_protocol/ql2.pb.h"
 #include "rdb_protocol/query.hpp"
 #include "rdb_protocol/sym.hpp"
+#include "rdb_protocol/term_storage.hpp"
 
 namespace ql {
 

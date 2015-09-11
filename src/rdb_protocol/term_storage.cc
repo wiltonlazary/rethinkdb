@@ -72,11 +72,16 @@ void raw_term_t::init_json(const rapidjson::Value *src) {
         rcheck_src(data->bt, size == 3, base_exc_t::LOGIC,
                    strprintf("Expected 3 items in array, but found %zu.", size));
         data->datum = &(*src)[1];
-    } else if (size == 3) {
-        data->args = &(*src)[1];
-    } else if (size == 4) {
-        data->args = &(*src)[1];
-        data->optargs = &(*src)[2];
+    } else {
+        for (size_t i = 1; i < size - 1; ++i) {
+            const rapidjson::Value *item = &(*src)[i];
+            if (item->IsArray()) {
+                data->args = item;
+            } else {
+                r_sanity_check(item->IsObject());
+                data->optargs = item;
+            }
+        }
     }
 }
 

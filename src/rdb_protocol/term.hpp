@@ -7,6 +7,7 @@
 #include "rdb_protocol/error.hpp"
 #include "rdb_protocol/ql2.pb.h"
 #include "rdb_protocol/val.hpp"
+#include "rdb_protocol/term_storage.hpp"
 
 namespace ql {
 

@@ -54,16 +54,15 @@ public:
         visit_optargs(
             [&] (const rapidjson::Value *optargs) {
                 if (optargs != nullptr) {
-                    auto it = optargs->MemberBegin();
-                    while (it != optargs->MemberEnd()) {
+                    for (auto it = optargs->MemberBegin();
+                         it != optargs->MemberEnd(); ++it) {
                         cb(raw_term_t(&it->value, it->name.GetString()));
                     }
                 }
             },
             [&] (const std::map<std::string, maybe_generated_term_t> &optargs) {
-                auto it = optargs.begin();
-                while (it != optargs.end()) {
-                    cb(raw_term_t(it->second, it->first));
+                for (auto const &it : optargs) {
+                    cb(raw_term_t(it.second, it.first));
                 }
             });
     }

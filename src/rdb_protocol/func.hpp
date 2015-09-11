@@ -17,6 +17,7 @@
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/sym.hpp"
 #include "rdb_protocol/term.hpp"
+#include "rdb_protocol/term_storage.hpp"
 #include "rpc/serialize_macros.hpp"
 
 class js_runner_t;
