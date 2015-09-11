@@ -53,9 +53,11 @@ public:
     void each_optarg(callable_t &&cb) const {
         visit_optargs(
             [&] (const rapidjson::Value *optargs) {
-                auto it = optargs->MemberBegin();
-                while (it != optargs->MemberEnd()) {
-                    cb(raw_term_t(&it->value, it->name.GetString()));
+                if (optargs != nullptr) {
+                    auto it = optargs->MemberBegin();
+                    while (it != optargs->MemberEnd()) {
+                        cb(raw_term_t(&it->value, it->name.GetString()));
+                    }
                 }
             },
             [&] (const std::map<std::string, maybe_generated_term_t> &optargs) {

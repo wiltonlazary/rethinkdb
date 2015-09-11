@@ -176,7 +176,7 @@ op_term_t::op_term_t(compile_env_t *env, const raw_term_t &term,
         : term_t(term) {
     std::vector<counted_t<const term_t> > original_args;
     original_args.reserve(term.num_args());
-    for (size_t i = 0; i < original_args.size(); ++i) {
+    for (size_t i = 0; i < term.num_args(); ++i) {
         counted_t<const term_t> t = compile_term(env, term.arg(i));
         original_args.push_back(t);
     }
