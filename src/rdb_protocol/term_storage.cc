@@ -263,9 +263,13 @@ global_optargs_t term_storage_t::global_optargs() {
     // Create a default db global optarg
     if (!res.has_optarg("db")) {
         src->AddMember(rapidjson::Value("db", doc.GetAllocator()),
-                       rapidjson::Value("test", doc.GetAllocator()),
+                       rapidjson::Value(rapidjson::kArrayType),
                        doc.GetAllocator());
         auto it = src->FindMember("db");
+        it->value.PushBack(rapidjson::Value(Term::DB), doc.GetAllocator());
+        it->value.PushBack(rapidjson::Value(rapidjson::kArrayType), doc.GetAllocator());
+        it->value[it->value.Size() - 1].PushBack(rapidjson::Value("test", doc.GetAllocator()),
+                                                 doc.GetAllocator());
         preprocess_global_optarg(&it->value, &doc.GetAllocator());
         res.add_optarg(raw_term_t(&it->value, it->name.GetString()));
     }

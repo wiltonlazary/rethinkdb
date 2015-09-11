@@ -14,11 +14,8 @@ namespace ql {
 global_optargs_t::global_optargs_t() { }
 
 void global_optargs_t::add_optarg(const raw_term_t &optarg) {
-    minidriver_t r(backtrace_id_t::empty());
-    raw_term_t arg = r.fun(r.expr(optarg)).root_term();
-
     auto res = optargs.insert(std::make_pair(std::string(optarg.optarg_name()),
-                                             wire_func_t(arg, std::vector<sym_t>())));
+                                             wire_func_t(optarg, std::vector<sym_t>())));
     rcheck_toplevel(res.second, base_exc_t::LOGIC, strprintf(
         "Duplicate global optional argument: `%s`.",
         optarg.optarg_name().c_str()));
