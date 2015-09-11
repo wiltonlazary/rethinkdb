@@ -94,7 +94,11 @@ public:
 private:
     class entry_t {
     public:
-        entry_t(query_params_t *params, backtrace_registry_t _bt_reg);
+        entry_t(query_params_t *query_params,
+                term_storage_t &&_term_storage,
+                global_optargs_t &&_global_optargs,
+                counted_t<const term_t> &&_term_tree,
+                backtrace_registry_t _bt_reg);
         ~entry_t();
 
         enum class state_t { START, STREAM, DONE, DELETING } state;

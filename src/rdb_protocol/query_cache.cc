@@ -45,22 +45,51 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(query_params_t *query_p
     }
 
     backtrace_registry_t bt_reg;
+    term_storage_t term_storage;
+    global_optargs_t global_optargs;
     counted_t<const term_t> term_tree;
-    scoped_ptr_t<entry_t> entry;
     try {
+        rapidjson::StringBuffer pre_buffer;
+        rapidjson::Writer<rapidjson::StringBuffer> pre_writer(pre_buffer);
+        query_params->query_json.Accept(pre_writer);
+        debugf("pre-processing json: %s\n", pre_buffer.GetString());
+
         preprocess_term_tree(&query_params->query_json, &bt_reg);
-        entry.init(new entry_t(query_params, std::move(bt_reg)));
+
+        rapidjson::StringBuffer post_buffer;
+        rapidjson::Writer<rapidjson::StringBuffer> post_writer(post_buffer);
+        query_params->query_json.Accept(post_writer);
+        debugf("post-processing json: %s\n", post_buffer.GetString());
+
+        term_storage = term_storage_t::from_query(std::move(query_params->original_data),
+                                                  std::move(query_params->query_json));
+
+        debugf("getting global optargs\n");
+        global_optargs = term_storage.global_optargs();
+        debugf("compiling term tree\n");
+
+        compile_env_t compile_env((var_visibility_t()));
+        term_tree = compile_term(&compile_env, term_storage.root_term());
+
+        debugf("done compiling\n");
     } catch (const exc_t &e) {
+        debugf("error when preprocessing query: %s\n", e.what());
         throw bt_exc_t(Response::COMPILE_ERROR,
                        e.get_error_type(),
                        e.what(),
                        bt_reg.datum_backtrace(e));
     } catch (const datum_exc_t &e) {
+        debugf("datum error when preprocessing query: %s\n", e.what());
         throw bt_exc_t(Response::COMPILE_ERROR,
                        e.get_error_type(),
                        e.what(),
                        backtrace_registry_t::EMPTY_BACKTRACE);
     }
+    scoped_ptr_t<entry_t> entry(new entry_t(query_params,
+                                            std::move(term_storage),
+                                            std::move(global_optargs),
+                                            std::move(term_tree),
+                                            std::move(bt_reg)));
 
     scoped_ptr_t<ref_t> ref(new ref_t(this,
                                       query_params->token,
@@ -317,6 +346,9 @@ void query_cache_t::ref_t::serve(env_t *env, response_t *res) {
 }
 
 query_cache_t::entry_t::entry_t(query_params_t *query_params,
+                                term_storage_t &&_term_storage,
+                                global_optargs_t &&_global_optargs,
+                                counted_t<const term_t> &&_term_tree,
                                 backtrace_registry_t _bt_reg) :
         state(state_t::START),
         job_id(generate_uuid()),
@@ -324,14 +356,11 @@ query_cache_t::entry_t::entry_t(query_params_t *query_params,
         profile(query_params->profile ? profile_bool_t::PROFILE :
                                         profile_bool_t::DONT_PROFILE),
         bt_reg(std::move(_bt_reg)),
-        term_storage(term_storage_t::from_query(std::move(query_params->original_data),
-                                                std::move(query_params->query_json))),
-        global_optargs(term_storage.global_optargs()),
+        term_storage(std::move(_term_storage)),
+        global_optargs(std::move(_global_optargs)),
         start_time(pseudo::time_now()),
-        has_sent_batch(false) {
-    compile_env_t compile_env((var_visibility_t()));
-    term_tree = compile_term(&compile_env, term_storage.root_term());
-}
+        term_tree(std::move(_term_tree)),
+        has_sent_batch(false) { }
 
 query_cache_t::entry_t::~entry_t() { }
 

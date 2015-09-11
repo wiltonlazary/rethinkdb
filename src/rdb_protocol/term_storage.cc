@@ -10,13 +10,30 @@ generated_term_t::generated_term_t(Term::TermType _type, backtrace_id_t _bt) :
 
 raw_term_t::raw_term_t() { }
 
+void log_raw_term(const raw_term_t &term) {
+    datum_t d = term.datum();
+    if (d.has()) {
+        rapidjson::StringBuffer buffer;
+        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+        d.write_json(&writer);
+        debugf("new raw_term_t, type: %d, args: %zu, optargs: %zu, datum: %s\n",
+               term.type(), term.num_args(), term.num_optargs(), buffer.GetString());
+    } else {
+        debugf("new raw_term_t, type: %d, args: %zu, optargs: %zu, no datum\n",
+               term.type(), term.num_args(), term.num_optargs());
+    }
+
+}
+
 raw_term_t::raw_term_t(const counted_t<generated_term_t> &source) {
     info = source;
+    log_raw_term(*this);
 }
 
 raw_term_t::raw_term_t(const rapidjson::Value *source, std::string _optarg_name) :
         optarg_name_(std::move(_optarg_name)) {
     init_json(source);
+    log_raw_term(*this);
 }
 
 raw_term_t::raw_term_t(const maybe_generated_term_t &source, std::string _optarg_name) :
@@ -26,6 +43,7 @@ raw_term_t::raw_term_t(const maybe_generated_term_t &source, std::string _optarg
     } else {
         info = boost::get<counted_t<generated_term_t> >(source);
     }
+    log_raw_term(*this);
 }
 
 void raw_term_t::init_json(const rapidjson::Value *src) {

@@ -128,6 +128,7 @@ public:
                                          rapidjson::Value &&_query_json);
 
     term_storage_t(term_storage_t &&other) = default;
+    term_storage_t &operator=(term_storage_t &&other) = default;
 
     raw_term_t root_term() const;
     global_optargs_t global_optargs() const;
