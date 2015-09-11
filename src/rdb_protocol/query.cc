@@ -69,13 +69,12 @@ void query_params_t::maybe_release_query_id() {
 
 query_params_t::query_params_t(int64_t _token,
                                ql::query_cache_t *_query_cache,
-                               scoped_array_t<char> &&original_data,
+                               scoped_array_t<char> &&_original_data,
                                rapidjson::Document &&_query_json) :
         query_cache(_query_cache),
-        term_storage(term_storage_t::from_query(std::move(original_data),
-                                                std::move(_query_json))),
+        original_data(std::move(_original_data)),
+        query_json(std::move(_query_json)),
         id(query_cache), token(_token), noreply(false), profile(false) {
-    const rapidjson::Value &query_json = *term_storage.json();
     if (!query_json.IsArray()) {
         throw bt_exc_t(Response::CLIENT_ERROR, Response::QUERY_LOGIC,
             strprintf("Expected a query to be an array, but found %s.",

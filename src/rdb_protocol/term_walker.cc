@@ -66,7 +66,6 @@ private:
             src->PushBack(std::move(rewritten), *parent->allocator);
         }
 
-        // RSI (grey): we should make these checks for minidriver term trees
         void walk(rapidjson::Value *src, backtrace_id_t bt) {
             r_sanity_check(src != nullptr);
             rapidjson::Value *args(nullptr);
@@ -171,21 +170,23 @@ private:
     Allocator *allocator;
 };
 
-template <typename Allocator>
-void preprocess_term_tree(Allocator *allocator,
-                          rapidjson::Value *root_term,
+void preprocess_term_tree(rapidjson::Document *query_json,
                           backtrace_registry_t *bt_reg) {
-    r_sanity_check(allocator != nullptr);
-    r_sanity_check(root_term != nullptr);
-    term_walker_t<Allocator> term_walker(allocator, bt_reg);
-    term_walker.walk(root_term);
-}
+    r_sanity_check(query_json != nullptr);
+    term_walker_t<rapidjson::MemoryPoolAllocator<> >
+        term_walker(&query_json->GetAllocator(), bt_reg);
 
-template
-void preprocess_term_tree<rapidjson::MemoryPoolAllocator<> >(
-        rapidjson::MemoryPoolAllocator<> *allocator,
-        rapidjson::Value *root_term,
-        backtrace_registry_t *bt_reg);
+    r_sanity_check(query_json->IsArray());
+    r_sanity_check(query_json->Size() >= 2);
+    term_walker.walk(&(*query_json)[1]);
+
+    // TODO: walk global optargs, but don't attach backtraces?
+    //if (query_json->Size() >= 3) {
+    //    rapidjson::Value *optargs = &(*query_json)[2];
+    //    for (auto it = optargs->MemberBegin(); it != optargs->MemberEnd(); ++it) {
+    //    }
+    //}
+}
 
 // Returns true if `t` is a write or a meta op.
 bool term_is_write_or_meta(Term::TermType type) {

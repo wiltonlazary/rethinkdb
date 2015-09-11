@@ -40,7 +40,8 @@ public:
     void maybe_release_query_id();
 
     query_cache_t *query_cache;
-    term_storage_t term_storage;
+    scoped_array_t<char> original_data;
+    rapidjson::Document query_json;
     query_id_t id;
 
     int64_t token;

@@ -8,9 +8,7 @@ namespace ql {
 
 class backtrace_registry_t;
  
-template <typename Allocator>
-void preprocess_term_tree(Allocator *allocator,
-                          rapidjson::Value *doc,
+void preprocess_term_tree(rapidjson::Document *query_json,
                           backtrace_registry_t *bt_reg);
 
 } // namespace ql

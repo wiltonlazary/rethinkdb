@@ -115,8 +115,8 @@ archive_result_t deserialize(read_stream_t *s, wire_func_t *wf) {
         if (bad(res)) { return res; }
 
         scoped_array_t<char> raw_json;
-        rapidjson::Document json_doc;
-        res = deserialize_term_tree<W>(s, &raw_json, &json_doc);
+        rapidjson::Value parsed_json;
+        res = deserialize_term_tree<W>(s, &raw_json, &parsed_json);
         if (bad(res)) { return res; }
 
         res = deserialize_protobuf(s, &dummy_bt);
@@ -124,7 +124,7 @@ archive_result_t deserialize(read_stream_t *s, wire_func_t *wf) {
 
         compile_env_t env(scope.compute_visibility().with_func_arg_name_list(arg_names));
         term_storage_t storage =
-            term_storage_t::from_wire_func(std::move(raw_json), std::move(json_doc));
+            term_storage_t::from_wire_func(std::move(raw_json), std::move(parsed_json));
         wf->func = make_counted<reql_func_t>(std::move(storage), scope, arg_names,
                                              compile_term(&env, storage.root_term()));
         return res;
@@ -179,8 +179,8 @@ archive_result_t deserialize_wire_func(
         if (bad(res)) { return res; }
 
         scoped_array_t<char> raw_json;
-        rapidjson::Document json_doc;
-        res = deserialize_term_tree<W>(s, &raw_json, &json_doc);
+        rapidjson::Value parsed_json;
+        res = deserialize_term_tree<W>(s, &raw_json, &parsed_json);
         if (bad(res)) { return res; }
 
         backtrace_id_t bt;
@@ -189,7 +189,7 @@ archive_result_t deserialize_wire_func(
 
         compile_env_t env(scope.compute_visibility().with_func_arg_name_list(arg_names));
         term_storage_t storage =
-            term_storage_t::from_wire_func(std::move(raw_json), std::move(json_doc));
+            term_storage_t::from_wire_func(std::move(raw_json), std::move(parsed_json));
         wf->func = make_counted<reql_func_t>(std::move(storage), scope, arg_names,
                                              compile_term(&env, storage.root_term()));
         return res;
