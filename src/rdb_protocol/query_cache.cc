@@ -49,17 +49,7 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(query_params_t *query_p
     global_optargs_t global_optargs;
     counted_t<const term_t> term_tree;
     try {
-        rapidjson::StringBuffer pre_buffer;
-        rapidjson::Writer<rapidjson::StringBuffer> pre_writer(pre_buffer);
-        query_params->query_json.Accept(pre_writer);
-        debugf("pre-processing json: %s\n", pre_buffer.GetString());
-
         preprocess_term_tree(&query_params->query_json, &bt_reg);
-
-        rapidjson::StringBuffer post_buffer;
-        rapidjson::Writer<rapidjson::StringBuffer> post_writer(post_buffer);
-        query_params->query_json.Accept(post_writer);
-        debugf("post-processing json: %s\n", post_buffer.GetString());
 
         term_storage = term_storage_t::from_query(std::move(query_params->original_data),
                                                   std::move(query_params->query_json));

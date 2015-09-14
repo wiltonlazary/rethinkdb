@@ -219,7 +219,7 @@ void raw_term_t::visit_datum(json_cb_t &&json_cb, generated_cb_t &&generated_cb)
 }
 
 term_storage_t term_storage_t::from_query(scoped_array_t<char> &&_wire_str,
-                                          rapidjson::Value &&_query_json) {
+                                          rapidjson::Document &&_query_json) {
     r_sanity_check(_query_json.IsArray());
     r_sanity_check(_query_json.Size() >= 2);
 
@@ -231,7 +231,7 @@ term_storage_t term_storage_t::from_query(scoped_array_t<char> &&_wire_str,
 }
 
 term_storage_t term_storage_t::from_wire_func(scoped_array_t<char> &&_wire_str,
-                                              rapidjson::Value &&_query_json) {
+                                              rapidjson::Document &&_query_json) {
     r_sanity_check(_query_json.IsArray());
     r_sanity_check(_query_json.Size() >= 1);
 
@@ -247,7 +247,7 @@ raw_term_t term_storage_t::root_term() const {
 }
 
 global_optargs_t term_storage_t::global_optargs() {
-    rapidjson::Document doc;
+    auto &allocator = query_json.GetAllocator();
     rapidjson::Value *src;
 
     global_optargs_t res;
@@ -256,26 +256,26 @@ global_optargs_t term_storage_t::global_optargs() {
         src = &query_json[2];
         r_sanity_check(src->IsObject());
         for (auto it = src->MemberBegin(); it != src->MemberEnd(); ++it) {
-            preprocess_global_optarg(&it->value, &doc.GetAllocator());
+            preprocess_global_optarg(&it->value, &allocator);
             res.add_optarg(raw_term_t(&it->value, it->name.GetString()));
         }
     } else {
         query_json.PushBack(rapidjson::Value(rapidjson::kObjectType),
-                            doc.GetAllocator());
+                            allocator);
         src = &query_json[query_json.Size() - 1];
     }
 
     // Create a default db global optarg
     if (!res.has_optarg("db")) {
-        src->AddMember(rapidjson::Value("db", doc.GetAllocator()),
+        src->AddMember(rapidjson::Value("db", allocator),
                        rapidjson::Value(rapidjson::kArrayType),
-                       doc.GetAllocator());
+                       allocator);
         auto it = src->FindMember("db");
-        it->value.PushBack(rapidjson::Value(Term::DB), doc.GetAllocator());
-        it->value.PushBack(rapidjson::Value(rapidjson::kArrayType), doc.GetAllocator());
-        it->value[it->value.Size() - 1].PushBack(rapidjson::Value("test", doc.GetAllocator()),
-                                                 doc.GetAllocator());
-        preprocess_global_optarg(&it->value, &doc.GetAllocator());
+        it->value.PushBack(rapidjson::Value(Term::DB), allocator);
+        it->value.PushBack(rapidjson::Value(rapidjson::kArrayType), allocator);
+        it->value[it->value.Size() - 1].PushBack(rapidjson::Value("test", allocator),
+                                                 allocator);
+        preprocess_global_optarg(&it->value, &allocator);
         res.add_optarg(raw_term_t(&it->value, it->name.GetString()));
     }
 
@@ -393,32 +393,33 @@ rapidjson::Value convert_term_tree(const Term &src,
 template <cluster_version_t W>
 MUST_USE archive_result_t deserialize_term_tree(read_stream_t *s,
                                                 scoped_array_t<char> *,
-                                                rapidjson::Value *json_out) {
+                                                rapidjson::Document *json_out) {
     Term body;
     archive_result_t res = deserialize_protobuf(s, &body);
     if (bad(res)) { return res; }
 
-    rapidjson::Document doc;
-    *json_out = convert_term_tree(body, &doc.GetAllocator());
+    rapidjson::Value v = convert_term_tree(body, &json_out->GetAllocator());
+    json_out->Swap(v);
     return res;
 }
 
 template MUST_USE archive_result_t deserialize_term_tree<cluster_version_t::v1_14>(
-        read_stream_t *, scoped_array_t<char> *, rapidjson::Value *);
+        read_stream_t *, scoped_array_t<char> *, rapidjson::Document *);
 template MUST_USE archive_result_t deserialize_term_tree<cluster_version_t::v1_15>(
-        read_stream_t *, scoped_array_t<char> *, rapidjson::Value *);
+        read_stream_t *, scoped_array_t<char> *, rapidjson::Document *);
 template MUST_USE archive_result_t deserialize_term_tree<cluster_version_t::v1_16>(
-        read_stream_t *, scoped_array_t<char> *, rapidjson::Value *);
+        read_stream_t *, scoped_array_t<char> *, rapidjson::Document *);
 template MUST_USE archive_result_t deserialize_term_tree<cluster_version_t::v2_0>(
-        read_stream_t *, scoped_array_t<char> *, rapidjson::Value *);
+        read_stream_t *, scoped_array_t<char> *, rapidjson::Document *);
 template MUST_USE archive_result_t deserialize_term_tree<cluster_version_t::v2_1>(
-        read_stream_t *, scoped_array_t<char> *, rapidjson::Value *);
+        read_stream_t *, scoped_array_t<char> *, rapidjson::Document *);
 
 template <>
 MUST_USE archive_result_t deserialize_term_tree<cluster_version_t::v2_2_is_latest>(
         read_stream_t *s,
         scoped_array_t<char> *data_out,
-        rapidjson::Value *json_out) {
+        rapidjson::Document *json_out) {
+    debugf("deserializing term tree\n");
     CT_ASSERT(sizeof(int) == sizeof(int32_t));
     int32_t size;
     archive_result_t res = deserialize_universal(s, &size);
@@ -428,9 +429,12 @@ MUST_USE archive_result_t deserialize_term_tree<cluster_version_t::v2_2_is_lates
     int64_t read_res = force_read(s, data_out->data(), data_out->size());
     if (read_res != size) { return archive_result_t::SOCK_ERROR; }
 
-    rapidjson::Document doc;
-    doc.ParseInsitu(data_out->data());
-    json_out->Swap(doc);
+    json_out->ParseInsitu(data_out->data());
+
+    rapidjson::StringBuffer buffer;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+    json_out->Accept(writer);
+    debugf("deserialized json: %s\n", buffer.GetString());
     return archive_result_t::SUCCESS;
 }
 
@@ -472,6 +476,7 @@ void write_term(rapidjson::Writer<rapidjson::StringBuffer> *writer,
 
 template <cluster_version_t W>
 void serialize_term_tree(write_message_t *wm, const raw_term_t &root_term) {
+    debugf("serializing term tree\n");
     rapidjson::StringBuffer buffer;
     rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
     write_term(&writer, root_term);

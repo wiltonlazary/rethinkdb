@@ -123,10 +123,10 @@ public:
     term_storage_t() { }
 
     static term_storage_t from_query(scoped_array_t<char> &&_wire_str,
-                                     rapidjson::Value &&_query_json);
+                                     rapidjson::Document &&_query_json);
 
     static term_storage_t from_wire_func(scoped_array_t<char> &&_wire_str,
-                                         rapidjson::Value &&_query_json);
+                                         rapidjson::Document &&_query_json);
 
     term_storage_t(term_storage_t &&other) = default;
     term_storage_t &operator=(term_storage_t &&other) = default;
@@ -136,7 +136,7 @@ public:
 
 private:
     scoped_array_t<char> wire_str;
-    rapidjson::Value query_json;
+    rapidjson::Document query_json;
     rapidjson::Value *root_term_;
 };
 
@@ -150,7 +150,7 @@ void serialize_term_tree(write_message_t *wm,
 template <cluster_version_t W>
 MUST_USE archive_result_t deserialize_term_tree(read_stream_t *s,
                                                 scoped_array_t<char> *buffer_out,
-                                                rapidjson::Value *json_out);
+                                                rapidjson::Document *json_out);
 
 } // namespace ql
 

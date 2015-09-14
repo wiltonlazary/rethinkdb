@@ -115,7 +115,7 @@ archive_result_t deserialize(read_stream_t *s, wire_func_t *wf) {
         if (bad(res)) { return res; }
 
         scoped_array_t<char> raw_json;
-        rapidjson::Value parsed_json;
+        rapidjson::Document parsed_json;
         res = deserialize_term_tree<W>(s, &raw_json, &parsed_json);
         if (bad(res)) { return res; }
 
@@ -179,7 +179,7 @@ archive_result_t deserialize_wire_func(
         if (bad(res)) { return res; }
 
         scoped_array_t<char> raw_json;
-        rapidjson::Value parsed_json;
+        rapidjson::Document parsed_json;
         res = deserialize_term_tree<W>(s, &raw_json, &parsed_json);
         if (bad(res)) { return res; }
 
