@@ -43,19 +43,21 @@ reql_func_t::reql_func_t(const raw_term_t &_root_term,
                          const var_scope_t &_captured_scope,
                          std::vector<sym_t> _arg_names,
                          counted_t<const term_t> _body)
-    : func_t(_root_term.bt()), captured_scope(_captured_scope),
-      arg_names(std::move(_arg_names)), root_term(_root_term),
+    : func_t(_root_term.bt()),
+      captured_scope(_captured_scope),
+      arg_names(std::move(_arg_names)),
+      root_term(_root_term),
       body(std::move(_body)) { }
 
-reql_func_t::reql_func_t(term_storage_t &&_storage,
+reql_func_t::reql_func_t(scoped_ptr_t<term_storage_t> &&_storage,
                          const var_scope_t &_captured_scope,
                          std::vector<sym_t> _arg_names,
                          counted_t<const term_t> _body)
-    : func_t(_storage.root_term().bt()),
+    : func_t(_storage->root_term().bt()),
       captured_scope(_captured_scope),
       arg_names(std::move(_arg_names)),
       term_storage(std::move(_storage)),
-      root_term(term_storage.root_term()),
+      root_term(term_storage->root_term()),
       body(std::move(_body)) { }
 
 reql_func_t::~reql_func_t() { }

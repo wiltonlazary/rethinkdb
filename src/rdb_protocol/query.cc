@@ -9,11 +9,6 @@
 
 namespace ql {
 
-bool static_optarg_as_bool(const rapidjson::Value *global_optargs,
-                           const std::string &key, bool default_value);
-
-const char *rapidjson_typestr(rapidjson::Type t);
-
 query_params_t::query_id_t::query_id_t(query_params_t::query_id_t &&other) :
         intrusive_list_node_t(std::move(other)),
         parent(other.parent),
@@ -69,79 +64,14 @@ void query_params_t::maybe_release_query_id() {
 
 query_params_t::query_params_t(int64_t _token,
                                ql::query_cache_t *_query_cache,
-                               scoped_array_t<char> &&_original_data,
-                               rapidjson::Document &&_query_json) :
+                               scoped_ptr_t<term_storage_t> &&_term_storage) :
         query_cache(_query_cache),
-        original_data(std::move(_original_data)),
-        query_json(std::move(_query_json)),
+        term_storage(std::move(_term_storage)),
         id(query_cache), token(_token), noreply(false), profile(false) {
-    if (!query_json.IsArray()) {
-        throw bt_exc_t(Response::CLIENT_ERROR, Response::QUERY_LOGIC,
-            strprintf("Expected a query to be an array, but found %s.",
-                      rapidjson_typestr(query_json.GetType())),
-            backtrace_registry_t::EMPTY_BACKTRACE);
-    }
-    if (query_json.Size() == 0 || query_json.Size() > 3) {
-        throw bt_exc_t(Response::CLIENT_ERROR, Response::QUERY_LOGIC,
-            strprintf("Expected 0 to 3 elements in the top-level query, but found %d.",
-                      query_json.Size()),
-            backtrace_registry_t::EMPTY_BACKTRACE);
-    }
-
-    if (!query_json[0].IsNumber()) {
-        throw bt_exc_t(Response::CLIENT_ERROR, Response::QUERY_LOGIC,
-            strprintf("Expected a query type as a number, but found %s.",
-                      rapidjson_typestr(query_json[0].GetType())),
-            backtrace_registry_t::EMPTY_BACKTRACE);
-    }
-    type = static_cast<Query::QueryType>(query_json[0].GetInt());
-
-    if (query_json.Size() >= 3) {
-        const rapidjson::Value *global_optargs = &query_json[2];
-        if (!global_optargs->IsObject()) {
-            throw bt_exc_t(Response::CLIENT_ERROR, Response::QUERY_LOGIC,
-                strprintf("Expected global optargs as an object, but found %s.",
-                          rapidjson_typestr(query_json[2].GetType())),
-                backtrace_registry_t::EMPTY_BACKTRACE);
-        }
-
-        // Parse out optargs that are needed before query evaluation
-        noreply = static_optarg_as_bool(global_optargs, "noreply", noreply);
-        profile = static_optarg_as_bool(global_optargs, "profile", profile);
-    }
-}
-
-bool static_optarg_as_bool(const rapidjson::Value *global_optargs,
-                           const std::string &key, bool default_value) {
-    guarantee(global_optargs != nullptr);
-    auto it = global_optargs->FindMember(key.c_str());
-    if (it == global_optargs->MemberEnd()) {
-        return default_value;
-    } else if (it->value.IsBool()) {
-        return it->value.GetBool();
-    } else if (!it->value.IsArray() ||
-               it->value.Size() != 2 ||
-               !it->value[0].IsNumber() ||
-               static_cast<Term::TermType>(it->value[0].GetInt()) != Term::DATUM) {
-        return default_value;
-    } else if (!it->value[1].IsBool()) {
-        return default_value;
-    }
-    return it->value[1].GetBool();
-}
-
-const char *rapidjson_typestr(rapidjson::Type t) {
-    switch (t) {
-    case rapidjson::kNullType:   return "NULL";
-    case rapidjson::kFalseType:  return "BOOL";
-    case rapidjson::kTrueType:   return "BOOL";
-    case rapidjson::kObjectType: return "OBJECT";
-    case rapidjson::kArrayType:  return "ARRAY";
-    case rapidjson::kStringType: return "STRING";
-    case rapidjson::kNumberType: return "NUMBER";
-    default:                     break;
-    }
-    unreachable();
+    // Parse out information that is needed before query evaluation
+    type = term_storage->query_type();
+    noreply = term_storage->static_optarg_as_bool("noreply", noreply);
+    profile = term_storage->static_optarg_as_bool("profile", profile);
 }
 
 } // namespace ql

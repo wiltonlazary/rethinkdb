@@ -2,23 +2,22 @@
 #ifndef RDB_PROTOCOL_QUERY_HPP_
 #define RDB_PROTOCOL_QUERY_HPP_
 
-#include "rapidjson/document.h"
-
 #include "concurrency/new_semaphore.hpp"
 #include "containers/intrusive_list.hpp"
+#include "containers/scoped.hpp"
 #include "rdb_protocol/error.hpp"
 #include "rdb_protocol/ql2.pb.h"
 
 namespace ql {
 
 class query_cache_t;
+class term_storage_t;
 
 class query_params_t {
 public:
     query_params_t(int64_t _token,
                    ql::query_cache_t *_query_cache,
-                   scoped_array_t<char> &&_original_data,
-                   rapidjson::Document &&_query_json);
+                   scoped_ptr_t<term_storage_t> &&_term_storage);
 
     // A query id is allocated when each query is received from the client
     // in order, so order can be checked for in queries that require it
@@ -39,8 +38,7 @@ public:
     void maybe_release_query_id();
 
     query_cache_t *query_cache;
-    scoped_array_t<char> original_data;
-    rapidjson::Document query_json;
+    scoped_ptr_t<term_storage_t> term_storage;
     query_id_t id;
 
     int64_t token;
@@ -53,9 +51,6 @@ public:
 private:
     DISABLE_COPYING(query_params_t);
 };
-
-// Also used by the term walker
-const char *rapidjson_typestr(rapidjson::Type t);
 
 } // namespace ql
 

@@ -7,6 +7,7 @@
 #include "rdb_protocol/pseudo_time.hpp"
 #include "rdb_protocol/ql2.pb.h"
 #include "rdb_protocol/query.hpp"
+#include "rdb_protocol/term_storage.hpp"
 
 namespace ql {
 
@@ -176,39 +177,38 @@ private:
     rapidjson::Value::AllocatorType *allocator;
 };
 
-void preprocess_term_tree(rapidjson::Document *query_json,
+void preprocess_term_tree(rapidjson::Value *term_tree,
+                          rapidjson::Value::AllocatorType *allocator,
                           backtrace_registry_t *bt_reg) {
+    r_sanity_check(term_tree != nullptr);
+    term_walker_t term_walker(allocator, bt_reg);
+
     rapidjson::StringBuffer pre_buffer;
     rapidjson::Writer<rapidjson::StringBuffer> pre_writer(pre_buffer);
-    query_json->Accept(pre_writer);
+    term_tree->Accept(pre_writer);
     debugf("pre-processing json: %s\n", pre_buffer.GetString());
 
-    r_sanity_check(query_json != nullptr);
-    term_walker_t term_walker(&query_json->GetAllocator(), bt_reg);
-
-    r_sanity_check(query_json->IsArray());
-    r_sanity_check(query_json->Size() >= 2);
-    term_walker.walk(&(*query_json)[1]);
+    term_walker.walk(term_tree);
 
     rapidjson::StringBuffer post_buffer;
     rapidjson::Writer<rapidjson::StringBuffer> post_writer(post_buffer);
-    query_json->Accept(post_writer);
+    term_tree->Accept(post_writer);
     debugf("post-processing json: %s\n", post_buffer.GetString());
 }
 
-void preprocess_global_optarg(rapidjson::Value *optarg,
+void preprocess_global_optarg(rapidjson::Value *term_tree,
                               rapidjson::Value::AllocatorType *allocator) {
     rapidjson::StringBuffer pre_buffer;
     rapidjson::Writer<rapidjson::StringBuffer> pre_writer(pre_buffer);
-    optarg->Accept(pre_writer);
+    term_tree->Accept(pre_writer);
     debugf("pre-processing optarg: %s\n", pre_buffer.GetString());
 
     term_walker_t term_walker(allocator, nullptr);
-    term_walker.walk(optarg);
+    term_walker.walk(term_tree);
 
     rapidjson::StringBuffer post_buffer;
     rapidjson::Writer<rapidjson::StringBuffer> post_writer(post_buffer);
-    optarg->Accept(post_writer);
+    term_tree->Accept(post_writer);
     debugf("post-processing optarg: %s\n", post_buffer.GetString());
 }
 

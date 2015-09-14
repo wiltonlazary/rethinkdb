@@ -12,6 +12,7 @@
 #include "containers/counted.hpp"
 #include "containers/scoped.hpp"
 #include "rapidjson/rapidjson.h"
+#include "rdb_protocol/backtrace.hpp"
 #include "rdb_protocol/datum.hpp"
 #include "rdb_protocol/error.hpp"
 #include "rdb_protocol/ql2.pb.h"
@@ -22,6 +23,8 @@ class Datum;
 class Backtrace;
 
 namespace ql {
+
+const char *rapidjson_typestr(rapidjson::Type t);
 
 struct generated_term_t;
 
@@ -41,6 +44,8 @@ struct generated_term_t : public slow_atomic_countable_t<generated_term_t> {
 
 class raw_term_t {
 public:
+    raw_term_t(const rapidjson::Value *source, std::string _optarg_name);
+    raw_term_t(const maybe_generated_term_t &source, std::string _optarg_name);
     raw_term_t(const counted_t<generated_term_t> &source);
     raw_term_t(const raw_term_t &other) = default;
 
@@ -80,10 +85,6 @@ public:
     maybe_generated_term_t get_src() const;
 
 private:
-    friend class term_storage_t;
-    friend struct generated_term_t;
-    raw_term_t(const rapidjson::Value *source, std::string _optarg_name);
-    raw_term_t(const maybe_generated_term_t &source, std::string _optarg_name);
     raw_term_t();
     void init_json(const rapidjson::Value *src);
 
@@ -120,24 +121,47 @@ private:
 
 class term_storage_t {
 public:
-    term_storage_t() { }
+    virtual ~term_storage_t() { }
 
-    static term_storage_t from_query(scoped_array_t<char> &&_wire_str,
-                                     rapidjson::Document &&_query_json);
+    const backtrace_registry_t &backtrace_registry() const;
 
-    static term_storage_t from_wire_func(scoped_array_t<char> &&_wire_str,
-                                         rapidjson::Document &&_query_json);
+    // These functions must be implemented by descendants
+    virtual raw_term_t root_term() const = 0;
 
-    term_storage_t(term_storage_t &&other) = default;
-    term_storage_t &operator=(term_storage_t &&other) = default;
+    // These functions are not valid for all descendants
+    virtual Query::QueryType query_type() const;
+    virtual bool static_optarg_as_bool(const std::string &key,
+                                       bool default_value) const;
+    virtual void preprocess();
+    virtual global_optargs_t global_optargs();
 
+protected:
+    backtrace_registry_t bt_reg;
+};
+
+class json_term_storage_t : public term_storage_t {
+public:
+    json_term_storage_t(scoped_array_t<char> &&_original_data,
+                        rapidjson::Document &&_query_json);
+    Query::QueryType query_type() const;
+    bool static_optarg_as_bool(const std::string &key,
+                               bool default_value) const;
+    void preprocess();
     raw_term_t root_term() const;
     global_optargs_t global_optargs();
-
 private:
-    scoped_array_t<char> wire_str;
+    scoped_array_t<char> original_data;
     rapidjson::Document query_json;
-    rapidjson::Value *root_term_;
+};
+
+class wire_term_storage_t : public term_storage_t {
+public:
+    wire_term_storage_t(scoped_array_t<char> &&_original_data,
+                        rapidjson::Document &&_query_json);
+    raw_term_t root_term() const;
+private:
+    scoped_array_t<char> original_data;
+    rapidjson::Document func_json;
 };
 
 template <typename pb_t>
@@ -149,8 +173,7 @@ void serialize_term_tree(write_message_t *wm,
 
 template <cluster_version_t W>
 MUST_USE archive_result_t deserialize_term_tree(read_stream_t *s,
-                                                scoped_array_t<char> *buffer_out,
-                                                rapidjson::Document *json_out);
+                                                scoped_ptr_t<term_storage_t> *term_storage_out);
 
 } // namespace ql
 

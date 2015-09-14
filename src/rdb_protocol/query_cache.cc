@@ -44,22 +44,17 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(query_params_t *query_p
             backtrace_registry_t::EMPTY_BACKTRACE);
     }
 
-    backtrace_registry_t bt_reg;
-    term_storage_t term_storage;
     global_optargs_t global_optargs;
     counted_t<const term_t> term_tree;
     try {
-        preprocess_term_tree(&query_params->query_json, &bt_reg);
-
-        term_storage = term_storage_t::from_query(std::move(query_params->original_data),
-                                                  std::move(query_params->query_json));
+        query_params->term_storage->preprocess();
 
         debugf("getting global optargs\n");
-        global_optargs = term_storage.global_optargs();
+        global_optargs = query_params->term_storage->global_optargs();
         debugf("compiling term tree\n");
 
         compile_env_t compile_env((var_visibility_t()));
-        term_tree = compile_term(&compile_env, term_storage.root_term());
+        term_tree = compile_term(&compile_env, query_params->term_storage->root_term());
 
         debugf("done compiling\n");
     } catch (const exc_t &e) {
@@ -67,7 +62,7 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(query_params_t *query_p
         throw bt_exc_t(Response::COMPILE_ERROR,
                        e.get_error_type(),
                        e.what(),
-                       bt_reg.datum_backtrace(e));
+                       query_params->term_storage->backtrace_registry().datum_backtrace(e));
     } catch (const datum_exc_t &e) {
         debugf("datum error when preprocessing query: %s\n", e.what());
         throw bt_exc_t(Response::COMPILE_ERROR,
@@ -76,10 +71,8 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(query_params_t *query_p
                        backtrace_registry_t::EMPTY_BACKTRACE);
     }
     scoped_ptr_t<entry_t> entry(new entry_t(query_params,
-                                            std::move(term_storage),
                                             std::move(global_optargs),
-                                            std::move(term_tree),
-                                            std::move(bt_reg)));
+                                            std::move(term_tree)));
 
     scoped_ptr_t<ref_t> ref(new ref_t(this,
                                       query_params->token,
@@ -232,13 +225,13 @@ void query_cache_t::ref_t::fill_response(response_t *res) {
         throw bt_exc_t(Response::RUNTIME_ERROR,
                        ex.get_error_type(),
                        ex.what(),
-                       entry->bt_reg.datum_backtrace(ex));
+                       entry->term_storage->backtrace_registry().datum_backtrace(ex));
     } catch (const datum_exc_t &ex) {
         query_cache->terminate_internal(entry);
         throw bt_exc_t(Response::RUNTIME_ERROR,
                        ex.get_error_type(),
                        ex.what(),
-                       entry->bt_reg.datum_backtrace(backtrace_id_t::empty(), 0));
+                       entry->term_storage->backtrace_registry().datum_backtrace(backtrace_id_t::empty(), 0));
     } catch (const std::exception &ex) {
         query_cache->terminate_internal(entry);
         throw bt_exc_t(Response::RUNTIME_ERROR,
@@ -336,17 +329,14 @@ void query_cache_t::ref_t::serve(env_t *env, response_t *res) {
 }
 
 query_cache_t::entry_t::entry_t(query_params_t *query_params,
-                                term_storage_t &&_term_storage,
                                 global_optargs_t &&_global_optargs,
-                                counted_t<const term_t> &&_term_tree,
-                                backtrace_registry_t _bt_reg) :
+                                counted_t<const term_t> &&_term_tree) :
         state(state_t::START),
         job_id(generate_uuid()),
         noreply(query_params->noreply),
         profile(query_params->profile ? profile_bool_t::PROFILE :
                                         profile_bool_t::DONT_PROFILE),
-        bt_reg(std::move(_bt_reg)),
-        term_storage(std::move(_term_storage)),
+        term_storage(std::move(query_params->term_storage)),
         global_optargs(std::move(_global_optargs)),
         start_time(pseudo::time_now()),
         term_tree(std::move(_term_tree)),

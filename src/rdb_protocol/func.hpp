@@ -78,7 +78,7 @@ public:
                 counted_t<const term_t> body);
 
     // Used when constructing from a function read off the wire
-    reql_func_t(term_storage_t &&_storage,
+    reql_func_t(scoped_ptr_t<term_storage_t> &&_storage,
                 const var_scope_t &captured_scope,
                 std::vector<sym_t> arg_names,
                 counted_t<const term_t> body);
@@ -109,7 +109,7 @@ private:
     std::vector<sym_t> arg_names;
 
     // Term storage used when this was deserialized off the wire
-    term_storage_t term_storage;
+    scoped_ptr_t<term_storage_t> term_storage;
 
     // Reference to the root term of the function
     raw_term_t root_term;

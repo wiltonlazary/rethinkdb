@@ -6,10 +6,31 @@
 
 namespace ql {
 
+const char *rapidjson_typestr(rapidjson::Type t) {
+    switch (t) {
+    case rapidjson::kNullType:   return "NULL";
+    case rapidjson::kFalseType:  return "BOOL";
+    case rapidjson::kTrueType:   return "BOOL";
+    case rapidjson::kObjectType: return "OBJECT";
+    case rapidjson::kArrayType:  return "ARRAY";
+    case rapidjson::kStringType: return "STRING";
+    case rapidjson::kNumberType: return "NUMBER";
+    default:                     break;
+    }
+    unreachable();
+}
+
 generated_term_t::generated_term_t(Term::TermType _type, backtrace_id_t _bt) :
         type(_type), bt(_bt) { }
 
 raw_term_t::raw_term_t() { }
+
+void log_json(const rapidjson::Value *source) {
+    rapidjson::StringBuffer buffer;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+    source->Accept(writer);
+    debugf("raw_term_t from json: %s\n", buffer.GetString());
+}
 
 void log_raw_term(const raw_term_t &term) {
     datum_t d = term.datum();
@@ -33,18 +54,19 @@ raw_term_t::raw_term_t(const counted_t<generated_term_t> &source) {
 
 raw_term_t::raw_term_t(const rapidjson::Value *source, std::string _optarg_name) :
         optarg_name_(std::move(_optarg_name)) {
+    log_json(source);
     init_json(source);
-    log_raw_term(*this);
 }
 
 raw_term_t::raw_term_t(const maybe_generated_term_t &source, std::string _optarg_name) :
         optarg_name_(std::move(_optarg_name)) {
     if (auto json_source = boost::get<rapidjson::Value *>(&source)) {
+        log_json(*json_source);
         init_json(*json_source);
     } else {
         info = boost::get<counted_t<generated_term_t> >(source);
+        log_raw_term(*this);
     }
-    log_raw_term(*this);
 }
 
 void raw_term_t::init_json(const rapidjson::Value *src) {
@@ -218,35 +240,109 @@ void raw_term_t::visit_datum(json_cb_t &&json_cb, generated_cb_t &&generated_cb)
     }
 }
 
-term_storage_t term_storage_t::from_query(scoped_array_t<char> &&_wire_str,
-                                          rapidjson::Document &&_query_json) {
-    r_sanity_check(_query_json.IsArray());
-    r_sanity_check(_query_json.Size() >= 2);
-
-    term_storage_t res;
-    res.wire_str = std::move(_wire_str);
-    res.query_json = std::move(_query_json);
-    res.root_term_ = &res.query_json[1];
-    return res;
+Query::QueryType term_storage_t::query_type() const {
+    r_sanity_check(false, "query_type() is unimplemented for this term_storage_t type");
+    unreachable();
 }
 
-term_storage_t term_storage_t::from_wire_func(scoped_array_t<char> &&_wire_str,
-                                              rapidjson::Document &&_query_json) {
-    r_sanity_check(_query_json.IsArray());
-    r_sanity_check(_query_json.Size() >= 1);
-
-    term_storage_t res;
-    res.wire_str = std::move(_wire_str);
-    res.query_json = std::move(_query_json);
-    res.root_term_ = &res.query_json;
-    return res;
+void term_storage_t::preprocess() {
+    r_sanity_check(false, "preprocess() is unimplemented for this term_storage_t type");
+    unreachable();
 }
 
-raw_term_t term_storage_t::root_term() const {
-    return raw_term_t(root_term_, std::string());
+bool term_storage_t::static_optarg_as_bool(UNUSED const std::string &key,
+                                           UNUSED bool default_value) const {
+    r_sanity_check(false, "static_optarg_as_bool() is unimplemented for this term_storage_t type");
+    unreachable();
 }
 
 global_optargs_t term_storage_t::global_optargs() {
+    r_sanity_check(false, "global_optargs() is unimplemented for this term_storage_t type");
+    unreachable();
+}
+
+const backtrace_registry_t &term_storage_t::backtrace_registry() const {
+    return bt_reg;
+}
+
+json_term_storage_t::json_term_storage_t(scoped_array_t<char> &&_original_data,
+                                         rapidjson::Document &&_query_json) :
+        original_data(std::move(_original_data)),
+        query_json(std::move(_query_json)) {
+    // We throw `bt_exc_t`s here because we cannot use backtrace IDs until the
+    // `preprocess` step has completed.
+    if (!query_json.IsArray()) {
+        throw bt_exc_t(Response::CLIENT_ERROR, Response::QUERY_LOGIC,
+                       strprintf("Expected a query to be an array, but found %s.",
+                                 rapidjson_typestr(query_json.GetType())),
+                       backtrace_registry_t::EMPTY_BACKTRACE);
+    }
+    if (query_json.Size() == 0 || query_json.Size() > 3) {
+        throw bt_exc_t(Response::CLIENT_ERROR, Response::QUERY_LOGIC,
+                       strprintf("Expected 0 to 3 elements in the top-level query, but found %d.",
+                                 query_json.Size()),
+                       backtrace_registry_t::EMPTY_BACKTRACE);
+    }
+
+    if (!query_json[0].IsNumber()) {
+        throw bt_exc_t(Response::CLIENT_ERROR, Response::QUERY_LOGIC,
+                       strprintf("Expected a query type as a number, but found %s.",
+                                 rapidjson_typestr(query_json[0].GetType())),
+                       backtrace_registry_t::EMPTY_BACKTRACE);
+    }
+
+    if (query_json.Size() >= 3) {
+        if (!query_json[2].IsObject()) {
+            throw bt_exc_t(Response::CLIENT_ERROR, Response::QUERY_LOGIC,
+                           strprintf("Expected global optargs as an object, but found %s.",
+                                     rapidjson_typestr(query_json[2].GetType())),
+                           backtrace_registry_t::EMPTY_BACKTRACE);
+        }
+    }
+}
+
+Query::QueryType json_term_storage_t::query_type() const {
+    return static_cast<Query::QueryType>(query_json[0].GetInt());
+}
+
+void json_term_storage_t::preprocess() {
+    r_sanity_check(query_json.Size() >= 2);
+    preprocess_term_tree(&query_json[1], &query_json.GetAllocator(), &bt_reg);
+}
+
+raw_term_t json_term_storage_t::root_term() const {
+    r_sanity_check(query_json.Size() >= 2);
+    return raw_term_t(&query_json[1], std::string());
+}
+
+bool json_term_storage_t::static_optarg_as_bool(const std::string &key,
+                                                bool default_value) const {
+    r_sanity_check(query_json.IsArray());
+    if (query_json.Size() < 3) {
+        return default_value;
+    }
+
+    const rapidjson::Value *global_optargs = &query_json[2];
+    r_sanity_check(global_optargs->IsObject());
+
+    auto const it = global_optargs->FindMember(key.c_str());
+    if (it == global_optargs->MemberEnd()) {
+        return default_value;
+    } else if (it->value.IsBool()) {
+        return it->value.GetBool();
+    } else if (!it->value.IsArray() ||
+               it->value.Size() != 2 ||
+               !it->value[0].IsNumber() ||
+               static_cast<Term::TermType>(it->value[0].GetInt()) != Term::DATUM) {
+        return default_value;
+    } else if (!it->value[1].IsBool()) {
+        return default_value;
+    }
+    return it->value[1].GetBool();
+
+}
+
+global_optargs_t json_term_storage_t::global_optargs() {
     auto &allocator = query_json.GetAllocator();
     rapidjson::Value *src;
 
@@ -280,6 +376,18 @@ global_optargs_t term_storage_t::global_optargs() {
     }
 
     return res;
+}
+
+wire_term_storage_t::wire_term_storage_t(scoped_array_t<char> &&_original_data,
+                                         rapidjson::Document &&_func_json) :
+        original_data(std::move(_original_data)),
+        func_json(std::move(_func_json)) {
+    r_sanity_check(func_json.IsArray());
+    r_sanity_check(func_json.Size() >= 1);
+}
+
+raw_term_t wire_term_storage_t::root_term() const {
+    return raw_term_t(&func_json, std::string());
 }
 
 template <typename pb_t>
@@ -391,50 +499,49 @@ rapidjson::Value convert_term_tree(const Term &src,
 }
 
 template <cluster_version_t W>
-MUST_USE archive_result_t deserialize_term_tree(read_stream_t *s,
-                                                scoped_array_t<char> *,
-                                                rapidjson::Document *json_out) {
+MUST_USE archive_result_t deserialize_term_tree(
+        read_stream_t *s,
+        scoped_ptr_t<term_storage_t> *term_storage_out) {
     Term body;
     archive_result_t res = deserialize_protobuf(s, &body);
     if (bad(res)) { return res; }
 
-    rapidjson::Value v = convert_term_tree(body, &json_out->GetAllocator());
-    json_out->Swap(v);
+    rapidjson::Document doc;
+    rapidjson::Value v = convert_term_tree(body, &doc.GetAllocator());
+    doc.Swap(v);
+    term_storage_out->init(new wire_term_storage_t(scoped_array_t<char>(), std::move(doc)));
     return res;
 }
 
 template MUST_USE archive_result_t deserialize_term_tree<cluster_version_t::v1_14>(
-        read_stream_t *, scoped_array_t<char> *, rapidjson::Document *);
+        read_stream_t *, scoped_ptr_t<term_storage_t> *);
 template MUST_USE archive_result_t deserialize_term_tree<cluster_version_t::v1_15>(
-        read_stream_t *, scoped_array_t<char> *, rapidjson::Document *);
+        read_stream_t *, scoped_ptr_t<term_storage_t> *);
 template MUST_USE archive_result_t deserialize_term_tree<cluster_version_t::v1_16>(
-        read_stream_t *, scoped_array_t<char> *, rapidjson::Document *);
+        read_stream_t *, scoped_ptr_t<term_storage_t> *);
 template MUST_USE archive_result_t deserialize_term_tree<cluster_version_t::v2_0>(
-        read_stream_t *, scoped_array_t<char> *, rapidjson::Document *);
+        read_stream_t *, scoped_ptr_t<term_storage_t> *);
 template MUST_USE archive_result_t deserialize_term_tree<cluster_version_t::v2_1>(
-        read_stream_t *, scoped_array_t<char> *, rapidjson::Document *);
+        read_stream_t *, scoped_ptr_t<term_storage_t> *);
 
 template <>
 MUST_USE archive_result_t deserialize_term_tree<cluster_version_t::v2_2_is_latest>(
         read_stream_t *s,
-        scoped_array_t<char> *data_out,
-        rapidjson::Document *json_out) {
-    debugf("deserializing term tree\n");
+        scoped_ptr_t<term_storage_t> *term_storage_out) {
     CT_ASSERT(sizeof(int) == sizeof(int32_t));
     int32_t size;
     archive_result_t res = deserialize_universal(s, &size);
     if (bad(res)) { return res; }
     if (size < 0) { return archive_result_t::RANGE_ERROR; }
-    data_out->init(size);
-    int64_t read_res = force_read(s, data_out->data(), data_out->size());
+
+    scoped_array_t<char> data(size);
+    int64_t read_res = force_read(s, data.data(), data.size());
     if (read_res != size) { return archive_result_t::SOCK_ERROR; }
 
-    json_out->ParseInsitu(data_out->data());
+    rapidjson::Document doc;
+    doc.ParseInsitu(data.data());
 
-    rapidjson::StringBuffer buffer;
-    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-    json_out->Accept(writer);
-    debugf("deserialized json: %s\n", buffer.GetString());
+    term_storage_out->init(new wire_term_storage_t(std::move(data), std::move(doc)));
     return archive_result_t::SUCCESS;
 }
 

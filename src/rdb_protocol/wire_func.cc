@@ -114,19 +114,18 @@ archive_result_t deserialize(read_stream_t *s, wire_func_t *wf) {
         res = deserialize<W>(s, &arg_names);
         if (bad(res)) { return res; }
 
-        scoped_array_t<char> raw_json;
-        rapidjson::Document parsed_json;
-        res = deserialize_term_tree<W>(s, &raw_json, &parsed_json);
+        scoped_ptr_t<term_storage_t> term_storage;
+        res = deserialize_term_tree<W>(s, &term_storage);
         if (bad(res)) { return res; }
 
         res = deserialize_protobuf(s, &dummy_bt);
         if (bad(res)) { return res; }
 
         compile_env_t env(scope.compute_visibility().with_func_arg_name_list(arg_names));
-        term_storage_t storage =
-            term_storage_t::from_wire_func(std::move(raw_json), std::move(parsed_json));
-        wf->func = make_counted<reql_func_t>(std::move(storage), scope, arg_names,
-                                             compile_term(&env, storage.root_term()));
+        counted_t<const term_t> term_tree = compile_term(&env, term_storage->root_term());
+        wf->func = make_counted<reql_func_t>(std::move(term_storage),
+                                             scope, arg_names,
+                                             std::move(term_tree));
         return res;
     }
     case wire_func_type_t::JS: {
@@ -178,9 +177,8 @@ archive_result_t deserialize_wire_func(
         res = deserialize<W>(s, &arg_names);
         if (bad(res)) { return res; }
 
-        scoped_array_t<char> raw_json;
-        rapidjson::Document parsed_json;
-        res = deserialize_term_tree<W>(s, &raw_json, &parsed_json);
+        scoped_ptr_t<term_storage_t> term_storage;
+        res = deserialize_term_tree<W>(s, &term_storage);
         if (bad(res)) { return res; }
 
         backtrace_id_t bt;
@@ -188,10 +186,10 @@ archive_result_t deserialize_wire_func(
         if (bad(res)) { return res; }
 
         compile_env_t env(scope.compute_visibility().with_func_arg_name_list(arg_names));
-        term_storage_t storage =
-            term_storage_t::from_wire_func(std::move(raw_json), std::move(parsed_json));
-        wf->func = make_counted<reql_func_t>(std::move(storage), scope, arg_names,
-                                             compile_term(&env, storage.root_term()));
+        counted_t<const term_t> term_tree = compile_term(&env, term_storage->root_term());
+        wf->func = make_counted<reql_func_t>(std::move(term_storage),
+                                             scope, arg_names,
+                                             std::move(term_tree));
         return res;
     }
     case wire_func_type_t::JS: {

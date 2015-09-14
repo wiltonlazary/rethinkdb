@@ -96,10 +96,8 @@ private:
     class entry_t {
     public:
         entry_t(query_params_t *query_params,
-                term_storage_t &&_term_storage,
                 global_optargs_t &&_global_optargs,
-                counted_t<const term_t> &&_term_tree,
-                backtrace_registry_t _bt_reg);
+                counted_t<const term_t> &&_term_tree);
         ~entry_t();
 
         enum class state_t { START, STREAM, DONE, DELETING } state;
@@ -107,8 +105,7 @@ private:
         const uuid_u job_id;
         const bool noreply;
         const profile_bool_t profile;
-        backtrace_registry_t bt_reg;
-        const term_storage_t term_storage;
+        const scoped_ptr_t<const term_storage_t> term_storage;
         const global_optargs_t global_optargs;
         const datum_t start_time;
 

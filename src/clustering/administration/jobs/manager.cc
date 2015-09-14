@@ -90,7 +90,7 @@ void jobs_manager_t::on_get_job_reports(
                     }
 
                     auto render = pprint::render_as_javascript(
-                        pair.second->term_storage.root_term());
+                        pair.second->term_storage->root_term());
 
                     ql::datum_t duration =
                         ql::pseudo::time_sub(time_datum, pair.second->start_time);

@@ -2,18 +2,20 @@
 #include "protob/json_shim.hpp"
 
 #include "arch/io/network.hpp"
+#include "arch/runtime/coroutines.hpp"
+#include "containers/scoped.hpp"
 #include "rapidjson/rapidjson.h"
 #include "rdb_protocol/backtrace.hpp"
+#include "rdb_protocol/ql2.pb.h"
 #include "rdb_protocol/query.hpp"
 #include "rdb_protocol/response.hpp"
+#include "rdb_protocol/term_storage.hpp"
+#include "utils.hpp"
 
 #include "debug.hpp"
 #include "rapidjson/document.h"
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/writer.h"
-#include "rdb_protocol/ql2.pb.h"
-#include "utils.hpp"
-#include "arch/runtime/coroutines.hpp"
 
 const uint32_t wire_protocol_t::TOO_LARGE_QUERY_SIZE = 64 * MEGABYTE;
 const uint32_t wire_protocol_t::TOO_LARGE_RESPONSE_SIZE =
@@ -42,9 +44,11 @@ scoped_ptr_t<ql::query_params_t> json_protocol_t::parse_query_from_buffer(
     if (!doc.HasParseError()) {
         try {
             res = make_scoped<ql::query_params_t>(token, query_cache,
-                                                  std::move(buffer), std::move(doc));
+                    scoped_ptr_t<ql::term_storage_t>(
+                        new ql::json_term_storage_t(std::move(buffer), std::move(doc))));
         } catch (const ql::bt_exc_t &ex) {
             // Parse error, let the caller handle the response
+            // TODO: include message
         }
     }
     return res;
