@@ -181,35 +181,17 @@ void preprocess_term_tree(rapidjson::Value *term_tree,
                           rapidjson::Value::AllocatorType *allocator,
                           backtrace_registry_t *bt_reg) {
     r_sanity_check(term_tree != nullptr);
+    r_sanity_check(allocator != nullptr);
     term_walker_t term_walker(allocator, bt_reg);
-
-    rapidjson::StringBuffer pre_buffer;
-    rapidjson::Writer<rapidjson::StringBuffer> pre_writer(pre_buffer);
-    term_tree->Accept(pre_writer);
-    debugf("pre-processing json: %s\n", pre_buffer.GetString());
-
     term_walker.walk(term_tree);
-
-    rapidjson::StringBuffer post_buffer;
-    rapidjson::Writer<rapidjson::StringBuffer> post_writer(post_buffer);
-    term_tree->Accept(post_writer);
-    debugf("post-processing json: %s\n", post_buffer.GetString());
 }
 
 void preprocess_global_optarg(rapidjson::Value *term_tree,
                               rapidjson::Value::AllocatorType *allocator) {
-    rapidjson::StringBuffer pre_buffer;
-    rapidjson::Writer<rapidjson::StringBuffer> pre_writer(pre_buffer);
-    term_tree->Accept(pre_writer);
-    debugf("pre-processing optarg: %s\n", pre_buffer.GetString());
-
+    r_sanity_check(term_tree != nullptr);
+    r_sanity_check(allocator != nullptr);
     term_walker_t term_walker(allocator, nullptr);
     term_walker.walk(term_tree);
-
-    rapidjson::StringBuffer post_buffer;
-    rapidjson::Writer<rapidjson::StringBuffer> post_writer(post_buffer);
-    term_tree->Accept(post_writer);
-    debugf("post-processing optarg: %s\n", post_buffer.GetString());
 }
 
 // Returns true if `t` is a write or a meta op.

@@ -30,7 +30,6 @@ datum_t backtrace_registry_t::datum_backtrace(const exc_t &ex) const {
 
 datum_t backtrace_registry_t::datum_backtrace(backtrace_id_t bt,
                                               size_t dummy_frames) const {
-    debugf("finding backtrace %d of %zu\n", bt.get(), frames.size());
     r_sanity_check(bt.get() < frames.size());
     std::vector<datum_t> res;
     for (const frame_t *f = &frames[bt.get()];

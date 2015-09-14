@@ -48,23 +48,17 @@ scoped_ptr_t<query_cache_t::ref_t> query_cache_t::create(query_params_t *query_p
     counted_t<const term_t> term_tree;
     try {
         query_params->term_storage->preprocess();
-
-        debugf("getting global optargs\n");
         global_optargs = query_params->term_storage->global_optargs();
-        debugf("compiling term tree\n");
 
         compile_env_t compile_env((var_visibility_t()));
         term_tree = compile_term(&compile_env, query_params->term_storage->root_term());
 
-        debugf("done compiling\n");
     } catch (const exc_t &e) {
-        debugf("error when preprocessing query: %s\n", e.what());
         throw bt_exc_t(Response::COMPILE_ERROR,
                        e.get_error_type(),
                        e.what(),
                        query_params->term_storage->backtrace_registry().datum_backtrace(e));
     } catch (const datum_exc_t &e) {
-        debugf("datum error when preprocessing query: %s\n", e.what());
         throw bt_exc_t(Response::COMPILE_ERROR,
                        e.get_error_type(),
                        e.what(),

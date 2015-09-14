@@ -174,7 +174,6 @@ args_t::args_t(const op_term_t *_op_term,
 op_term_t::op_term_t(compile_env_t *env, const raw_term_t &term,
                      argspec_t argspec, optargspec_t optargspec)
         : term_t(term) {
-    debugf("creating op term (type %d)\n", term.type());
     std::vector<counted_t<const term_t> > original_args;
     original_args.reserve(term.num_args());
     for (size_t i = 0; i < term.num_args(); ++i) {
@@ -189,7 +188,6 @@ op_term_t::op_term_t(compile_env_t *env, const raw_term_t &term,
                        strprintf("Unrecognized optional argument `%s`.",
                                  o.optarg_name().c_str()));
             counted_t<const term_t> t = compile_term(env, o);
-            debugf("adding optarg %s\n", o.optarg_name().c_str());
             auto res = optargs.insert(std::make_pair(o.optarg_name(), std::move(t)));
             rcheck_src(o.bt(), res.second,
                        base_exc_t::LOGIC,

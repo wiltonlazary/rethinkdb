@@ -25,47 +25,21 @@ generated_term_t::generated_term_t(Term::TermType _type, backtrace_id_t _bt) :
 
 raw_term_t::raw_term_t() { }
 
-void log_json(const rapidjson::Value *source) {
-    rapidjson::StringBuffer buffer;
-    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-    source->Accept(writer);
-    debugf("raw_term_t from json: %s\n", buffer.GetString());
-}
-
-void log_raw_term(const raw_term_t &term) {
-    datum_t d = term.datum();
-    if (d.has()) {
-        rapidjson::StringBuffer buffer;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-        d.write_json(&writer);
-        debugf("new raw_term_t, type: %d, args: %zu, optargs: %zu, datum: %s\n",
-               term.type(), term.num_args(), term.num_optargs(), buffer.GetString());
-    } else {
-        debugf("new raw_term_t, type: %d, args: %zu, optargs: %zu, no datum\n",
-               term.type(), term.num_args(), term.num_optargs());
-    }
-
-}
-
 raw_term_t::raw_term_t(const counted_t<generated_term_t> &source) {
     info = source;
-    log_raw_term(*this);
 }
 
 raw_term_t::raw_term_t(const rapidjson::Value *source, std::string _optarg_name) :
         optarg_name_(std::move(_optarg_name)) {
-    log_json(source);
     init_json(source);
 }
 
 raw_term_t::raw_term_t(const maybe_generated_term_t &source, std::string _optarg_name) :
         optarg_name_(std::move(_optarg_name)) {
     if (auto json_source = boost::get<rapidjson::Value *>(&source)) {
-        log_json(*json_source);
         init_json(*json_source);
     } else {
         info = boost::get<counted_t<generated_term_t> >(source);
-        log_raw_term(*this);
     }
 }
 
@@ -551,13 +525,16 @@ void write_term(rapidjson::Writer<rapidjson::StringBuffer> *writer,
     if (auto json = boost::get<const rapidjson::Value *>(&src)) {
         (*json)->Accept(*writer);
     } else if (boost::get<counted_t<generated_term_t> >(&src)) {
+        writer->StartArray();
+        writer->Int(term.type());
+        datum_t datum = term.datum();
+
         if (term.type() == Term::DATUM) {
-            guarantee(term.num_args() == 0);
-            guarantee(term.num_optargs() == 0);
-            term.datum().write_json(writer);
+            r_sanity_check(term.num_args() == 0);
+            r_sanity_check(term.num_optargs() == 0);
+            datum.write_json(writer);
         } else {
-            writer->StartArray();
-            writer->Int(term.type());
+            r_sanity_check(!datum.has());
             if (term.num_args() > 0) {
                 writer->StartArray();
                 for (size_t i = 0; i < term.num_args(); ++i) {
@@ -574,8 +551,10 @@ void write_term(rapidjson::Writer<rapidjson::StringBuffer> *writer,
                     });
                 writer->EndObject();
             }
-            writer->EndArray();
         }
+
+        writer->Int(term.bt().get());
+        writer->EndArray();
     } else {
         unreachable();
     }
@@ -583,7 +562,6 @@ void write_term(rapidjson::Writer<rapidjson::StringBuffer> *writer,
 
 template <cluster_version_t W>
 void serialize_term_tree(write_message_t *wm, const raw_term_t &root_term) {
-    debugf("serializing term tree\n");
     rapidjson::StringBuffer buffer;
     rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
     write_term(&writer, root_term);
