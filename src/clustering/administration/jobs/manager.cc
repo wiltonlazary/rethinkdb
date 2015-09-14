@@ -97,7 +97,7 @@ void jobs_manager_t::on_get_job_reports(
 
                     query_job_reports_inner.emplace_back(
                         pair.second->job_id,
-                        ql::pseudo::time_to_epoch_time(duration),
+                        duration.as_num(),
                         server_id,
                         query_cache->get_client_addr_port(),
                         pretty_print(printed_query_columns, render));

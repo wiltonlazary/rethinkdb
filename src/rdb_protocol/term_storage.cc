@@ -379,7 +379,6 @@ MUST_USE archive_result_t deserialize_protobuf(read_stream_t *s, pb_t *p) {
 }
 
 template MUST_USE archive_result_t deserialize_protobuf<Term>(read_stream_t *s, Term *bt);
-//template MUST_USE archive_result_t deserialize_protobuf<Datum>(read_stream_t *s, Datum *bt);
 template MUST_USE archive_result_t deserialize_protobuf<Backtrace>(read_stream_t *s, Backtrace *bt);
 
 rapidjson::Value convert_datum(const Datum &src,
