@@ -108,6 +108,7 @@ void write_response_internal(ql::response_t *response,
         writer.Key("r", 1);
         writer.StartArray();
         for (auto const &item : response->data()) {
+            // TODO: parallelize writing json as in 9ec10cdb
             item.write_json(&writer);
         }
         writer.EndArray();

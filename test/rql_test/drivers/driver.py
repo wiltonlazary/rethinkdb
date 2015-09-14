@@ -317,6 +317,9 @@ class Number:
 # -- Curried output test functions --
 
 def eq(exp, **kwargs):
+    if exp == ():
+        return lambda x: True
+
     if isinstance(exp, list):
         exp = Lst(exp, **kwargs)
     elif isinstance(exp, dict):
