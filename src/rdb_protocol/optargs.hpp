@@ -25,7 +25,6 @@ public:
     void add_optarg(const raw_term_t &optarg);
     bool has_optarg(const std::string &key) const;
 
-    // returns NULL if no entry
     scoped_ptr_t<val_t> get_optarg(env_t *env, const std::string &key);
 
     static bool optarg_is_valid(const std::string &key);

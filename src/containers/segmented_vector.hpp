@@ -74,11 +74,6 @@ public:
         (*this)[old_size] = std::move(element);
     }
 
-    element_t &push_back() {
-        set_size(size_ + 1);
-        return back();
-    }
-
     element_t &back() {
         return (*this)[size_ - 1];
     }

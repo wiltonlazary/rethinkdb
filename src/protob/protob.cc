@@ -310,7 +310,7 @@ void query_server_t::handle_conn(const scoped_ptr_t<tcp_conn_descriptor_t> &ncon
                 break;
             case VersionDummy::PROTOBUF:
                 throw protob_server_exc_t(
-                    "The PROTOBUF protocol version is no longer supported");
+                    "The PROTOBUF client protocol is no longer supported");
             default:
                 throw protob_server_exc_t(
                     strprintf("Unrecognized protocol specified: '%d'", wire_protocol));

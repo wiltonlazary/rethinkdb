@@ -66,22 +66,5 @@ datum_string_t decode_base64_ptype(
     return res;
 }
 
-void binary_as_pseudotype(Datum *d, const datum_string_t &data) {
-    d->set_type(Datum::R_OBJECT);
-
-    // Add pseudotype field with binary type
-    Datum_AssocPair *ap = d->add_r_object();
-    ap->set_key(datum_t::reql_type_string.to_std().c_str());
-    ap->mutable_val()->set_type(Datum::R_STR);
-    ap->mutable_val()->set_r_str(binary_string);
-
-    // Add 'data' field with base64-encoded data
-    std::string encoded_data(encode_base64(data.data(), data.size()));
-    ap = d->add_r_object();
-    ap->set_key(data_key);
-    ap->mutable_val()->set_type(Datum::R_STR);
-    ap->mutable_val()->set_r_str(encoded_data.data(), encoded_data.size());
-}
-
 } // namespace pseudo
 } // namespace ql

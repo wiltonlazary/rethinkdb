@@ -17,11 +17,6 @@
 #include "rdb_protocol/error.hpp"
 #include "rdb_protocol/ql2.pb.h"
 
-// Used to deserialize protobuf-serialized terms
-class Term;
-class Datum;
-class Backtrace;
-
 namespace ql {
 
 const char *rapidjson_typestr(rapidjson::Type t);
@@ -31,7 +26,6 @@ struct generated_term_t;
 using maybe_generated_term_t = boost::variant<const rapidjson::Value *,
                                               counted_t<generated_term_t> >;
 
-// TODO: generated terms MUST NOT move after a raw_term_t gets a reference to them
 struct generated_term_t : public slow_atomic_countable_t<generated_term_t> {
     generated_term_t(Term::TermType _type, backtrace_id_t _bt);
 

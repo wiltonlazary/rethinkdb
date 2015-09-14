@@ -14,7 +14,7 @@ query_params_t::query_id_t::query_id_t(query_params_t::query_id_t &&other) :
         parent(other.parent),
         value_(other.value_) {
     parent->assert_thread();
-    other.parent = NULL;
+    other.parent = nullptr;
 }
 
 query_params_t::query_id_t::query_id_t(query_cache_t *_parent) :
