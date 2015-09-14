@@ -14,11 +14,16 @@ namespace ql {
 global_optargs_t::global_optargs_t() { }
 
 void global_optargs_t::add_optarg(const raw_term_t &optarg) {
+    rcheck_toplevel(optarg_is_valid(optarg.optarg_name()), base_exc_t::LOGIC,
+        strprintf("Unrecognized global optional argument `%s`.",
+                  optarg.optarg_name().c_str()));
+
     auto res = optargs.insert(std::make_pair(std::string(optarg.optarg_name()),
                                              wire_func_t(optarg, std::vector<sym_t>())));
-    rcheck_toplevel(res.second, base_exc_t::LOGIC, strprintf(
-        "Duplicate global optional argument: `%s`.",
-        optarg.optarg_name().c_str()));
+
+    rcheck_toplevel(res.second, base_exc_t::LOGIC,
+        strprintf("Duplicate global optional argument: `%s`.",
+                  optarg.optarg_name().c_str()));
 }
 
 bool global_optargs_t::has_optarg(const std::string &key) const {

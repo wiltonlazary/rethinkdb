@@ -132,7 +132,7 @@ void write_response_internal(ql::response_t *response,
         writer.EndObject();
     } catch (const ql::base_exc_t &ex) {
         buffer_out->Pop(buffer_out->GetSize() - start_offset);
-        response->fill_error(Response::RUNTIME_ERROR, Response::INTERNAL,
+        response->fill_error(Response::RUNTIME_ERROR, Response::QUERY_LOGIC,
                              ex.what(), ql::backtrace_registry_t::EMPTY_BACKTRACE);
         write_response_internal(response, buffer_out, true);
     } catch (const std::exception &ex) {

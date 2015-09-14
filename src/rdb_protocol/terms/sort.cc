@@ -109,14 +109,21 @@ private:
             comparisons;
     };
 
+    void check_r_args(const raw_term_t &term) const {
+        // Abort if any of the arguments is `r.args`. We don't currently
+        // support that with `order_by`.
+        rcheck(term.type() != Term::ARGS, base_exc_t::LOGIC,
+               "r.args is not supported in an order_by command yet.");
+    }
+
     virtual scoped_ptr_t<val_t>
     eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
         std::vector<std::pair<order_direction_t, counted_t<const func_t> > > comparisons;
         const raw_term_t &raw_term = get_src();
-        r_sanity_check(raw_term.num_args() == args->num_args());
-        // RSI (grey): get this working with r.args
+        check_r_args(get_src().arg(0));
         for (size_t i = 1; i < raw_term.num_args(); ++i) {
             raw_term_t item = raw_term.arg(i);
+            check_r_args(item);
             if (item.type() == Term::DESC) {
                 comparisons.push_back(
                     std::make_pair(
