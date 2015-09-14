@@ -72,8 +72,7 @@ private:
 class reql_func_t : public func_t {
 public:
     // Used when constructing in an existing environment - reusing another term storage
-    reql_func_t(const raw_term_t &_root_term,
-                const var_scope_t &captured_scope,
+    reql_func_t(const var_scope_t &captured_scope,
                 std::vector<sym_t> arg_names,
                 counted_t<const term_t> body);
 
@@ -110,9 +109,6 @@ private:
 
     // Term storage used when this was deserialized off the wire
     scoped_ptr_t<term_storage_t> term_storage;
-
-    // Reference to the root term of the function
-    raw_term_t root_term;
 
     // The body of the function, which gets ->eval(...) called when call(...) is called.
     counted_t<const term_t> body;

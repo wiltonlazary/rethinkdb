@@ -23,7 +23,7 @@ wire_func_t::wire_func_t(const counted_t<const func_t> &f) : func(f) {
 wire_func_t::wire_func_t(const raw_term_t &body,
                          std::vector<sym_t> arg_names) {
     compile_env_t env(var_visibility_t().with_func_arg_name_list(arg_names));
-    func = make_counted<reql_func_t>(body, var_scope_t(),
+    func = make_counted<reql_func_t>(var_scope_t(),
                                      arg_names, compile_term(&env, body));
 }
 
@@ -63,7 +63,7 @@ public:
         serialize<W>(wm, scope);
         const std::vector<sym_t> &arg_names = reql_func->arg_names;
         serialize<W>(wm, arg_names);
-        const raw_term_t &body = reql_func->root_term;
+        const raw_term_t &body = reql_func->body->get_src();
         serialize_term_tree<W>(wm, body);
         backtrace_id_t backtrace = reql_func->backtrace();
         serialize<W>(wm, backtrace);
