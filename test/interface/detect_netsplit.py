@@ -37,15 +37,15 @@ with driver.Metacluster() as metacluster:
     cluster2 = driver.Cluster(metacluster)
     metacluster.move_processes(cluster1, cluster2, [serverB])
     
-    utils.print_with_time("Watching up to 20 seconds to see that they detected the netsplit")
-    deadline = time.time() + 20
+    utils.print_with_time("Watching up to 40 seconds to see that they detected the netsplit")
+    deadline = time.time() + 40
     query = r.db('rethinkdb').table('server_status').count().eq(1)
     while time.time() < deadline:
         if all([query.run(connA), query.run(connB)]):
             break
         time.sleep(.1)
     else:
-        assert False, 'Servers did not detect the netsplit after 20 seconds'
+        assert False, 'Servers did not detect the netsplit after 40 seconds'
     
     cluster1.check()
     cluster2.check()
