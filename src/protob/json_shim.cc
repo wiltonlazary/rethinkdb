@@ -3,6 +3,7 @@
 
 #include "arch/io/network.hpp"
 #include "arch/runtime/coroutines.hpp"
+#include "concurrency/pmap.hpp"
 #include "containers/scoped.hpp"
 #include "rapidjson/rapidjson.h"
 #include "rdb_protocol/backtrace.hpp"
@@ -110,11 +111,41 @@ void write_response_internal(ql::response_t *response,
             writer.Key("e", 1);
             writer.Int(*response->error_type());
         }
+
         writer.Key("r", 1);
         writer.StartArray();
-        for (auto const &item : response->data()) {
-            // TODO: parallelize writing json as in 9ec10cdb
-            item.write_json(&writer);
+        const size_t PARALLELIZATION_THRESHOLD = 500;
+        if (response->data().size() > PARALLELIZATION_THRESHOLD) {
+            int64_t num_threads = std::min<int64_t>(16, get_num_db_threads());
+            int32_t thread_offset = get_thread_id().threadnum;
+            std::vector<rapidjson::StringBuffer> buffers;
+            buffers.resize(num_threads);
+
+            size_t per_thread = response->data().size() / num_threads;
+            pmap(num_threads, [&] (int64_t m) {
+                    int32_t target_thread =
+                        (thread_offset + static_cast<int32_t>(m)) % get_num_db_threads();
+                    on_thread_t rethreader((threadnum_t(target_thread)));
+                    rapidjson::StringBuffer *thread_buffer = &buffers[m];
+                    rapidjson::Writer<rapidjson::StringBuffer> thread_writer(*thread_buffer);
+
+                    thread_writer.StartArray();
+                    size_t offset = per_thread * m;
+                    size_t end = (m == num_threads - 1) ?
+                        response->data().size() : (per_thread * (m + 1)) - 1;
+                    for (size_t i = offset; i < end; ++i) {
+                        response->data()[i].write_json(&thread_writer);
+                    }
+                    thread_writer.EndArray();
+                });
+
+            for (auto const &buffer : buffers) {
+                writer.SpliceArray(buffer);
+            }
+        } else {
+            for (auto const &item : response->data()) {
+                item.write_json(&writer);
+            }
         }
         writer.EndArray();
         if (response->backtrace()) {
@@ -135,6 +166,7 @@ void write_response_internal(ql::response_t *response,
             writer.EndArray();
         }
         writer.EndObject();
+        guarantee(writer.IsComplete());
     } catch (const ql::base_exc_t &ex) {
         buffer_out->Pop(buffer_out->GetSize() - start_offset);
         response->fill_error(Response::RUNTIME_ERROR, Response::QUERY_LOGIC,
