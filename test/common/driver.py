@@ -90,7 +90,7 @@ class Metacluster(object):
     that cleans up all the processes and deletes all the files. """
     
     __unique_id_counters = None
-    _had_multiple_clusters = True
+    _had_multiple_clusters = False
     
     def __init__(self, output_folder=None):
         self.clusters = set()
@@ -796,7 +796,11 @@ class Process(object):
                         self.returncode = 0
                 assert self.returncode is not None, '%s %s failed to exit!' % (self.server_type.capitalize(), self.name)
         if self.process:
-            self.returncode = self.process.wait()
+            try:
+                self.returncode = self.process.wait()
+            except OSError:
+                warnings.warn('The subprocess module lost the connection to the %s %s, assuming it closed cleanly' % (self.server_type, self.name))
+                self.returncode = 0
         
         if self in runningServers:
             runningServers.remove(self)

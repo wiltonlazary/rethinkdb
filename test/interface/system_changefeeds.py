@@ -46,9 +46,9 @@ class AsyncChangefeed(threading.Thread):
             traceback.print_exception(*self.err)
             sys.exit(1)
 
-with driver.Cluster(initial_servers=['a', 'b'], output_folder='.', command_prefix=command_prefix, extra_options=server_options) as cluster:
-    proc1 = cluster[0]
-    proc2 = cluster[1]
+with driver.Cluster(output_folder='.', ) as cluster:
+    proc1 = driver.Process(cluster=cluster, name='a', server_tags='a_tag', console_output=True, command_prefix=command_prefix, extra_options=server_options)
+    proc2 = driver.Process(cluster=cluster, name='b', server_tags='b_tag', console_output=True, command_prefix=command_prefix, extra_options=server_options)
     
     # This is necessary because a few log messages may be printed even after `wait_until_started_up()` returns.
     time.sleep(5.0)

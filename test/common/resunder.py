@@ -193,8 +193,8 @@ class ResunderDaemon(Daemon):
             return
 
         self.blocked_ports[tuple([source_port, dest_port])] = time.time()
-        args_out = ["-AOUTPUT", "-ptcp", "--sport", source_port, "--dport", dest_port, "-jDROP"]
-        args_in = ["-AINPUT", "-ptcp", "--sport", dest_port, "--dport", source_port, "-jDROP"]
+        args_out = ["-AOUTPUT", "-ptcp", "--sport", source_port, "--dport", dest_port, "-jDROP", "-m", "comment", "--comment", "resunder"]
+        args_in = ["-AINPUT", "-ptcp", "--sport", dest_port, "--dport", source_port, "-jDROP", "-m", "comment", "--comment", "resunder"]
         subprocess.check_output(["iptables"] + args_out)
         subprocess.check_output(["iptables"] + args_in)
         subprocess.check_output(["ip6tables"] + args_out)
@@ -206,8 +206,8 @@ class ResunderDaemon(Daemon):
             logger.debug('asked to unblock ports that were not on the blocked list: %s <-> %s' % (source_port, dest_port))
             return
         
-        args_out = ["-DOUTPUT", "-ptcp", "--sport", source_port, "--dport", dest_port, "-jDROP"]
-        args_in = ["-DINPUT", "-ptcp", "--sport", dest_port, "--dport", source_port, "-jDROP"]
+        args_out = ["-DOUTPUT", "-ptcp", "--sport", source_port, "--dport", dest_port, "-jDROP", "-m", "comment", "--comment", "resunder"]
+        args_in = ["-DINPUT", "-ptcp", "--sport", dest_port, "--dport", source_port, "-jDROP", "-m", "comment", "--comment", "resunder"]
         subprocess.check_output(["iptables"] + args_out)
         subprocess.check_output(["iptables"] + args_in)
         subprocess.check_output(["ip6tables"] + args_out)
@@ -217,6 +217,7 @@ class ResunderDaemon(Daemon):
         logger.info('unblocked %s <-> %s' % (source_port, dest_port))
     
     def unblock_all(self):
+        # ToDo: unblock all of the iptables entries with the comment "resunder"
         if not self.blocked_ports:
             return
         for source_port, dest_port in self.blocked_ports.keys():
