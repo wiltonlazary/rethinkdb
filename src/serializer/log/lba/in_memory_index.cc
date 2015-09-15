@@ -36,11 +36,7 @@ void in_memory_index_t::set_block_info(block_id_t id, repli_timestamp_t recency,
         // If you're trying to set the timestamp of  an aux block to anything
         // other than `invalid`, you might be doing something wrong. It will be
         // discarded anyway.
-        // TODO! Tolerating distant_past here is temporary, because I have an existing
-        //   test DB that has such entries from an earlier revision of this code
-        // TODO! That reminds me that I have to bump the disk format version for
-        // aux blocks.
-        rassert(recency == repli_timestamp_t::invalid || recency == repli_timestamp_t::distant_past);
+        rassert(recency == repli_timestamp_t::invalid);
         index_aux_block_info_t info(offset, ser_block_size);
         aux_infos_.set(convert_aux_block_id(id), info);
     } else {
