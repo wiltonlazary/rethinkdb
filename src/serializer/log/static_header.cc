@@ -7,7 +7,18 @@
 #include "arch/arch.hpp"
 #include "arch/runtime/coroutines.hpp"
 #include "config/args.hpp"
+#include "logger.hpp"
 
+// The CURRENT_SERIALIZER_VERSION_STRING might remain unchanged for a while --
+// individual metablocks have a disk_format_version field that can be incremented
+// for on-the-fly version updating.
+#define CURRENT_SERIALIZER_VERSION_STRING "2.2"
+
+// Since 1.13, we added the aux block ID space. We can still read 1.13 serializer
+// files, but previous versions of RethinkDB cannot read 2.2+ files.
+#define V1_13_SERIALIZER_VERSION_STRING "1.13"
+
+// See also CLUSTER_VERSION_STRING and cluster_version_t.
 
 bool static_header_check(file_t *file) {
     if (file->get_file_size() < DEVICE_BLOCK_SIZE) {
@@ -32,8 +43,9 @@ void co_static_header_write(file_t *file, void *data, size_t data_size) {
     rassert(sizeof(SOFTWARE_NAME_STRING) < 16);
     memcpy(buffer->software_name, SOFTWARE_NAME_STRING, sizeof(SOFTWARE_NAME_STRING));
 
-    rassert(sizeof(SERIALIZER_VERSION_STRING) < 16);
-    memcpy(buffer->version, SERIALIZER_VERSION_STRING, sizeof(SERIALIZER_VERSION_STRING));
+    rassert(sizeof(CURRENT_SERIALIZER_VERSION_STRING) < 16);
+    memcpy(buffer->version, CURRENT_SERIALIZER_VERSION_STRING,
+           sizeof(CURRENT_SERIALIZER_VERSION_STRING));
 
     memcpy(buffer->data, data, data_size);
 
@@ -62,17 +74,22 @@ void co_static_header_read(file_t *file, static_header_read_callback_t *callback
         fail_due_to_user_error("This doesn't appear to be a RethinkDB data file.");
     }
 
-    if (memcmp(buffer->version, SERIALIZER_VERSION_STRING, sizeof(SERIALIZER_VERSION_STRING)) != 0) {
+    if (memcmp(buffer->version, V1_13_SERIALIZER_VERSION_STRING,
+               sizeof(V1_13_SERIALIZER_VERSION_STRING)) == 0) {
+        logNTC("Migrating to serializer version %s.",
+               CURRENT_SERIALIZER_VERSION_STRING);
+        co_static_header_write(file, buffer->data, data_size);
+    } else if (memcmp(buffer->version, CURRENT_SERIALIZER_VERSION_STRING,
+               sizeof(CURRENT_SERIALIZER_VERSION_STRING)) != 0) {
         fail_due_to_user_error("File version is incorrect. This file was created with "
                                "RethinkDB's serializer version %s, but you are trying "
                                "to read it with version %s.  See "
                                "http://rethinkdb.com/docs/migration/ for information on "
                                "migrating data from a previous version.",
-                               buffer->version, SERIALIZER_VERSION_STRING);
+                               buffer->version, CURRENT_SERIALIZER_VERSION_STRING);
     }
     memcpy(data_out, buffer->data, data_size);
     callback->on_static_header_read();
-    // TODO: free buffer before you call the callback.
     free(buffer);
 }
 
