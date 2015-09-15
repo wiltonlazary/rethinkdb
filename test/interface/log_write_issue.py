@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright 2014 RethinkDB, all rights reserved.
+# Copyright 2014-2015 RethinkDB, all rights reserved.
 
 import os, pprint, resource, sys, time
 

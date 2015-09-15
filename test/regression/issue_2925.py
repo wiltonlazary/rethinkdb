@@ -115,7 +115,7 @@ with driver.Process(name='.', command_prefix=command_prefix, extra_options=serve
     time.sleep(1)
     utils.print_with_time("Restarting the server")
     process.start()
-    process.wait_until_started_up()
+    process.wait_until_ready()
 
     conn = r.connect(process.host, process.driver_port, db=dbName)
     time.sleep(1)

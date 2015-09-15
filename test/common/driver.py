@@ -665,9 +665,6 @@ class Process(object):
         else:
             raise RuntimeError("Timed out after waiting %d seconds for startup." % timeout)
     
-    def wait_until_started_up(self, timeout=30):
-        self.wait_until_ready(timeout=timeout)
-    
     def read_ports_from_log(self, timeout=30):
         deadline = time.time() + timeout
         

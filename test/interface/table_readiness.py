@@ -101,7 +101,7 @@ def transition_cluster(servers, state):
 # This does not wait for disconnections or for reactors to reach a stable state
 def wait_for_transition(cluster):
     running_procs = [x for x in cluster[:] if x.running]
-    [x.wait_until_started_up() for x in running_procs]
+    [x.wait_until_ready() for x in running_procs]
     uuids = [proc.uuid for proc in running_procs]
 
     conn = r.connect(host=query_server.host, port=query_server.driver_port)

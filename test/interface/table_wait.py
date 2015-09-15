@@ -124,7 +124,7 @@ with driver.Cluster(initial_servers=['a', 'b'], output_folder='.', command_prefi
 
     utils.print_with_time("Restarting second server")
     proc2.start()
-    proc2.wait_until_started_up()
+    proc2.wait_until_ready()
 
     utils.print_with_time("Waiting for table readiness")
     map(lambda w: w.join(), waiter_procs)
