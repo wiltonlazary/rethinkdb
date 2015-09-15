@@ -34,7 +34,8 @@ class json_protocol_t {
 public:
     static scoped_ptr_t<ql::query_params_t> parse_query_from_buffer(
             scoped_array_t<char> &&mutable_buffer, size_t offset,
-            ql::query_cache_t *query_cache, int64_t token);
+            ql::query_cache_t *query_cache, int64_t token,
+            ql::response_t *error_out);
 
     static scoped_ptr_t<ql::query_params_t> parse_query(tcp_conn_t *conn,
                                                         signal_t *interruptor,

@@ -511,13 +511,9 @@ void query_server_t::handle(const http_req_t &req,
         data += sizeof(token);
 
         scoped_ptr_t<ql::query_params_t> query = json_protocol_t::parse_query_from_buffer(
-            std::move(body_buf), sizeof(token), conn->get_query_cache(), token);
+            std::move(body_buf), sizeof(token), conn->get_query_cache(), token, &response);
 
-        if (!query.has()) {
-            response.fill_error(Response::CLIENT_ERROR, Response::QUERY_LOGIC,
-                                wire_protocol_t::unparseable_query_message,
-                                ql::backtrace_registry_t::EMPTY_BACKTRACE);
-        } else {
+        if (query.has()) {
             // Check for noreply, which we don't support here, as it causes
             // problems with interruption
             if (query->noreply) {

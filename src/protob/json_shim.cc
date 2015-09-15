@@ -36,7 +36,8 @@ std::string wire_protocol_t::too_large_response_message(size_t size) {
 
 scoped_ptr_t<ql::query_params_t> json_protocol_t::parse_query_from_buffer(
         scoped_array_t<char> &&buffer, size_t offset,
-        ql::query_cache_t *query_cache, int64_t token) {
+        ql::query_cache_t *query_cache, int64_t token,
+        ql::response_t *error_out) {
     rapidjson::Document doc;
     doc.ParseInsitu(buffer.data() + offset);
 
@@ -47,9 +48,17 @@ scoped_ptr_t<ql::query_params_t> json_protocol_t::parse_query_from_buffer(
                     scoped_ptr_t<ql::term_storage_t>(
                         new ql::json_term_storage_t(std::move(buffer), std::move(doc))));
         } catch (const ql::bt_exc_t &ex) {
-            // Parse error, let the caller handle the response
-            // TODO: include message
+            error_out->fill_error(Response::CLIENT_ERROR,
+                                  ex.error_type,
+                                  strprintf("Failed to initialize query: %s",
+                                            ex.message.c_str()),
+                                  ex.bt_datum);
         }
+    } else {
+        error_out->fill_error(Response::CLIENT_ERROR,
+                              Response::RESOURCE_LIMIT,
+                              wire_protocol_t::unparseable_query_message,
+                              ql::backtrace_registry_t::EMPTY_BACKTRACE);
     }
     return res;
 }
@@ -62,9 +71,9 @@ scoped_ptr_t<ql::query_params_t> json_protocol_t::parse_query(
     uint32_t size;
     conn->read(&token, sizeof(token), interruptor);
     conn->read(&size, sizeof(size), interruptor);
+    ql::response_t error;
 
     if (size >= wire_protocol_t::TOO_LARGE_QUERY_SIZE) {
-        ql::response_t error;
         error.fill_error(Response::CLIENT_ERROR,
                          Response::RESOURCE_LIMIT,
                          wire_protocol_t::too_large_query_message(size),
@@ -78,13 +87,9 @@ scoped_ptr_t<ql::query_params_t> json_protocol_t::parse_query(
     data[size] = 0; // Null terminate the string, which the json parser requires
 
     scoped_ptr_t<ql::query_params_t> res =
-        parse_query_from_buffer(std::move(data), 0, query_cache, token);
+        parse_query_from_buffer(std::move(data), 0, query_cache, token, &error);
+
     if (!res.has()) {
-        ql::response_t error;
-        error.fill_error(Response::CLIENT_ERROR,
-                         Response::RESOURCE_LIMIT,
-                         wire_protocol_t::unparseable_query_message,
-                         ql::backtrace_registry_t::EMPTY_BACKTRACE);
         send_response(&error, token, conn, interruptor);
     }
     return res;
