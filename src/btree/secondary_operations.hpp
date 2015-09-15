@@ -35,6 +35,8 @@ struct secondary_index_t {
     /* Whether the index is has completed post construction, and/or is being deleted.
      * Note that an index can be in any combination of those states. */
     bool post_construction_complete;
+    // TODO! Comment
+    store_key_t post_constructed_up_to;
     bool being_deleted;
     bool is_ready() const {
         return post_construction_complete && !being_deleted;

@@ -1708,17 +1708,16 @@ public:
 
 void post_construct_secondary_indexes(
         store_t *store,
-        const std::set<uuid_u> &sindexes_to_post_construct,
-        signal_t *interruptor,
-        parallel_traversal_progress_t *progress_tracker)
+        const uuid_u &sindex_id_to_post_construct,
+        signal_t *interruptor)
     THROWS_ONLY(interrupted_exc_t) {
     cond_t local_interruptor;
 
     wait_any_t wait_any(&local_interruptor, interruptor);
 
+    // TODO! This should be a depth first traversal
     post_construct_traversal_helper_t helper(store,
-            sindexes_to_post_construct, &local_interruptor, interruptor);
-    helper.progress = progress_tracker;
+            sindex_id_to_post_construct, &local_interruptor, interruptor);
 
     read_token_t read_token;
     store->new_read_token(&read_token);
@@ -1742,6 +1741,7 @@ void post_construct_secondary_indexes(
         = txn->cache()->create_cache_account(SINDEX_POST_CONSTRUCTION_CACHE_PRIORITY);
     txn->set_account(&cache_account);
 
+    // TODO! Abort after N keys (say 1000?)
     btree_parallel_traversal(superblock.get(), &helper, &wait_any);
 }
 

@@ -60,14 +60,14 @@ void post_construct_and_drain_queue(
         internal_disk_backed_queue_t *mod_queue_ptr)
     THROWS_NOTHING;
 
+// TODO! Double-check and update all the comments
 /* Creates a queue of operations for the sindex, runs a post construction for
  * the data already in the btree and finally drains the queue. */
-void bring_sindexes_up_to_date(
-        const std::set<sindex_name_t> &sindexes_to_bring_up_to_date,
+void resume_bring_sindex_up_to_date(
+        const sindex_name_t &sindex_to_bring_up_to_date,
+        const store_key_t &resume_after,
         store_t *store,
-        buf_lock_t *sindex_block)
-    THROWS_NOTHING
-{
+        buf_lock_t *sindex_block) THROWS_NOTHING {
     with_priority_t p(CORO_PRIORITY_SINDEX_CONSTRUCTION);
 
     /* We register our modification queue here.
@@ -97,27 +97,20 @@ void bring_sindexes_up_to_date(
 
     {
         new_mutex_in_line_t acq = store->get_in_line_for_sindex_queue(sindex_block);
-        store->register_sindex_queue(mod_queue.get(), &acq);
+        store->register_sindex_queue(mod_queue.get(), resume_after, &acq);
     }
 
-    std::map<sindex_name_t, secondary_index_t> sindexes;
-    get_secondary_indexes(sindex_block, &sindexes);
-    std::map<uuid_u, std::string> sindexes_to_bring_up_to_date_uuid_name;
-
-    for (auto it = sindexes_to_bring_up_to_date.begin();
-         it != sindexes_to_bring_up_to_date.end(); ++it) {
-        guarantee(!it->being_deleted, "Trying to bring an index up to date that's "
+    secondary_index_t sindex;
+    bool found_index = get_secondary_index(sindex_block, index_to_bring_up_to_date, &sindex);
+    guarantee(found_index);
+    guarantee(!sindex->being_deleted, "Trying to bring an index up to date that's "
                                       "being deleted");
-        auto sindexes_it = sindexes.find(*it);
-        guarantee(sindexes_it != sindexes.end());
-        sindexes_to_bring_up_to_date_uuid_name.insert(
-            std::make_pair(sindexes_it->second.id, sindexes_it->first.name));
-    }
 
     coro_t::spawn_sometime(std::bind(
                 &post_construct_and_drain_queue,
                 store_drainer_acq,
-                sindexes_to_bring_up_to_date_uuid_name,
+                sindex.id,
+                resume_after,
                 store,
                 mod_queue.release()));
 }
@@ -128,23 +121,20 @@ void bring_sindexes_up_to_date(
  */
 void post_construct_and_drain_queue(
         auto_drainer_t::lock_t lock,
-        std::map<uuid_u, std::string> const &sindexes_to_bring_up_to_date_uuid_name,
+        uuid_u sindex_id_to_bring_up_to_date,
+        const store_key_t &resume_after,
         store_t *store,
         internal_disk_backed_queue_t *mod_queue_ptr)
     THROWS_NOTHING
 {
-    std::set<uuid_u> sindexes_to_bring_up_to_date;
-    parallel_traversal_progress_t progress_tracker;
-    std::vector<map_insertion_sentry_t<
+    // TODO! Fix the progress. Just use a distribution query + key boundary for it.
+    // Also move this sentry up!
+    map_insertion_sentry_t<
         store_t::sindex_context_map_t::key_type,
-        store_t::sindex_context_map_t::mapped_type> > sindex_context_sentries;
-    for (auto const &sindex : sindexes_to_bring_up_to_date_uuid_name) {
-        sindexes_to_bring_up_to_date.insert(sindex.first);
-        sindex_context_sentries.emplace_back(
+        store_t::sindex_context_map_t::mapped_type> > sindex_context_sentry(
             store->get_sindex_context_map(),
-            sindex.first,
+            sindex_id_to_bring_up_to_date,
             std::make_pair(current_microtime(), &progress_tracker));
-    }
 
     scoped_ptr_t<internal_disk_backed_queue_t> mod_queue(mod_queue_ptr);
 
@@ -155,13 +145,14 @@ void post_construct_and_drain_queue(
     // Waiting for the write lock would restrict us to having only one post
     // construction active at any time (which we might not want, for no specific
     // reason).
+    // TODO! ^^^^ We definitely don't want that anymore now. Explain why
 
     try {
-        post_construct_secondary_indexes(
+        post_construct_secondary_index(
             store,
-            sindexes_to_bring_up_to_date,
-            lock.get_drain_signal(),
-            &progress_tracker);
+            sindex_id_to_bring_up_to_date,
+            resume_after,
+            lock.get_drain_signal());
 
         /* Drain the queue. */
 
@@ -198,19 +189,19 @@ void post_construct_and_drain_queue(
             queue_superblock->release();
 
             store_t::sindex_access_vector_t sindexes;
+            // TODO!
             store->acquire_sindex_superblocks_for_write(
                     sindexes_to_bring_up_to_date,
                     &queue_sindex_block,
                     &sindexes);
 
+            // TODO!
             if (sindexes.empty()) {
                 break;
             }
 
             new_mutex_in_line_t acq =
                 store->get_in_line_for_sindex_queue(&queue_sindex_block);
-            // TODO (daniel): Is there a way to release the queue_sindex_block
-            // earlier than we do now, ideally before we wait for the acq signal?
             acq.acq_signal()->wait_lazily_unordered();
 
             const int MAX_CHUNK_SIZE = 10;
@@ -234,10 +225,9 @@ void post_construct_and_drain_queue(
             }
 
             if (mod_queue->size() == 0) {
-                for (auto it = sindexes_to_bring_up_to_date.begin();
-                     it != sindexes_to_bring_up_to_date.end(); ++it) {
-                    store->mark_index_up_to_date(*it, &queue_sindex_block);
-                }
+                // TODO! Pass in the current key
+                store->mark_index_up_to_date(sindex_id_to_bring_up_to_date,
+                                             &queue_sindex_block);
                 store->deregister_sindex_queue(mod_queue.get(), &acq);
                 return;
             }

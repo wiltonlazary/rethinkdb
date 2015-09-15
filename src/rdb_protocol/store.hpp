@@ -195,6 +195,7 @@ public:
 
     void register_sindex_queue(
             internal_disk_backed_queue_t *disk_backed_queue,
+            const store_key_t &constructed_up_to,
             const new_mutex_in_line_t *acq);
 
     void deregister_sindex_queue(
@@ -376,7 +377,12 @@ public:
 
     std::map<uuid_u, scoped_ptr_t<btree_slice_t> > secondary_index_slices;
 
-    std::vector<internal_disk_backed_queue_t *> sindex_queues;
+    // TODO! document & rename
+    struct ranged_sindex_queue_t {
+        store_key_t constructed_up_to;
+        internal_disk_backed_queue_t *queue;
+    };
+    std::vector<ranged_sindex_queue_t> sindex_queues;
     new_mutex_t sindex_queue_mutex;
     // Used to control access to stamps.  We need this so that `do_stamp` in
     // `store.cc` can synchronize with the `rdb_modification_report_cb_t` in

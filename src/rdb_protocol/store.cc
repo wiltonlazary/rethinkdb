@@ -90,6 +90,7 @@ void store_t::help_construct_bring_sindexes_up_to_date() {
 
     superblock.reset();
 
+    // TODO! Only clear the unconstructed range of the index
     struct sindex_clearer_t {
         static void clear(store_t *store,
                           secondary_index_t sindex,
@@ -121,6 +122,7 @@ void store_t::help_construct_bring_sindexes_up_to_date() {
         get_secondary_indexes(&sindex_block, &sindexes);
         for (auto it = sindexes.begin(); it != sindexes.end(); ++it) {
             if (!it->second.being_deleted && !it->second.post_construction_complete) {
+                // TODO! Don't do this! Instead we have to clear out only the inactive part.
                 bool success = mark_secondary_index_deleted(&sindex_block, it->first);
                 guarantee(success);
 

@@ -475,15 +475,16 @@ rwlock_in_line_t store_t::get_in_line_for_cfeed_stamp(access_t access) {
 
 void store_t::register_sindex_queue(
             internal_disk_backed_queue_t *disk_backed_queue,
+            const store_key_t &constructed_up_to,
             const new_mutex_in_line_t *acq) {
     assert_thread();
     acq->acq_signal()->wait_lazily_unordered();
 
-    for (std::vector<internal_disk_backed_queue_t *>::iterator it = sindex_queues.begin();
-            it != sindex_queues.end(); ++it) {
-        guarantee(*it != disk_backed_queue);
+    for (const auto &q : sindex_queues) {
+        guarantee(q.queue != disk_backed_queue);
     }
-    sindex_queues.push_back(disk_backed_queue);
+    sindex_queues.push_back(ranged_sindex_queue_t{constructed_up_to,
+                                                  disk_backed_queue});
 }
 
 void store_t::deregister_sindex_queue(
@@ -492,13 +493,13 @@ void store_t::deregister_sindex_queue(
     assert_thread();
     acq->acq_signal()->wait_lazily_unordered();
 
-    for (std::vector<internal_disk_backed_queue_t *>::iterator it = sindex_queues.begin();
-            it != sindex_queues.end(); ++it) {
-        if (*it == disk_backed_queue) {
+    for (auto it = sindex_queues.begin(); it != sindex_queues.end(); ++it) {
+        if (it->queue == disk_backed_queue) {
             sindex_queues.erase(it);
             return;
         }
     }
+    unreachable();
 }
 
 void store_t::emergency_deregister_sindex_queue(
