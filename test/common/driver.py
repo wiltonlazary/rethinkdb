@@ -18,7 +18,7 @@ from __future__ import print_function
 import atexit, copy, datetime, os, random, re, shutil, signal, socket, string, subprocess, sys, tempfile, time, warnings
 import traceback
 
-import utils
+import utils, resunder
 
 try:
     import thread
@@ -32,46 +32,43 @@ except NameError:
 # == resunder support
 
 class Resunder(object):
-    __socket = None
+    
+    blockedPaths = set()
     
     @classmethod
-    def socket(cls):
-        if cls.__socket is None:
-            if os.uname()[0] == 'Darwin':
-                raise Exception('Resunder does not currently run on MacOS, see https://github.com/rethinkdb/rethinkdb/issues/3476')
-                cls.__socket = False
-                return None
-            else:
-                # -- connect to resunder
-                
-                # - find the process in the ps table - ToDo: fix this to use the pidfile
-                if "resunder" not in subprocess.check_output(["ps", "-A", "-www", "-o", "command"]):
-                    raise Exception('Resunder is not running, please start it as root: `sudo %s/resunder.py start`' % os.path.realpath(os.path.dirname(__file__)))
-                
-                # - open the connection
-                cls.__socket = socket.create_connection(("localhost", 46594))
-                return cls._socket
-        elif cls.__socket is False:
-            return None
-        else:
-            return cls.__socket # ToDo: check that the socket is valid
+    def unblockAll(cls):
+        for source, dest in cls.blockedPaths:
+            cls.unblock_path(source, dest)
+    
+    @classmethod
+    def send(cls, operation, source, dest):
+        # - fail on MacOS
+        if os.uname()[0] == 'Darwin':
+            raise Exception('Resunder does not currently run on MacOS, see https://github.com/rethinkdb/rethinkdb/issues/3476')
+        
+        # - check that resunder is running
+        # ToDo: fix this to use the pid file and flock
+        if "resunder" not in subprocess.check_output(["ps", "-A", "-www", "-o", "command"]):
+            raise Exception('Resunder is not running, please start it as root: `sudo %s/resunder.py start`' % os.path.realpath(os.path.dirname(__file__)))
+        
+        # - send to resunder
+        # ToDo: re-write resunder.py so we can send multiple messages across the same socket
+        resunderSocket = socket.create_connection(("localhost", resunder.resunderPort))
+        resunderSocket.sendall("%s %s %s\n" % (str(operation), str(source), str(dest)))
+        resunderSocket.close()
     
     @classmethod
     def block_path(cls, source_port, dest_port):
-        if cls.socket():
-            cls.socket().sendall("block %s %s\n" % (str(source_port), str(dest_port)))
+        cls.blockedPaths.add(tuple([source_port, dest_port]))
+        cls.send('block', source_port, dest_port)
     
     @classmethod
     def unblock_path(cls, source_port, dest_port):
-        if cls.socket():
-            cls.socket().sendall("unblock %s %s\n" % (str(source_port), str(dest_port)))
-    
-    @classmethod
-    def close_socket(cls):
-        if cls.__socket:
-            cls.__socket.close()
-            cls.__socket = None
-atexit.register(Resunder.close_socket)
+        ports = tuple([source_port, dest_port])
+        if ports in cls.blockedPaths:
+            cls.blockedPaths.remove(ports)
+        cls.send('unblock', source_port, dest_port)
+atexit.register(Resunder.unblockAll)
 
 # == cleanup
 
@@ -81,7 +78,7 @@ def endRunningServers():
         try:
             server.check_and_stop()
         except Exception as e:
-            sys.stderr.write('Got error while shutting down server at exit: %s\n%r\n' % (str(e), traceback.format_exc()))
+            sys.stderr.write('Got error while shutting down server at exit: %s\n%s\n' % (str(e), traceback.format_exc()))
             sys.stderr.flush()
 atexit.register(endRunningServers)
 
@@ -93,6 +90,7 @@ class Metacluster(object):
     that cleans up all the processes and deletes all the files. """
     
     __unique_id_counters = None
+    _had_multiple_clusters = True
     
     def __init__(self, output_folder=None):
         self.clusters = set()
@@ -247,8 +245,9 @@ class Cluster(object):
         '''Update the routing tables that block servers from one cluster from seeing those from another'''
         
         # - short-circut if there is only a single cluster
-        if len(self.metacluster.clusters) < 2:
+        if len(self.metacluster.clusters) < 2 and self.metacluster._had_multiple_clusters is False:
             return
+        self.metacluster._had_multiple_clusters = True
         
         # -
         servers = None
@@ -267,24 +266,32 @@ class Cluster(object):
                 continue # not much we can do here
                 
             for otherServer in allServers:
-                if not otherServer.ready:
+                if not otherServer.ready or otherServer is server:
                     continue # nothing to do here
                 
-                if server.cluster == otherServer.cluster and server.ready: # active server, block from server outside cluster
+                if server.cluster is not otherServer.cluster and server.ready: # active server, block from server outside cluster
                     # outgoing paths
                     Resunder.block_path(server.cluster_port,            otherServer.local_cluster_port)
+                    Resunder.block_path(server.cluster_port,            otherServer.cluster_port)
                     Resunder.block_path(server.local_cluster_port,      otherServer.cluster_port)
+                    Resunder.block_path(server.local_cluster_port,      otherServer.local_cluster_port)
                     # incomming paths
                     Resunder.block_path(otherServer.cluster_port,       server.local_cluster_port)
+                    Resunder.block_path(otherServer.cluster_port,       server.cluster_port)
                     Resunder.block_path(otherServer.local_cluster_port, server.cluster_port)
+                    Resunder.block_path(otherServer.local_cluster_port, server.local_cluster_port)
                 else:
                     # outgoing paths
                     Resunder.unblock_path(server.cluster_port,            otherServer.local_cluster_port)
+                    Resunder.unblock_path(server.cluster_port,            otherServer.cluster_port)
                     Resunder.unblock_path(server.local_cluster_port,      otherServer.cluster_port)
+                    Resunder.unblock_path(server.local_cluster_port,      otherServer.local_cluster_port)
                     # incomming paths
                     Resunder.unblock_path(otherServer.cluster_port,       server.local_cluster_port)
-                    Resunder.unblock_path(otherServer.local_cluster_port, server.cluster_port)                        
-    
+                    Resunder.unblock_path(otherServer.cluster_port,       server.cluster_port)
+                    Resunder.unblock_path(otherServer.local_cluster_port, server.cluster_port)
+                    Resunder.unblock_path(otherServer.local_cluster_port, server.local_cluster_port)
+        
     def __getitem__(self, pos):
         if isinstance(pos, slice):
             return [self.processes[x] for x in xrange(*pos.indices(len(self.processes)))]
@@ -441,7 +448,7 @@ class Process(object):
             self.console_file = tempfile.NamedTemporaryFile(mode='w+', dir=os.path.dirname(self.data_path), delete=False)
         elif hasattr(console_output, 'write'):
             # file-like object:
-            self._console_file_path = console_output
+            self._console_file_path = None
             self.console_file = console_output
         else:
             # a path
@@ -646,6 +653,8 @@ class Process(object):
         '''Check that the process is running'''
         if self.process is None:
             return False
+        if self.returncode is not None:
+            return False
         elif self.process.poll() is not None:
             self.returncode = self.process.poll()
             return False
@@ -767,6 +776,7 @@ class Process(object):
         
         utils.kill_process_group(self.pid, shutdown_grace=0)
         self.returncode = self.process.wait()
+        self.processs = None
         self.killed = True
         self.stop()
     
@@ -777,8 +787,14 @@ class Process(object):
         if self.running:
             if self.process.poll() is None:
                 utils.kill_process_group(self.pid, timeout=120)
-                self.returncode = self.process.wait()
-                assert self.returncode is not None, 'Server %s exited with code: %r' % (self.name, self.returncode)
+                self.returncode = self.process.poll()
+                if self.returncode is None:
+                    try:
+                        self.returncode = self.process.wait()
+                    except OSError:
+                        warnings.warn('The subprocess module lost the connection to the %s %s, assuming it closed cleanly' % (self.server_type, self.name))
+                        self.returncode = 0
+                assert self.returncode is not None, '%s %s failed to exit!' % (self.server_type.capitalize(), self.name)
         if self.process:
             self.returncode = self.process.wait()
         
