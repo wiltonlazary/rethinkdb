@@ -1,22 +1,10 @@
 # Copyright 2010-2015 RethinkDB, all rights reserved.
 
-"""`driver.py` is a module for starting groups of RethinkDB cluster nodes and
-connecting them to each other. It also supports netsplits.
+"""Manage a cluster of RethinkDB nodes, including simulating netsplits.
+This is designed to simulate normal operations, so does not include support
+for things like `--join`ing to an invalid port."""
 
-It does not support administering a cluster, either through the HTTP interface
-or using `rethinkdb admin`. It is meant to be used with other modules that
-administer the cluster which it starts.
-
-`driver.py` is designed to use the RethinkDB command line interface, not to
-test it; if you want to do strange things like tell RethinkDB to `--join` an
-invalid port, or delete the files out from under a running RethinkDB process,
-or so on, you should start a RethinkDB process manually using some other
-module. """
-
-from __future__ import print_function
-
-import atexit, copy, datetime, os, random, re, shutil, signal, socket, string, subprocess, sys, tempfile, time, warnings
-import traceback
+import atexit, copy, datetime, os, random, re, shutil, signal, socket, string, subprocess, sys, tempfile, time, traceback, warnings
 
 import utils, resunder
 

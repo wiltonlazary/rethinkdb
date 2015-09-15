@@ -431,15 +431,20 @@ def kill_process_group(processGroupId, timeout=20, shutdown_grace=5, only_warn=T
         elif e.errno == 1: # Operation not permitted: not our process
             return
         else:
-            warnings.warn('Unhandled OSError while killing process group %s. `ps` output:\n%s\n' % (repr(processGroupId), '\n'.join(psLines)))
+            mesg = 'Unhandled OSError while killing process group %s. `ps` output:\n%s\n' % (repr(processGroupId), '\n'.join(psLines))
+            if only_warn:
+                warnings.warn(mesg)
+            else:
+                raise RuntimeError(mesg)
     
     # --
     
     timeElapsed = timeout - (deadline - time.time())
+    mesg = 'Unable to kill all of the processes for process group %d after %.2f seconds:\n%s\n' % (processGroupId, timeElapsed, psOutput.decode('utf-8'))
     if only_warn:
-        raise Warning('Unable to kill all of the processes for process group %d after %.2f seconds:\n%s\n' % (processGroupId, timeElapsed, psOutput.decode('utf-8')))
+        warnings.warn(mesg)
     else:
-        raise RuntimeError('Unable to kill all of the processes for process group %d after %.2f seconds:\n%s\n' % (processGroupId, timeElapsed, psOutput.decode('utf-8')))
+        raise RuntimeError(mesg)
     # ToDo: better categorize the error
 
 def nonblocking_readline(source, seek=0):
