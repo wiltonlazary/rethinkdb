@@ -63,9 +63,9 @@ protected:
             doc = to_js_func(t);
             break;
         case Term::VAR: {
-            guarantee(t.num_args() == 1);
+            r_sanity_check(t.num_args() == 1);
             ql::raw_term_t arg0 = t.arg(0);
-            guarantee(arg0.type() == Term::DATUM);
+            r_sanity_check(arg0.type() == Term::DATUM);
             doc = var_name(arg0.datum());
         } break;
         case Term::IMPLICIT_VAR:
@@ -109,7 +109,7 @@ private:
     }
 
     counted_t<const document_t> to_js_array(const ql::raw_term_t &t) {
-        guarantee(t.num_optargs() == 0);
+        r_sanity_check(t.num_optargs() == 0);
         bool old_r_expr = in_r_expr;
         in_r_expr = true;
         std::vector<counted_t<const document_t> > term;
@@ -122,7 +122,7 @@ private:
     }
 
     counted_t<const document_t> to_js_object(const ql::raw_term_t &t) {
-        guarantee(t.num_args() == 0);
+        r_sanity_check(t.num_args() == 0);
         return in_r_expr ? to_js_natural_object(t) : to_js_wrapped_object(t);
     }
 
@@ -226,7 +226,7 @@ private:
         bool old_r_expr = in_r_expr;
         switch (static_cast<int>(var.type())) {
         case Term::BRACKET: {
-            guarantee(var.num_args() == 2);
+            r_sanity_check(var.num_args() == 2);
             stack->push_back(rparen);
             in_r_expr = true;
             if (var.num_optargs() > 0) {
@@ -242,8 +242,8 @@ private:
             return boost::make_optional(var.arg(0));
         }
         case Term::FUNCALL: {
-            guarantee(var.num_args() == 2);
-            guarantee(var.num_optargs() == 0);
+            r_sanity_check(var.num_args() == 2);
+            r_sanity_check(var.num_optargs() == 0);
             stack->push_back(rparen);
             in_r_expr = true;
             stack->push_back(make_nest(visit_generic(var.arg(0))));
@@ -270,9 +270,9 @@ private:
             *last_should_r_wrap = false;
             return boost::optional<ql::raw_term_t>();
         case Term::VAR: {
-            guarantee(var.num_args() == 1);
+            r_sanity_check(var.num_args() == 1);
             ql::raw_term_t arg = var.arg(0);
-            guarantee(arg.type() == Term::DATUM);
+            r_sanity_check(arg.type() == Term::DATUM);
             stack->push_back(var_name(arg.datum()));
             *last_is_dot = false;
             *last_should_r_wrap = false;
@@ -363,8 +363,8 @@ private:
     }
 
     counted_t<const document_t> toplevel_funcall(const ql::raw_term_t &t) {
-        guarantee(t.num_args() >= 1);
-        guarantee(t.num_optargs() == 0);
+        r_sanity_check(t.num_args() >= 1);
+        r_sanity_check(t.num_optargs() == 0);
         std::vector<counted_t<const document_t> > term;
         term.push_back(do_st);
         term.push_back(lparen);
@@ -408,7 +408,7 @@ private:
     }
 
     counted_t<const document_t> standard_literal(const ql::raw_term_t &t) {
-        guarantee(t.num_args() == 0);
+        r_sanity_check(t.num_args() == 0);
         return prepend_r_dot(term_name(t));
     }
 
@@ -577,8 +577,8 @@ private:
     }
 
     counted_t<const document_t> to_js_func(const ql::raw_term_t &t) {
-        guarantee(t.type() == Term::FUNC);
-        guarantee(t.num_args() == 2);
+        r_sanity_check(t.type() == Term::FUNC);
+        r_sanity_check(t.num_args() == 2);
         counted_t<const document_t> arglist;
         ql::raw_term_t arg0 = t.arg(0);
         if (arg0.type() == Term::MAKE_ARRAY) {
@@ -586,9 +586,9 @@ private:
             for (size_t i = 0; i < arg0.num_args(); ++i) {
                 ql::raw_term_t item = arg0.arg(i);
                 if (!args.empty()) { args.push_back(comma_linebreak); }
-                guarantee(item.type() == Term::DATUM);
+                r_sanity_check(item.type() == Term::DATUM);
                 ql::datum_t d = item.datum();
-                guarantee(d.get_type() == ql::datum_t::type_t::R_NUM);
+                r_sanity_check(d.get_type() == ql::datum_t::type_t::R_NUM);
                 args.push_back(var_name(d));
             }
             arglist = make_c(lparen, make_nest(make_concat(std::move(args))), rparen);

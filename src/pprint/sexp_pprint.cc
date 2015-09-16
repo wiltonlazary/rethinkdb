@@ -38,9 +38,9 @@ protected:
             doc = to_lisp_func(t);
             break;
         case Term::VAR: {
-            guarantee(t.num_args() == 1);
+            r_sanity_check(t.num_args() == 1);
             ql::raw_term_t arg0 = t.arg(0);
-            guarantee(arg0.type() == Term::DATUM);
+            r_sanity_check(arg0.type() == Term::DATUM);
             doc = var_name(arg0.datum());
             break;
         }
@@ -146,14 +146,14 @@ private:
         std::vector<counted_t<const document_t> > term;
         term.push_back(lparen);
         term.push_back(dotdot);
-        guarantee(t.num_args() == 2);
+        r_sanity_check(t.num_args() == 2);
         term.push_back(sp);
         std::vector<counted_t<const document_t> > nest;
         ql::raw_term_t arg0 = t.arg(0);
         if (should_continue_string(arg0.type())) {
             std::vector<counted_t<const document_t> > stack;
             while (should_continue_string(arg0.type())) {
-                guarantee(arg0.num_args() == 2);
+                r_sanity_check(arg0.num_args() == 2);
                 ql::raw_term_t next_arg = arg0.arg(0);
                 stack.push_back(visit_stringing(arg0.type(), arg0.arg(1)));
                 stack.push_back(cond_linebreak);
@@ -172,7 +172,7 @@ private:
     }
 
     counted_t<const document_t> string_branches_together(const ql::raw_term_t &t) {
-        guarantee(t.num_args() == 3);
+        r_sanity_check(t.num_args() == 3);
 
         std::vector<counted_t<const document_t> > term;
         term.push_back(lparen);
@@ -227,13 +227,13 @@ private:
     }
 
     counted_t<const document_t> var_name(const ql::datum_t &d) {
-        guarantee(d.get_type() == ql::datum_t::type_t::R_NUM);
+        r_sanity_check(d.get_type() == ql::datum_t::type_t::R_NUM);
         return make_text("var" + std::to_string(lrint(d.as_num())));
     }
 
     counted_t<const document_t> to_lisp_func(const ql::raw_term_t &t) {
-        guarantee(t.type() == Term::FUNC);
-        guarantee(t.num_args() >= 2);
+        r_sanity_check(t.type() == Term::FUNC);
+        r_sanity_check(t.num_args() >= 2);
         std::vector<counted_t<const document_t> > nest;
         ql::raw_term_t arg0 = t.arg(0);
         if (arg0.type() == Term::MAKE_ARRAY) {
@@ -241,9 +241,9 @@ private:
             for (size_t i = 0; i < arg0.num_args(); ++i) {
                 ql::raw_term_t item = arg0.arg(i);
                 if (!args.empty()) args.push_back(cond_linebreak);
-                guarantee(item.type() == Term::DATUM);
+                r_sanity_check(item.type() == Term::DATUM);
                 ql::datum_t d = item.datum();
-                guarantee(d.get_type() == ql::datum_t::type_t::R_NUM);
+                r_sanity_check(d.get_type() == ql::datum_t::type_t::R_NUM);
                 args.push_back(var_name(d));
             }
             nest.push_back(make_concat({lparen,
