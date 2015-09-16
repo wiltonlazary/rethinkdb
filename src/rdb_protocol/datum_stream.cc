@@ -230,7 +230,7 @@ public:
     boost::optional<rget_item_t> pop() {
         if (cached && cached_index < cached->cache.size()) {
             return std::move(cached->cache[cached_index++]);
-        } else if (fresh_index < fresh->stream.size()) {
+        } else if (fresh != nullptr && fresh_index < fresh->stream.size()) {
             return std::move(fresh->stream[fresh_index++]);
         } else {
             return boost::none;
@@ -259,6 +259,7 @@ raw_stream_t unshard(
         *maybe_active_ranges = new_active_ranges(stream);
     }
     active_ranges_t *active_ranges = &**maybe_active_ranges;
+    // debugf("%s\n", debug_str(*active_ranges).c_str());
 
     raw_stream_t items;
     // While updating the `last_key`s we check that we're only getting results
@@ -745,9 +746,6 @@ rget_read_t primary_readgen_t::next_read_impl(
     boost::optional<changefeed_stamp_t> stamp,
     std::vector<transform_variant_t> transforms,
     const batchspec_t &batchspec) const {
-    if (active_ranges) {
-        debugf("%s\n", debug_str(*active_ranges).c_str());
-    }
     region_t region = active_ranges
         ? region_t(active_ranges_to_range(*active_ranges))
         : region_t(original_datum_range.to_primary_keyrange());
