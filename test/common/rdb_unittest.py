@@ -75,10 +75,11 @@ class RdbTestCase(unittest.TestCase):
                 self.r.expr(1).run(self.__class__._conn)
                 return self.__class__._conn
             except Exception: pass
-        try:
-            self.__class__._conn.close()
-        except Exception: pass
-        self.__class__._conn = None
+        if self.__class__.conn is not None:
+            try:
+                self.__class__._conn.close()
+            except Exception: pass
+            self.__class__._conn = None
         
         # -- try a new connection to each server in order
         for server in self.cluster:

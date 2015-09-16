@@ -172,8 +172,7 @@ class ResunderDaemon(Daemon):
                         self.unblock_port(source_port, dest_port)
                 elif data.strip() == "shutdown":
                     logger.info('Shutting down resunder')
-                    for source_port, dest_port in self.blocked_ports.keys():
-                        self.unblock_port(source_port, dest_port)
+                    return # atexit handler will take care of cleanup
                 else:
                     logger.warning('got bad input: %r' % data)
             except socket.timeout:

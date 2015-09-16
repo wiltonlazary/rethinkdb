@@ -19,7 +19,6 @@ resource.setrlimit(resource.RLIMIT_FSIZE, (size_limit, resource.RLIM_INFINITY))
 with driver.Process(name='.', command_prefix=command_prefix, extra_options=serve_options) as process:
     
     conn = r.connect(process.host, process.driver_port)
-    server_uuid = process.uuid
     
     utils.print_with_time("Un-setting resource limit")
     resource.setrlimit(resource.RLIMIT_FSIZE, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
@@ -36,9 +35,9 @@ with driver.Process(name='.', command_prefix=command_prefix, extra_options=serve
     # Get the server to write over the limit by toggling the server name
     
     def make_server_write_to_log():
-        res = r.db("rethinkdb").table("server_config").get(server_uuid).update({"name": "the_server_2"}).run(conn)
+        res = r.db("rethinkdb").table("server_config").get(process.uuid).update({"name": "the_server_2"}).run(conn)
         assert res["errors"] == 0 and res["replaced"] == 1, res
-        res = r.db("rethinkdb").table("server_config").get(server_uuid).update({"name": "the_server"}).run(conn)
+        res = r.db("rethinkdb").table("server_config").get(process.uuid).update({"name": "the_server"}).run(conn)
         assert res["errors"] == 0 and res["replaced"] == 1, res
 
     utils.print_with_time("Making server try to write to log")
@@ -66,7 +65,7 @@ with driver.Process(name='.', command_prefix=command_prefix, extra_options=serve
     utils.print_with_time("Checking issue with identifier_format='uuid'")
     issues = list(r.db("rethinkdb").table("current_issues", identifier_format="uuid").run(conn))
     assert len(issues) == 1, pprint.pformat(issues)
-    assert issues[0]["info"]["servers"] == [server_uuid], pprint.pformat(issues)
+    assert issues[0]["info"]["servers"] == [process.uuid], pprint.pformat(issues)
 
     utils.print_with_time("Making sure issues table is not writable")
     res = r.db("rethinkdb").table("current_issues").delete().run(conn)

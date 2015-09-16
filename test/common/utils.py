@@ -555,7 +555,7 @@ def populateTable(conn, table, db=None, records=100, fieldName='id'):
         records = int(records)
         assert records >= 0
     except Exception as e:
-        raise ValueError('bad value for records: %r (s)' % (records, str(e)))
+        raise ValueError('bad value for records: %r (%s)' % (records, str(e)))
     
     fieldName = str(fieldName)
     
