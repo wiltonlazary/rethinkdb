@@ -160,6 +160,8 @@ class Cluster(object):
         assert isinstance(metacluster, Metacluster)
         self.metacluster = metacluster
         self.metacluster.clusters.add(self)
+        if len(self.metacluster.clusters) > 1:
+            self.metacluster._had_multiple_clusters = True
         
         # - output_folder
         if output_folder is None:
@@ -235,7 +237,6 @@ class Cluster(object):
         # - short-circut if there is only a single cluster
         if len(self.metacluster.clusters) < 2 and self.metacluster._had_multiple_clusters is False:
             return
-        self.metacluster._had_multiple_clusters = True
         
         # -
         servers = None
@@ -263,7 +264,7 @@ class Cluster(object):
                     Resunder.block_path(server.cluster_port,            otherServer.cluster_port)
                     Resunder.block_path(server.local_cluster_port,      otherServer.cluster_port)
                     Resunder.block_path(server.local_cluster_port,      otherServer.local_cluster_port)
-                    # incomming paths
+                    # incoming paths
                     Resunder.block_path(otherServer.cluster_port,       server.local_cluster_port)
                     Resunder.block_path(otherServer.cluster_port,       server.cluster_port)
                     Resunder.block_path(otherServer.local_cluster_port, server.cluster_port)
@@ -274,7 +275,7 @@ class Cluster(object):
                     Resunder.unblock_path(server.cluster_port,            otherServer.cluster_port)
                     Resunder.unblock_path(server.local_cluster_port,      otherServer.cluster_port)
                     Resunder.unblock_path(server.local_cluster_port,      otherServer.local_cluster_port)
-                    # incomming paths
+                    # incoming paths
                     Resunder.unblock_path(otherServer.cluster_port,       server.local_cluster_port)
                     Resunder.unblock_path(otherServer.cluster_port,       server.cluster_port)
                     Resunder.unblock_path(otherServer.local_cluster_port, server.cluster_port)
@@ -530,7 +531,7 @@ class Process(object):
         '''Start up the server'''
         global runningServers
         
-        assert self.running is False, 'Trying to start a server where running = %r' % self.running
+        assert not self.running, 'Trying to start a server where running = %r' % self.running
         self.returncode = None
         self.killed = False
         
@@ -730,7 +731,7 @@ class Process(object):
         
         # -- piggyback on this to setup Resunder blocking
         
-        self.cluster.update_routing(self)
+        self.update_routing()
     
     def check(self):
         """Throws an exception if the process has crashed or stopped. """
