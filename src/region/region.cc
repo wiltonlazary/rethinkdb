@@ -3,6 +3,10 @@
 
 #include <algorithm>
 
+void debug_print(printf_buffer_t *buf, const hash_range_t &hr) {
+    buf->appendf("hash_range_t(%" PRIu64 ", %" PRIu64 ")", hr.beg, hr.end);
+}
+
 bool compare_range_by_left(const key_range_t &r1, const key_range_t &r2) {
     return r1.left < r2.left;
 }

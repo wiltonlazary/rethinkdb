@@ -15,6 +15,35 @@
 
 namespace ql {
 
+void debug_print(printf_buffer_t *buf, const range_state_t &rs) {
+    const char *s;
+    switch (rs) {
+    case range_state_t::ACTIVE:    s = "ACTIVE"; break;
+    case range_state_t::SATURATED: s = "SATURATED"; break;
+    case range_state_t::EXHAUSTED: s = "EXHAUSTED"; break;
+    default: unreachable();
+    }
+    buf->appendf("%s", s);
+}
+
+void debug_print(printf_buffer_t *buf, const hash_range_with_cache_t &hrwc) {
+    buf->appendf("hash_range_with_cache_t(");
+    debug_print(buf, hrwc.key_range);
+    buf->appendf(", ");
+    debug_print(buf, hrwc.cache);
+    buf->appendf(", ");
+    debug_print(buf, hrwc.state);
+    buf->appendf(")");
+}
+
+void debug_print(printf_buffer_t *buf, const hash_ranges_t &hr) {
+    debug_print(buf, hr.hash_ranges);
+}
+
+void debug_print(printf_buffer_t *buf, const active_ranges_t &ar) {
+    debug_print(buf, ar.ranges);
+}
+
 bool hash_range_with_cache_t::totally_exhausted() const {
     return state == range_state_t::EXHAUSTED && cache.size() == 0;
 }
@@ -221,6 +250,7 @@ raw_stream_t unshard(
     boost::optional<active_ranges_t> *maybe_active_ranges,
     rget_read_response_t &&res,
     bool *shards_exhausted_out) {
+    debugf("UNSHARDING\n");
 
     grouped_t<stream_t> *gs = boost::get<grouped_t<stream_t> >(&res.result);
     r_sanity_check(gs != nullptr);
@@ -231,8 +261,9 @@ raw_stream_t unshard(
     active_ranges_t *active_ranges = &**maybe_active_ranges;
 
     raw_stream_t items;
-    // Check that we're only getting results for shards we actually have.  This
-    // also guarantees that we won't silently discard data in the logic below.
+    // While updating the `last_key`s we check that we're only getting results
+    // for shards we actually have.  This also guarantees that we won't silently
+    // discard data in the logic below.
     for (auto &&pair : stream.substreams) {
         auto it = active_ranges->ranges.find(pair.first.inner);
         if (it != active_ranges->ranges.end()) {
@@ -241,6 +272,7 @@ raw_stream_t unshard(
             if (ft != it->second.hash_ranges.end()) {
                 // We should never get a result for an inactive region.
                 r_sanity_check(ft->second.state == range_state_t::ACTIVE);
+                debugf("LAST_KEY: %s\n", debug_str(pair.second.last_key).c_str());
                 if (!reversed(sorting)) {
                     ft->second.key_range.left = pair.second.last_key;
                     if (ft->second.key_range.left != store_key_max) {
@@ -713,6 +745,9 @@ rget_read_t primary_readgen_t::next_read_impl(
     boost::optional<changefeed_stamp_t> stamp,
     std::vector<transform_variant_t> transforms,
     const batchspec_t &batchspec) const {
+    if (active_ranges) {
+        debugf("%s\n", debug_str(*active_ranges).c_str());
+    }
     region_t region = active_ranges
         ? region_t(active_ranges_to_range(*active_ranges))
         : region_t(original_datum_range.to_primary_keyrange());

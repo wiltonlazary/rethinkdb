@@ -17,6 +17,7 @@ struct hash_range_t {
                : end < o.end);
     }
 };
+void debug_print(printf_buffer_t *buf, const hash_range_t &hr);
 
 inline bool region_is_empty(const key_range_t &r) {
     return r.is_empty();

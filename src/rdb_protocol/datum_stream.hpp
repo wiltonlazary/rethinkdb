@@ -390,6 +390,7 @@ private:
 };
 
 enum class range_state_t { ACTIVE, SATURATED, EXHAUSTED };
+void debug_print(printf_buffer_t *buf, const range_state_t &rs);
 struct hash_range_with_cache_t {
     key_range_t key_range;
     raw_stream_t cache; // Entries we weren't able to unshard.
@@ -397,6 +398,7 @@ struct hash_range_with_cache_t {
     // No data in the cache and nothing to read from the shards.
     bool totally_exhausted() const;
 };
+void debug_print(printf_buffer_t *buf, const hash_range_with_cache_t &hrwc);
 
 struct hash_ranges_t {
     std::map<hash_range_t, hash_range_with_cache_t> hash_ranges;
@@ -405,10 +407,12 @@ struct hash_ranges_t {
     // True if all hash shards are totally exhausted.
     bool totally_exhausted() const;
 };
+void debug_print(printf_buffer_t *buf, const hash_ranges_t &hr);
 
 struct active_ranges_t {
     std::map<key_range_t, hash_ranges_t> ranges;
 };
+void debug_print(printf_buffer_t *buf, const active_ranges_t &ar);
 
 // This class generates the `read_t`s used in range reads.  It's used by
 // `reader_t` below.  Its subclasses are the different types of range reads we
