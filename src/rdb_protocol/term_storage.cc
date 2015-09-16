@@ -1,10 +1,13 @@
 // Copyright 2010-2015 RethinkDB, all rights reserved.
 #include "rdb_protocol/term_storage.hpp"
 
+#include "arch/runtime/coroutines.hpp"
 #include "rdb_protocol/optargs.hpp"
 #include "rdb_protocol/term_walker.hpp"
 
 namespace ql {
+
+const size_t MIN_TERM_TREE_STACK_SPACE = 16 * KILOBYTE;
 
 const char *rapidjson_typestr(rapidjson::Type t) {
     switch (t) {
@@ -399,7 +402,10 @@ rapidjson::Value convert_datum(const Datum &src,
     case Datum::R_ARRAY: {
         rapidjson::Value dest(rapidjson::kArrayType);
         for (int i = 0; i < src.r_array_size(); ++i) {
-            dest.PushBack(convert_datum(src.r_array(i), allocator), *allocator);
+            call_with_enough_stack([&] () {
+                    dest.PushBack(convert_datum(src.r_array(i), allocator),
+                                  *allocator);
+                }, MIN_TERM_TREE_STACK_SPACE);
         }
         return dest;
     }
@@ -460,7 +466,10 @@ rapidjson::Value convert_term_tree(const Term &src,
             dest.PushBack(rapidjson::Value(rapidjson::kArrayType), *allocator);
             rapidjson::Value *args = &dest[dest.Size() - 1];
             for (int i = 0; i < src.args_size(); ++i) {
-                args->PushBack(convert_term_tree(src.args(i), allocator), *allocator);
+                call_with_enough_stack([&] () {
+                        args->PushBack(convert_term_tree(src.args(i), allocator),
+                                       *allocator);
+                    }, MIN_TERM_TREE_STACK_SPACE);
             }
         }
         if (src.optargs_size() > 0) {
@@ -537,7 +546,9 @@ void write_term(rapidjson::Writer<rapidjson::StringBuffer> *writer,
             if (term.num_args() > 0) {
                 writer->StartArray();
                 for (size_t i = 0; i < term.num_args(); ++i) {
-                    write_term(writer, term.arg(i));
+                    call_with_enough_stack([&] () {
+                            write_term(writer, term.arg(i));
+                        }, MIN_TERM_TREE_STACK_SPACE);
                 }
                 writer->EndArray();
             }
@@ -546,7 +557,9 @@ void write_term(rapidjson::Writer<rapidjson::StringBuffer> *writer,
                 term.each_optarg([&] (const raw_term_t &subterm) {
                         writer->Key(subterm.optarg_name().c_str(),
                                     subterm.optarg_name().size(), true);
-                        write_term(writer, subterm);
+                        call_with_enough_stack([&] () {
+                                write_term(writer, subterm);
+                            }, MIN_TERM_TREE_STACK_SPACE);
                     });
                 writer->EndObject();
             }
