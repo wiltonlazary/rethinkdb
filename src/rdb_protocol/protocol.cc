@@ -445,6 +445,12 @@ struct rdb_r_shard_visitor_t : public boost::static_visitor<bool> {
         if (do_read) {
             auto rg_out = boost::get<rget_read_t>(payload_out);
             rg_out->current_shard = *region;
+            // One day we'll get rid of unbounded right bounds, but until then
+            // we canonicalize them here because otherwise life sucks.
+            if (rg_out->current_shard->inner.right.unbounded) {
+                rg_out->current_shard->inner.right
+                    = key_range_t::right_bound_t(store_key_t::max());
+            }
             rg_out->batchspec = rg_out->batchspec.scale_down(CPU_SHARDING_FACTOR);
             if (rg_out->stamp) {
                 rg_out->stamp->region = rg_out->region;
