@@ -9,6 +9,7 @@
 #include "clustering/administration/persist/migrate/migrate_v1_16.hpp"
 #include "clustering/administration/persist/migrate/migrate_v2_1.hpp"
 #include "config/args.hpp"
+#include "logger.hpp"
 #include "serializer/log/log_serializer.hpp"
 #include "serializer/merger.hpp"
 
@@ -311,6 +312,7 @@ metadata_file_t::metadata_file_t(
         case cluster_version_t::v1_15: // fallthrough intentional
         case cluster_version_t::v1_16: // fallthrough intentional
         case cluster_version_t::v2_0: { // fallthrough intentional
+            logNTC("Migrating cluster metadata to v2.1");
             scoped_malloc_t<void> sb_copy(cache->max_block_size().value());
             memcpy(sb_copy.get(), sb_data, cache->max_block_size().value());
             init_metadata_superblock(sb_data, cache->max_block_size().value());
@@ -322,6 +324,9 @@ metadata_file_t::metadata_file_t(
                 interruptor);
         } // fallthrough intentional
         case cluster_version_t::v2_1: {
+            sb_write.reset();
+            sb_lock.reset();
+            logNTC("Migrating cluster metadata to v2.2");
             migrate_cluster_metadata_from_v2_1_to_v2_2(&write_txn, interruptor);
         } // fallthrough intentional
         case cluster_version_t::v2_2: {

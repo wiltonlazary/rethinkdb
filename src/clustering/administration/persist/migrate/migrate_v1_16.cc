@@ -533,7 +533,6 @@ void migrate_cluster_metadata_to_v2_1(io_backender_t *io_backender,
                                       const void *old_superblock,
                                       metadata_file_t::write_txn_t *out,
                                       signal_t *interruptor) {
-    logNTC("Migrating cluster metadata");
     const cluster_metadata_superblock_t *sb =
         static_cast<const cluster_metadata_superblock_t *>(old_superblock);
     cluster_version_t v = cluster_superblock_version(sb);

@@ -665,7 +665,7 @@ counted_t<const document_t> js_pretty_printer_t::js = make_text("js");
 counted_t<const document_t> js_pretty_printer_t::node_buffer = make_text("Buffer");
 counted_t<const document_t> js_pretty_printer_t::base64_str = make_text("'base64'");
 counted_t<const document_t> js_pretty_printer_t::comma_linebreak =
-    make_concat({js_pretty_printer_t::comma, cond_linebreak});
+    make_concat({js_pretty_printer_t::comma, make_cond(" ", "", "")});
 
 counted_t<const document_t> render_as_javascript(const ql::raw_term_t &t) {
     return js_pretty_printer_t().walk(t);
