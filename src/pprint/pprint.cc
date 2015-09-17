@@ -9,6 +9,8 @@
 #include "errors.hpp"
 #include <boost/optional.hpp>
 
+#include "rdb_protocol/error.hpp"
+
 namespace pprint {
 
 // Pretty printing occurs in two global phases.  Rather than try to

@@ -8,6 +8,7 @@
 
 #include "pprint/generic_term_walker.hpp"
 #include "rdb_protocol/datum.hpp"
+#include "rdb_protocol/error.hpp"
 #include "rdb_protocol/term_storage.hpp"
 #include "rdb_protocol/pseudo_binary.hpp"
 
