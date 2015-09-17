@@ -47,7 +47,7 @@ minidriver_t::reql_t::reql_t(minidriver_t *_r, std::vector<reql_t> &&val) :
     }
 }
 
-minidriver_t::reql_t::reql_t(minidriver_t *_r, pb::dummy_var_t var) :
+minidriver_t::reql_t::reql_t(minidriver_t *_r, dummy_var_t var) :
         r(_r), term(make_counted<generated_term_t>(Term::VAR, r->bt)) {
     counted_t<generated_term_t> arg_term =
         make_counted<generated_term_t>(Term::DATUM, r->bt);
@@ -80,15 +80,15 @@ minidriver_t::reql_t minidriver_t::fun(const minidriver_t::reql_t &body) {
     return reql_t(this, Term::FUNC, array(), std::move(body));
 }
 
-minidriver_t::reql_t minidriver_t::fun(pb::dummy_var_t a,
+minidriver_t::reql_t minidriver_t::fun(dummy_var_t a,
                                        const minidriver_t::reql_t &body) {
     return reql_t(this, Term::FUNC,
                   reql_t(this, Term::MAKE_ARRAY, dummy_var_to_sym(a).value),
                   std::move(body));
 }
 
-minidriver_t::reql_t minidriver_t::fun(pb::dummy_var_t a,
-                                       pb::dummy_var_t b,
+minidriver_t::reql_t minidriver_t::fun(dummy_var_t a,
+                                       dummy_var_t b,
                                        const minidriver_t::reql_t &body) {
     return reql_t(this, Term::FUNC,
                   reql_t(this, Term::MAKE_ARRAY,
@@ -105,7 +105,7 @@ minidriver_t::reql_t minidriver_t::reql_t::operator !() {
     return std::move(*this).call(Term::NOT);
 }
 
-minidriver_t::reql_t minidriver_t::reql_t::do_(pb::dummy_var_t arg,
+minidriver_t::reql_t minidriver_t::reql_t::do_(dummy_var_t arg,
                                                const minidriver_t::reql_t &body) {
     return r->fun(arg, std::move(body))(std::move(*this));
 }
@@ -114,12 +114,17 @@ minidriver_t::reql_t minidriver_t::db(const std::string &name) {
     return reql_t(this, Term::DB, expr(name));
 }
 
-minidriver_t::reql_t minidriver_t::var(pb::dummy_var_t v) {
+minidriver_t::reql_t minidriver_t::var(dummy_var_t v) {
     return reql_t(this, Term::VAR, static_cast<double>(dummy_var_to_sym(v).value));
 }
 
 minidriver_t::reql_t minidriver_t::var(const sym_t &v) {
     return reql_t(this, Term::VAR, static_cast<double>(v.value));
+}
+
+sym_t minidriver_t::dummy_var_to_sym(dummy_var_t dummy_var) {
+    // dummy_var values are non-negative, we map them to small negative values.
+    return sym_t(-1 - static_cast<int64_t>(dummy_var));
 }
 
 } // namespace ql

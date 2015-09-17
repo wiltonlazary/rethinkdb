@@ -14,7 +14,6 @@
 #include "extproc/extproc_spawner.hpp"
 #include "rdb_protocol/changefeed.hpp"
 #include "rdb_protocol/minidriver.hpp"
-#include "rdb_protocol/pb_utils.hpp"
 #include "rdb_protocol/protocol.hpp"
 #include "rdb_protocol/store.hpp"
 #include "rpc/directory/read_manager.hpp"

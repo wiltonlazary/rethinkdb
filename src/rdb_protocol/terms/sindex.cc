@@ -144,7 +144,7 @@ public:
             }
         } else {
             minidriver_t r(backtrace());
-            pb::dummy_var_t x = pb::dummy_var_t::SINDEXCREATE_X;
+            auto x = minidriver_t::dummy_var_t::SINDEXCREATE_X;
             
             compile_env_t empty_compile_env((var_visibility_t()));
             counted_t<func_term_t> func_term_term =

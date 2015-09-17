@@ -3,7 +3,6 @@
 
 #include "rdb_protocol/error.hpp"
 #include "rdb_protocol/op.hpp"
-#include "rdb_protocol/query.hpp"
 #include "math.hpp"
 
 namespace ql {

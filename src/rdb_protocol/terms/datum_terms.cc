@@ -4,7 +4,6 @@
 #include <string>
 
 #include "rdb_protocol/op.hpp"
-#include "rdb_protocol/query.hpp"
 
 namespace ql {
 

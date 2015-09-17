@@ -6,7 +6,6 @@
 
 #include "containers/counted.hpp"
 #include "rdb_protocol/op.hpp"
-#include "rdb_protocol/pb_utils.hpp"
 #include "rdb_protocol/minidriver.hpp"
 #include "utils.hpp"
 

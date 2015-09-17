@@ -9,9 +9,7 @@
 
 #include "rdb_protocol/datum.hpp"
 #include "rdb_protocol/env.hpp"
-#include "rdb_protocol/pb_utils.hpp"
 #include "rdb_protocol/ql2.pb.h"
-#include "rdb_protocol/query.hpp"
 #include "rdb_protocol/sym.hpp"
 #include "rdb_protocol/term_storage.hpp"
 
@@ -19,6 +17,43 @@ namespace ql {
 
 class minidriver_t {
 public:
+    // Dummy variables are used to identify the variables we use when constructing
+    // home-made reql functions.
+    //
+    // You aren't perfectly safe though -- what if you put your variable inside a term that
+    // expands its body into a reql function!  So, we use a bunch of different dummy
+    // variable names for use in different types.
+    enum class dummy_var_t {
+        IGNORED,  // For functions that ignore their parameter.  There's no special meaning
+                  // to this value, we just don't need to create separate names for these
+                  // instances.
+        VAL_UPSERT_REPLACEMENT,
+        GROUPBY_MAP_OBJ,
+        GROUPBY_MAP_ATTR,
+        GROUPBY_REDUCE_A,
+        GROUPBY_REDUCE_B,
+        GROUPBY_FINAL_OBJ,
+        GROUPBY_FINAL_VAL,
+        INNERJOIN_N,
+        INNERJOIN_M,
+        OUTERJOIN_N,
+        OUTERJOIN_M,
+        OUTERJOIN_LST,
+        EQJOIN_ROW,
+        EQJOIN_V,
+        UPDATE_OLDROW,
+        UPDATE_NEWROW,
+        DIFFERENCE_ROW,
+        SINDEXCREATE_X,
+        OBJORSEQ_VARNUM,
+        FUNC_GETFIELD,
+        FUNC_PLUCK,
+        FUNC_EQCOMPARISON,
+        FUNC_PAGE,
+        DISTINCT_ROW,
+        REPLACE_HELPER_ROW
+    };
+
     /** reql_t
      * A class that allows building generated_term_ts using the ReQL syntax.
      **/
@@ -64,7 +99,7 @@ public:
         REQL_METHOD(table, TABLE)
 
         reql_t operator !();
-        reql_t do_(pb::dummy_var_t arg, const reql_t &body);
+        reql_t do_(dummy_var_t arg, const reql_t &body);
 
         template <class... T>
         reql_t call(Term::TermType type, T &&... args) {
@@ -92,7 +127,7 @@ public:
         reql_t(minidriver_t *_r, const std::string &val);
         reql_t(minidriver_t *_r, const datum_t &d);
         reql_t(minidriver_t *_r, std::vector<reql_t> &&val);
-        reql_t(minidriver_t *_r, pb::dummy_var_t var);
+        reql_t(minidriver_t *_r, dummy_var_t var);
 
         template <class... T>
         reql_t(minidriver_t *_r, Term::TermType type, T &&... args) :
@@ -117,8 +152,8 @@ public:
 
     // Takes n r.var reql_ts, plus a function that takes n arguments
     reql_t fun(const reql_t &body);
-    reql_t fun(pb::dummy_var_t a, const reql_t &body);
-    reql_t fun(pb::dummy_var_t a, pb::dummy_var_t b, const reql_t &body);
+    reql_t fun(dummy_var_t a, const reql_t &body);
+    reql_t fun(dummy_var_t a, dummy_var_t b, const reql_t &body);
 
     template <class... T>
     reql_t array(T &&... args) {
@@ -152,12 +187,16 @@ public:
                       std::forward<Else>(c));
     }
 
-    reql_t var(pb::dummy_var_t var);
+    reql_t var(dummy_var_t var);
     reql_t var(const sym_t &var);
 
 private:
     friend class reql_t;
     backtrace_id_t bt;
+
+    friend class distinct_term_t;
+    // Returns the sym_t corresponding to a dummy_var_t.
+    static sym_t dummy_var_to_sym(dummy_var_t dummy_var);
 };
 
 

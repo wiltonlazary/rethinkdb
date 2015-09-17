@@ -6,7 +6,7 @@
 
 #include "arch/address.hpp"
 #include "concurrency/one_per_thread.hpp"
-#include "protob/protob.hpp"
+#include "client_protocol/server.hpp"
 
 namespace ql {
 class query_params_t;

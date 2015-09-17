@@ -2,7 +2,6 @@
 #include "rdb_protocol/terms/terms.hpp"
 
 #include "rdb_protocol/op.hpp"
-#include "rdb_protocol/query.hpp"
 
 namespace ql {
 

@@ -6,7 +6,6 @@
 #include "rdb_protocol/error.hpp"
 #include "rdb_protocol/minidriver.hpp"
 #include "rdb_protocol/op.hpp"
-#include "rdb_protocol/pb_utils.hpp"
 #include "rdb_protocol/term_walker.hpp"
 
 namespace ql {
@@ -59,8 +58,8 @@ public:
         raw_term_t left = in.arg(0);
         raw_term_t right = in.arg(1);
         raw_term_t func = in.arg(2);
-        auto n = pb::dummy_var_t::INNERJOIN_N;
-        auto m = pb::dummy_var_t::INNERJOIN_M;
+        auto n = minidriver_t::dummy_var_t::INNERJOIN_N;
+        auto m = minidriver_t::dummy_var_t::INNERJOIN_M;
 
         minidriver_t::reql_t term =
             r.expr(left).concat_map(
@@ -91,9 +90,9 @@ public:
         raw_term_t left = in.arg(0);
         raw_term_t right = in.arg(1);
         raw_term_t func = in.arg(2);
-        auto n = pb::dummy_var_t::OUTERJOIN_N;
-        auto m = pb::dummy_var_t::OUTERJOIN_M;
-        auto lst = pb::dummy_var_t::OUTERJOIN_LST;
+        auto n = minidriver_t::dummy_var_t::OUTERJOIN_N;
+        auto m = minidriver_t::dummy_var_t::OUTERJOIN_M;
+        auto lst = minidriver_t::dummy_var_t::OUTERJOIN_LST;
 
         minidriver_t::reql_t inner_concat_map =
             r.expr(right).concat_map(
@@ -131,8 +130,8 @@ private:
         raw_term_t left = in.arg(0);
         raw_term_t left_attr = in.arg(1);
         raw_term_t right = in.arg(2);
-        auto row = pb::dummy_var_t::EQJOIN_ROW;
-        auto v = pb::dummy_var_t::EQJOIN_V;
+        auto row = minidriver_t::dummy_var_t::EQJOIN_ROW;
+        auto v = minidriver_t::dummy_var_t::EQJOIN_V;
 
         minidriver_t::reql_t get_all =
             r.expr(right).get_all(
@@ -161,7 +160,7 @@ private:
         minidriver_t r(in.bt());
 
         raw_term_t val = in.arg(0);
-        auto x = pb::dummy_var_t::IGNORED;
+        auto x = minidriver_t::dummy_var_t::IGNORED;
 
         minidriver_t::reql_t term = r.expr(val).replace(r.fun(x, r.null()));
         term.copy_optargs_from_term(in);
@@ -179,8 +178,8 @@ private:
         minidriver_t r(in.bt());
         raw_term_t arg0 = in.arg(0);
         raw_term_t arg1 = in.arg(1);
-        auto old_row = pb::dummy_var_t::UPDATE_OLDROW;
-        auto new_row = pb::dummy_var_t::UPDATE_NEWROW;
+        auto old_row = minidriver_t::dummy_var_t::UPDATE_OLDROW;
+        auto new_row = minidriver_t::dummy_var_t::UPDATE_NEWROW;
 
         minidriver_t::reql_t term =
             r.expr(arg0).replace(
@@ -231,7 +230,7 @@ private:
         minidriver_t r(in.bt());
         raw_term_t arg0 = in.arg(0);
         raw_term_t arg1 = in.arg(1);
-        auto row = pb::dummy_var_t::DIFFERENCE_ROW;
+        auto row = minidriver_t::dummy_var_t::DIFFERENCE_ROW;
 
         minidriver_t::reql_t term =
             r.expr(arg0).filter(r.fun(row, !(r.expr(arg1).contains(r.var(row)))));

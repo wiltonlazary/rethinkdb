@@ -5,7 +5,7 @@
 #include "errors.hpp"
 #include <boost/optional.hpp>
 
-#include "protob/protob.hpp"
+#include "client_protocol/server.hpp"
 #include "rapidjson/document.h"
 #include "rdb_protocol/backtrace.hpp"
 #include "rdb_protocol/env.hpp"

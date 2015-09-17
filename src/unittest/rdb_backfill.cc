@@ -13,7 +13,6 @@
 #include "extproc/extproc_spawner.hpp"
 #include "rapidjson/document.h"
 #include "rdb_protocol/minidriver.hpp"
-#include "rdb_protocol/pb_utils.hpp"
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/protocol.hpp"
 #include "rdb_protocol/store.hpp"

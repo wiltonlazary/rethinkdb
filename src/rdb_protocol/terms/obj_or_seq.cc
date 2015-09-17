@@ -8,7 +8,6 @@
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/op.hpp"
 #include "rdb_protocol/pathspec.hpp"
-#include "rdb_protocol/pb_utils.hpp"
 #include "rdb_protocol/pseudo_literal.hpp"
 #include "rdb_protocol/minidriver.hpp"
 #include "rdb_protocol/term_walker.hpp"
@@ -23,7 +22,7 @@ namespace ql {
 raw_term_t make_obj_or_seq_func(const raw_term_t &term,
                                 poly_type_t poly_type) {
     minidriver_t r(term.bt());
-    auto varnum = pb::dummy_var_t::OBJORSEQ_VARNUM;
+    auto varnum = minidriver_t::dummy_var_t::OBJORSEQ_VARNUM;
 
     minidriver_t::reql_t body = r.var(varnum).call(term.type());
     body.copy_args_from_term(term, 1);

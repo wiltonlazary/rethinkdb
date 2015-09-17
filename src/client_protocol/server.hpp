@@ -1,6 +1,6 @@
 // Copyright 2010-2015 RethinkDB, all rights reserved.
-#ifndef PROTOB_PROTOB_HPP_
-#define PROTOB_PROTOB_HPP_
+#ifndef CLIENT_PROTOCOL_SERVER_HPP_
+#define CLIENT_PROTOCOL_SERVER_HPP_
 
 #include <set>
 #include <map>
@@ -150,4 +150,4 @@ private:
     int next_thread;
 };
 
-#endif /* PROTOB_PROTOB_HPP_ */
+#endif /* CLIENT_PROTOCOL_SERVER_HPP_ */

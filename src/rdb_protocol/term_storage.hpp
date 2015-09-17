@@ -23,8 +23,8 @@ const char *rapidjson_typestr(rapidjson::Type t);
 
 struct generated_term_t;
 
-using maybe_generated_term_t = boost::variant<const rapidjson::Value *,
-                                              counted_t<generated_term_t> >;
+typedef boost::variant<const rapidjson::Value *, counted_t<generated_term_t> >
+    maybe_generated_term_t;
 
 struct generated_term_t : public slow_atomic_countable_t<generated_term_t> {
     generated_term_t(Term::TermType _type, backtrace_id_t _bt);
@@ -36,12 +36,15 @@ struct generated_term_t : public slow_atomic_countable_t<generated_term_t> {
     const backtrace_id_t bt;
 };
 
+// A `raw_term_t` is an iterator through the original term tree received from the client.
+// This allows us to walk the structure without converting it into an intermediary
+// format.
 class raw_term_t {
 public:
     raw_term_t(const rapidjson::Value *source, std::string _optarg_name);
     raw_term_t(const maybe_generated_term_t &source, std::string _optarg_name);
     raw_term_t(const counted_t<generated_term_t> &source);
-    raw_term_t(const raw_term_t &other) = default;
+    raw_term_t(const raw_term_t &) = default;
 
     size_t num_args() const;
     size_t num_optargs() const;

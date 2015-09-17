@@ -12,7 +12,6 @@
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/minidriver.hpp"
 #include "rdb_protocol/op.hpp"
-#include "rdb_protocol/pb_utils.hpp"
 #include "rdb_protocol/term_walker.hpp"
 
 namespace ql {
@@ -223,11 +222,10 @@ private:
             std::string tbl_pkey = tbl_slice->get_tbl()->get_pkey();
             std::string idx_str = idx.has() ? idx->as_str().to_std() : tbl_pkey;
             if (idx.has() && idx_str == tbl_pkey) {
-                auto row = pb::dummy_var_t::DISTINCT_ROW;
-                std::vector<sym_t> distinct_args{dummy_var_to_sym(row)}; // NOLINT(readability/braces) yes we bloody well do need the ;
+                auto row = minidriver_t::dummy_var_t::DISTINCT_ROW;
                 minidriver_t r(backtrace());
                 map_wire_func_t mwf(r.var(row)[idx_str].root_term(),
-                                    std::vector<sym_t>(1, dummy_var_to_sym(row)));
+                    std::vector<sym_t>(1, minidriver_t::dummy_var_to_sym(row)));
 
                 counted_t<datum_stream_t> s = tbl_slice->as_seq(env->env, backtrace());
                 s->add_transformation(std::move(mwf), backtrace());

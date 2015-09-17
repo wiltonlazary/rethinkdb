@@ -9,7 +9,6 @@
 
 #include "containers/counted.hpp"
 #include "containers/uuid.hpp"
-#include "rdb_protocol/pb_utils.hpp"
 #include "rdb_protocol/query.hpp"
 #include "rdb_protocol/sym.hpp"
 #include "rdb_protocol/var_types.hpp"

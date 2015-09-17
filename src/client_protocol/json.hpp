@@ -1,6 +1,6 @@
 // Copyright 2010-2015 RethinkDB, all rights reserved.
-#ifndef PROTOB_JSON_SHIM_HPP_
-#define PROTOB_JSON_SHIM_HPP_
+#ifndef CLIENT_PROTOCOL_JSON_HPP_
+#define CLIENT_PROTOCOL_JSON_HPP_
 
 #include <stdint.h>
 
@@ -16,18 +16,6 @@ class query_cache_t;
 class query_params_t;
 }
 
-// Contains common declarations used by all wire protocols, this is a class rather than
-// a namespace so we don't have to extern stuff.
-class wire_protocol_t {
-public:
-    static const uint32_t TOO_LARGE_QUERY_SIZE;
-    static const uint32_t TOO_LARGE_RESPONSE_SIZE;
-
-    static const std::string unparseable_query_message;
-    static std::string too_large_query_message(uint32_t size);
-    static std::string too_large_response_message(size_t size);
-};
-
 // This is a class rather than a namespace so we can templatize the connection loop on
 // the protocol type.
 class json_protocol_t {
@@ -41,6 +29,7 @@ public:
                                                         signal_t *interruptor,
                                                         ql::query_cache_t *query_cache);
 
+    // Used by the HTTP ReQL server to write the query response into the HTTP response
     static void write_response_to_buffer(ql::response_t *response,
                                          rapidjson::StringBuffer *buffer_out);
 
@@ -50,4 +39,4 @@ public:
                               signal_t *interruptor);
 };
 
-#endif // PROTOB_JSON_SHIM_HPP_
+#endif // CLIENT_PROTOCOL_JSON_HPP_

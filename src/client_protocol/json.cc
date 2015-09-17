@@ -1,39 +1,19 @@
 // Copyright 2010-2015 RethinkDB, all rights reserved.
-#include "protob/json_shim.hpp"
+#include "client_protocol/json.hpp"
 
 #include "arch/io/network.hpp"
-#include "arch/runtime/coroutines.hpp"
+#include "client_protocol/protocols.hpp"
 #include "concurrency/pmap.hpp"
 #include "containers/scoped.hpp"
-#include "rapidjson/rapidjson.h"
+#include "rapidjson/document.h"
+#include "rapidjson/stringbuffer.h"
+#include "rapidjson/writer.h"
 #include "rdb_protocol/backtrace.hpp"
 #include "rdb_protocol/ql2.pb.h"
 #include "rdb_protocol/query.hpp"
 #include "rdb_protocol/response.hpp"
 #include "rdb_protocol/term_storage.hpp"
 #include "utils.hpp"
-
-#include "debug.hpp"
-#include "rapidjson/document.h"
-#include "rapidjson/stringbuffer.h"
-#include "rapidjson/writer.h"
-
-const uint32_t wire_protocol_t::TOO_LARGE_QUERY_SIZE = 64 * MEGABYTE;
-const uint32_t wire_protocol_t::TOO_LARGE_RESPONSE_SIZE =
-    std::numeric_limits<uint32_t>::max();
-
-const std::string wire_protocol_t::unparseable_query_message =
-    "Client is buggy (failed to deserialize query).";
-
-std::string wire_protocol_t::too_large_query_message(uint32_t size) {
-    return strprintf("Query size (%" PRIu32 ") greater than maximum (%" PRIu32 ").",
-                     size, TOO_LARGE_QUERY_SIZE - 1);
-}
-
-std::string wire_protocol_t::too_large_response_message(size_t size) {
-    return strprintf("Response size (%zu) greater than maximum (%" PRIu32 ").",
-                     size, TOO_LARGE_RESPONSE_SIZE - 1);
-}
 
 scoped_ptr_t<ql::query_params_t> json_protocol_t::parse_query_from_buffer(
         scoped_array_t<char> &&buffer, size_t offset,

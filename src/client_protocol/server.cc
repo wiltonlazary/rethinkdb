@@ -7,7 +7,7 @@
 // sure that we haven't included `errors.hpp` by the time we include `evp.h`.
 #include <openssl/evp.h> // NOLINT(build/include_order)
 
-#include "protob/protob.hpp" // NOLINT(build/include_order)
+#include "client_protocol/server.hpp" // NOLINT(build/include_order)
 
 #include <google/protobuf/stubs/common.h> // NOLINT(build/include_order)
 
@@ -22,13 +22,13 @@
 
 #include "arch/arch.hpp"
 #include "arch/io/network.hpp"
+#include "client_protocol/protocols.hpp"
 #include "clustering/administration/metadata.hpp"
 #include "concurrency/coro_pool.hpp"
 #include "concurrency/cross_thread_signal.hpp"
 #include "concurrency/queue/limited_fifo.hpp"
 #include "containers/auth_key.hpp"
 #include "perfmon/perfmon.hpp"
-#include "protob/json_shim.hpp"
 #include "rapidjson/stringbuffer.h"
 #include "rdb_protocol/backtrace.hpp"
 #include "rdb_protocol/base64.hpp"
@@ -180,10 +180,10 @@ size_t http_conn_cache_t::sha_hasher_t::operator()(const conn_key_t &x) const {
     return res;
 }
 
-struct protob_server_exc_t : public std::exception {
+struct client_server_exc_t : public std::exception {
 public:
-    explicit protob_server_exc_t(const std::string& data) : info(data) { }
-    ~protob_server_exc_t() throw () { }
+    explicit client_server_exc_t(const std::string& data) : info(data) { }
+    ~client_server_exc_t() throw () { }
     const char *what() const throw () { return info.c_str(); }
 private:
     std::string info;
@@ -223,7 +223,7 @@ std::string query_server_t::read_sized_string(tcp_conn_t *conn,
     conn->read(&str_length, sizeof(uint32_t), interruptor);
 
     if (str_length > max_size) {
-        throw protob_server_exc_t(length_error_msg);
+        throw client_server_exc_t(length_error_msg);
     }
 
     scoped_array_t<char> buffer(max_size);
@@ -242,7 +242,7 @@ auth_key_t query_server_t::read_auth_key(tcp_conn_t *conn,
     if (!ret.assign_value(auth_key)) {
         // This should never happen, since we already checked above.
         rassert(false);
-        throw protob_server_exc_t(length_error_msg);
+        throw client_server_exc_t(length_error_msg);
     }
     return ret;
 }
@@ -279,16 +279,16 @@ void query_server_t::handle_conn(const scoped_ptr_t<tcp_conn_descriptor_t> &ncon
         // With version 0_2 and up, the client drivers specifies the authorization key
         if (pre_2) {
             if (!auth_key.str().empty()) {
-                throw protob_server_exc_t(
+                throw client_server_exc_t(
                     "Authorization required but client does not support it.");
             }
         } else if (legal) {
             auth_key_t provided_auth = read_auth_key(conn.get(), &ct_keepalive);
             if (!timing_sensitive_equals(provided_auth, auth_key)) {
-                throw protob_server_exc_t("Incorrect authorization key.");
+                throw client_server_exc_t("Incorrect authorization key.");
             }
         } else {
-            throw protob_server_exc_t("Received an unsupported protocol version. "
+            throw client_server_exc_t("Received an unsupported protocol version. "
                                       "This port is for RethinkDB queries. Does your "
                                       "client driver version not match the server?");
         }
@@ -309,10 +309,10 @@ void query_server_t::handle_conn(const scoped_ptr_t<tcp_conn_descriptor_t> &ncon
             case VersionDummy::JSON:
                 break;
             case VersionDummy::PROTOBUF:
-                throw protob_server_exc_t(
+                throw client_server_exc_t(
                     "The PROTOBUF client protocol is no longer supported");
             default:
-                throw protob_server_exc_t(
+                throw client_server_exc_t(
                     strprintf("Unrecognized protocol specified: '%d'", wire_protocol));
         }
 
@@ -327,7 +327,7 @@ void query_server_t::handle_conn(const scoped_ptr_t<tcp_conn_descriptor_t> &ncon
         } else {
             unreachable();
         }
-    } catch (const protob_server_exc_t &ex) {
+    } catch (const client_server_exc_t &ex) {
         // Can't write response here due to coro switching inside exception handler
         init_error = strprintf("ERROR: %s\n", ex.what());
     } catch (const interrupted_exc_t &ex) {

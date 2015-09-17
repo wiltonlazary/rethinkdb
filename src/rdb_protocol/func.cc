@@ -342,7 +342,7 @@ counted_t<const func_t> new_constant_func(datum_t obj, backtrace_id_t bt) {
 
 counted_t<const func_t> new_get_field_func(datum_t key, backtrace_id_t bt) {
     minidriver_t r(bt);
-    pb::dummy_var_t obj = pb::dummy_var_t::FUNC_GETFIELD;
+    auto obj = minidriver_t::dummy_var_t::FUNC_GETFIELD;
     compile_env_t empty_compile_env((var_visibility_t()));
     counted_t<func_term_t> func_term =
         make_counted<func_term_t>(&empty_compile_env,
@@ -352,7 +352,7 @@ counted_t<const func_t> new_get_field_func(datum_t key, backtrace_id_t bt) {
 
 counted_t<const func_t> new_pluck_func(datum_t obj, backtrace_id_t bt) {
     minidriver_t r(bt);
-    pb::dummy_var_t var = pb::dummy_var_t::FUNC_PLUCK;
+    auto var = minidriver_t::dummy_var_t::FUNC_PLUCK;
     compile_env_t empty_compile_env((var_visibility_t()));
     counted_t<func_term_t> func_term =
         make_counted<func_term_t>(&empty_compile_env,
@@ -362,7 +362,7 @@ counted_t<const func_t> new_pluck_func(datum_t obj, backtrace_id_t bt) {
 
 counted_t<const func_t> new_eq_comparison_func(datum_t obj, backtrace_id_t bt) {
     minidriver_t r(bt);
-    pb::dummy_var_t var = pb::dummy_var_t::FUNC_EQCOMPARISON;
+    auto var = minidriver_t::dummy_var_t::FUNC_EQCOMPARISON;
     compile_env_t empty_compile_env((var_visibility_t()));
     counted_t<func_term_t> func_term =
         make_counted<func_term_t>(&empty_compile_env,
@@ -375,7 +375,7 @@ counted_t<const func_t> new_page_func(datum_t method, backtrace_id_t bt) {
         std::string name = method.as_str().to_std();
         if (name == "link-next") {
             minidriver_t r(bt);
-            pb::dummy_var_t info = pb::dummy_var_t::FUNC_PAGE;
+            auto info = minidriver_t::dummy_var_t::FUNC_PAGE;
             compile_env_t empty_compile_env((var_visibility_t()));
             counted_t<func_term_t> func_term =
                 make_counted<func_term_t>(&empty_compile_env,
