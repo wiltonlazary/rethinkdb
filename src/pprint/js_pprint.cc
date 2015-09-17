@@ -309,11 +309,11 @@ private:
                 return boost::make_optional(var.arg(0));
             default:
                 std::vector<counted_t<const document_t> > args;
-                for (size_t i = 1; i < args.size(); ++i) {
+                for (size_t i = 1; i < var.num_args(); ++i) {
                     if (!args.empty()) { args.push_back(comma_linebreak); }
                     args.push_back(visit_generic(var.arg(i)));
                 }
-                if (insert_trailing_comma) { args.push_back(comma_linebreak); }
+                if (insert_trailing_comma) { stack->push_back(comma_linebreak); }
                 stack->push_back(make_nest(reverse(std::move(args), false)));
 
                 in_r_expr = old_r_expr;
