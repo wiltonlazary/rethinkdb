@@ -527,7 +527,7 @@ void migrate_tables(io_backender_t *io_backender,
 
 }
 
-void migrate_cluster_metadata_to_v2_1(io_backender_t *io_backender,
+void migrate_cluster_metadata_to_v2_2(io_backender_t *io_backender,
                                       const base_path_t &base_path,
                                       buf_parent_t buf_parent,
                                       const void *old_superblock,
@@ -596,7 +596,7 @@ void migrate_cluster_metadata_to_v2_1(io_backender_t *io_backender,
                    sb->server_id, metadata, branch_history, out, interruptor);
 }
 
-void migrate_auth_metadata_to_v2_1(io_backender_t *io_backender,
+void migrate_auth_metadata_to_v2_2(io_backender_t *io_backender,
                                    const serializer_filepath_t &path,
                                    metadata_file_t::write_txn_t *out,
                                    signal_t *interruptor) {
