@@ -8,7 +8,6 @@
 #include "containers/counted.hpp"
 #include "containers/scoped.hpp"
 #include "rdb_protocol/error.hpp"
-#include "rdb_protocol/query.hpp"
 #include "rdb_protocol/wire_func.hpp"
 
 namespace ql {

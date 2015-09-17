@@ -8,7 +8,6 @@
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/protocol.hpp"
 #include "rdb_protocol/ql2.pb.h"
-#include "rdb_protocol/query.hpp"
 #include "rdb_protocol/term_walker.hpp"
 #include "stl_utils.hpp"
 

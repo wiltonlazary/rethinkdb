@@ -1,16 +1,12 @@
 // Copyright 2010-2015 RethinkDB, all rights reserved.
 #include "rdb_protocol/query_server.hpp"
 
-#include "concurrency/cross_thread_watchable.hpp"
-#include "concurrency/watchable.hpp"
 #include "perfmon/perfmon.hpp"
 #include "rdb_protocol/backtrace.hpp"
-#include "rdb_protocol/env.hpp"
-#include "rdb_protocol/profile.hpp"
+#include "rdb_protocol/ql2.pb.h"
 #include "rdb_protocol/query.hpp"
 #include "rdb_protocol/query_cache.hpp"
 #include "rdb_protocol/response.hpp"
-#include "rpc/semilattice/view/field.hpp"
 
 rdb_query_server_t::rdb_query_server_t(const std::set<ip_address_t> &local_addresses,
                                        int port,
@@ -27,22 +23,39 @@ int rdb_query_server_t::get_port() const {
     return server.get_port();
 }
 
-// Predeclaration for run, only used here
-namespace ql {
-    void run(query_params_t *query_params,
-             response_t *response_out,
-             signal_t *interruptor);
-}
-
 void rdb_query_server_t::run_query(ql::query_params_t *query_params,
                                    ql::response_t *response_out,
                                    signal_t *interruptor) {
     guarantee(interruptor != nullptr);
     guarantee(rdb_ctx->cluster_interface != nullptr);
     try {
-        scoped_perfmon_counter_t client_active(&rdb_ctx->stats.clients_active); // TODO: make this correct for parallelized queries
-        // `ql::run` will set the status code
-        ql::run(query_params, response_out, interruptor);
+        // TODO: make this perfmon correct now that we have parallelized queries
+        scoped_perfmon_counter_t client_active(&rdb_ctx->stats.clients_active);
+
+        switch (query_params->type) {
+        case Query::START: {
+            scoped_ptr_t<ql::query_cache_t::ref_t> query_ref =
+                query_params->query_cache->create(query_params, interruptor);
+            query_ref->fill_response(response_out);
+        } break;
+        case Query::CONTINUE: {
+            scoped_ptr_t<ql::query_cache_t::ref_t> query_ref =
+                query_params->query_cache->get(query_params, interruptor);
+            query_ref->fill_response(response_out);
+        } break;
+        case Query::STOP: {
+            query_params->query_cache->terminate_query(*query_params);
+            response_out->set_type(Response::SUCCESS_SEQUENCE);
+        } break;
+        case Query::NOREPLY_WAIT: {
+            query_params->query_cache->noreply_wait(*query_params, interruptor);
+            response_out->set_type(Response::WAIT_COMPLETE);
+        } break;
+        default: unreachable();
+        }
+    } catch (const ql::bt_exc_t &ex) {
+        response_out->fill_error(ex.response_type, ex.error_type,
+                                 ex.message, ex.bt_datum);
     } catch (const interrupted_exc_t &ex) {
         throw; // Interruptions should be handled by our caller, who can provide context
 #ifdef NDEBUG // In debug mode we crash, in release we send an error.

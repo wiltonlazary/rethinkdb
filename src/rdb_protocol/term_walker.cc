@@ -6,7 +6,6 @@
 #include "rdb_protocol/minidriver.hpp"
 #include "rdb_protocol/pseudo_time.hpp"
 #include "rdb_protocol/ql2.pb.h"
-#include "rdb_protocol/query.hpp"
 #include "rdb_protocol/term_storage.hpp"
 
 namespace ql {

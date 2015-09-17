@@ -2,16 +2,14 @@
 #ifndef RDB_PROTOCOL_WIRE_FUNC_HPP_
 #define RDB_PROTOCOL_WIRE_FUNC_HPP_
 
-#include <functional>
-#include <map>
-#include <string>
 #include <vector>
 
+#include "errors.hpp"
+#include <boost/optional.hpp>
+
 #include "containers/counted.hpp"
-#include "containers/uuid.hpp"
-#include "rdb_protocol/query.hpp"
 #include "rdb_protocol/sym.hpp"
-#include "rdb_protocol/var_types.hpp"
+#include "rdb_protocol/error.hpp"
 #include "rpc/serialize_macros.hpp"
 #include "version.hpp"
 

@@ -18,8 +18,8 @@
 #include "rdb_protocol/error.hpp"
 #include "rdb_protocol/optargs.hpp"
 #include "rdb_protocol/protocol.hpp"
-#include "rdb_protocol/query.hpp"
 #include "rdb_protocol/val.hpp"
+#include "rdb_protocol/var_types.hpp"
 #include "rdb_protocol/wire_func.hpp"
 
 class extproc_pool_t;
