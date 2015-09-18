@@ -11,7 +11,7 @@
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/minidriver.hpp"
-#include "rdb_protocol/query.hpp"
+#include "rdb_protocol/query_params.hpp"
 #include "rdb_protocol/response.hpp"
 #include "unittest/gtest.hpp"
 #include "unittest/rdb_env.hpp"

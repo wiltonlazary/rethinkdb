@@ -1,5 +1,5 @@
 // Copyright 2010-2015 RethinkDB, all rights reserved.
-#include "rdb_protocol/query.hpp"
+#include "rdb_protocol/query_params.hpp"
 
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/minidriver.hpp"

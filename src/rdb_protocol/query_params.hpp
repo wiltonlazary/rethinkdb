@@ -1,6 +1,6 @@
 // Copyright 2010-2015 RethinkDB, all rights reserved.
-#ifndef RDB_PROTOCOL_QUERY_HPP_
-#define RDB_PROTOCOL_QUERY_HPP_
+#ifndef RDB_PROTOCOL_QUERY_PARAMS_HPP_
+#define RDB_PROTOCOL_QUERY_PARAMS_HPP_
 
 #include "concurrency/new_semaphore.hpp"
 #include "containers/intrusive_list.hpp"
@@ -54,4 +54,4 @@ private:
 
 } // namespace ql
 
-#endif // RDB_PROTOCOL_QUERY_HPP_
+#endif // RDB_PROTOCOL_QUERY_PARAMS_HPP_

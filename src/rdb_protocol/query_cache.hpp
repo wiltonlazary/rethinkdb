@@ -24,7 +24,7 @@
 #include "rdb_protocol/error.hpp"
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/ql2.pb.h"
-#include "rdb_protocol/query.hpp"
+#include "rdb_protocol/query_params.hpp"
 #include "rdb_protocol/term.hpp"
 #include "rdb_protocol/term_storage.hpp"
 #include "rdb_protocol/wire_func.hpp"
