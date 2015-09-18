@@ -43,7 +43,7 @@ class raw_term_t {
 public:
     raw_term_t(const rapidjson::Value *source, std::string _optarg_name);
     raw_term_t(const maybe_generated_term_t &source, std::string _optarg_name);
-    raw_term_t(const counted_t<generated_term_t> &source);
+    explicit raw_term_t(const counted_t<generated_term_t> &source);
     raw_term_t(const raw_term_t &) = default;
 
     size_t num_args() const;

@@ -141,7 +141,7 @@ public:
         counted_t<generated_term_t> term;
     };
 
-    minidriver_t(backtrace_id_t bt);
+    explicit minidriver_t(backtrace_id_t bt);
 
     template <class T>
     reql_t expr(T &&d) {
