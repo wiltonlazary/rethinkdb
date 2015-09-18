@@ -95,8 +95,8 @@ def print_test_failure(test_name, test_src, message):
     failure_count += 1
     print('')
     print("TEST FAILURE: %s" % test_name.encode('utf-8'))
-    print("TEST BODY:    %s" % test_src.encode('utf-8'))
-    print(message)
+    print("   TEST BODY: %s" % test_src.encode('utf-8'))
+    print("   " + message)
     print('')
 
 def check_pp(src, query):
