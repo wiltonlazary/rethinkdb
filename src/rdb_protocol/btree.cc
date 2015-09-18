@@ -28,7 +28,7 @@
 #include "rdb_protocol/blob_wrapper.hpp"
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/geo_traversal.hpp"
-#include "rdb_protocol/lazy_json.hpp"
+#include "rdb_protocol/lazy_btree_val.hpp"
 #include "rdb_protocol/pseudo_geometry.hpp"
 #include "rdb_protocol/serialize_datum_onto_blob.hpp"
 #include "rdb_protocol/shards.hpp"
@@ -660,8 +660,8 @@ continue_bool_t rget_cb_t::handle_pair(
         return continue_bool_t::CONTINUE;
     }
 
-    lazy_json_t row(static_cast<const rdb_value_t *>(keyvalue.value()),
-                    keyvalue.expose_buf());
+    lazy_btree_val_t row(static_cast<const rdb_value_t *>(keyvalue.value()),
+                         keyvalue.expose_buf());
     ql::datum_t val;
 
     // Count stats whether or not we deserialize the value

@@ -19,7 +19,7 @@
 #include "rdb_protocol/geo/primitives.hpp"
 #include "rdb_protocol/geo/s2/s2.h"
 #include "rdb_protocol/geo/s2/s2latlng.h"
-#include "rdb_protocol/lazy_json.hpp"
+#include "rdb_protocol/lazy_btree_val.hpp"
 #include "rdb_protocol/profile.hpp"
 
 using geo::S2Point;
@@ -115,8 +115,8 @@ continue_bool_t geo_intersecting_cb_t::on_candidate(scoped_key_value_t &&keyvalu
         return continue_bool_t::CONTINUE;
     }
 
-    lazy_json_t row(static_cast<const rdb_value_t *>(keyvalue.value()),
-                    keyvalue.expose_buf());
+    lazy_btree_val_t row(static_cast<const rdb_value_t *>(keyvalue.value()),
+                         keyvalue.expose_buf());
     ql::datum_t val = row.get();
     slice->stats.pm_keys_read.record();
     slice->stats.pm_total_keys_read += 1;
