@@ -449,19 +449,20 @@ rapidjson::Value convert_optargs(const Term &src,
 
 rapidjson::Value convert_term_tree(const Term &src,
                                    rapidjson::MemoryPoolAllocator<> *allocator) {
-    rapidjson::Value dest;
     guarantee(src.has_type());
+
+    rapidjson::Value dest(rapidjson::kArrayType);
+    dest.PushBack(rapidjson::Value(static_cast<int>(src.type())), *allocator);
+
     switch(static_cast<int>(src.type())) {
     case Term::DATUM:
         guarantee(src.has_datum());
-        dest = convert_datum(src.datum(), allocator);
+        dest.PushBack(convert_datum(src.datum(), allocator), *allocator);
         break;
     case Term::MAKE_OBJ:
-        dest = convert_optargs(src, allocator);
+        dest.PushBack(convert_optargs(src, allocator), *allocator);
         break;
     default:
-        dest.SetArray();
-        dest.PushBack(rapidjson::Value(static_cast<int>(src.type())), *allocator);
         if (src.args_size() > 0) {
             dest.PushBack(rapidjson::Value(rapidjson::kArrayType), *allocator);
             rapidjson::Value *args = &dest[dest.Size() - 1];
@@ -475,8 +476,8 @@ rapidjson::Value convert_term_tree(const Term &src,
         if (src.optargs_size() > 0) {
             dest.PushBack(convert_optargs(src, allocator), *allocator);
         }
-        dest.PushBack(rapidjson::Value(backtrace_id_t::empty().get()), *allocator);
     }
+    dest.PushBack(rapidjson::Value(backtrace_id_t::empty().get()), *allocator);
     return dest;
 }
 
