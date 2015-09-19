@@ -736,7 +736,7 @@ continue_bool_t rget_cb_t::handle_pair(
         // accumulating `rget_item_t`s for a batch.
         return (*job.accumulator)(job.env,
                                   &data,
-                                  std::move(key),
+                                  key,
                                   lazy_sindex_val);
     } catch (const ql::exc_t &e) {
         io.response->result = e;
