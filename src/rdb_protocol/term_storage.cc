@@ -256,7 +256,7 @@ json_term_storage_t::json_term_storage_t(scoped_array_t<char> &&_original_data,
     }
     if (query_json.Size() == 0 || query_json.Size() > 3) {
         throw bt_exc_t(Response::CLIENT_ERROR, Response::QUERY_LOGIC,
-                       strprintf("Expected 0 to 3 elements in the top-level query, but found %d.",
+                       strprintf("Expected 1 to 3 elements in the top-level query, but found %d.",
                                  query_json.Size()),
                        backtrace_registry_t::EMPTY_BACKTRACE);
     }

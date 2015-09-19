@@ -112,7 +112,8 @@ void write_response_internal(ql::response_t *response,
                     thread_writer.StartArray();
                     size_t offset = per_thread * m;
                     size_t end = (m == num_threads - 1) ?
-                        response->data().size() : (per_thread * (m + 1)) - 1;
+                        response->data().size() : (per_thread * (m + 1));
+                    debugf("writing items %zu up to %zu\n", offset, end);
                     for (size_t i = offset; i < end; ++i) {
                         response->data()[i].write_json(&thread_writer);
                     }

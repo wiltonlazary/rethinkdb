@@ -133,14 +133,14 @@ Query: #{PP.pp(query, "")}\nBatch Conf: #{bc}
       $dispatch_hook = nil
     end
     $c.register_query(1337, {})
-    assert_equal({ "t"=>16, "b"=>[], "r"=>["Client is buggy (failed to deserialize query)."] },
+    assert_equal({ "t"=>16, "b"=>[], "r"=>["Failed to initialize query: Expected 1 to 3 elements in the top-level query, but found 4."] },
                  $c.wait($c.dispatch([1, 1337, 1, {}], 1337), nil))
     $c.register_query(-1, {})
-    assert_equal({ "t"=>16, "b"=>[], "r"=>["Client is buggy (failed to deserialize query)."] },
-                 $c.wait($c.dispatch(["a", 1337, 1, {}], -1), nil))
+    assert_equal({ "t"=>16, "b"=>[], "r"=>["Failed to initialize query: Expected a query type as a number, but found STRING."] },
+                 $c.wait($c.dispatch(["a", 1337, {}], -1), nil))
     $c.register_query(16, {})
-    assert_equal({ "t"=>16, "b"=>[], "r"=>["Client is buggy (failed to deserialize query)."] },
-                 $c.wait($c.dispatch([1, 1337, 1, 1], 16), nil))
+    assert_equal({ "t"=>16, "b"=>[], "r"=>["Failed to initialize query: Expected global optargs as an object, but found NUMBER."] },
+                 $c.wait($c.dispatch([1, 1337, 1], 16), nil))
   end
 
   def test_gmr_slow
