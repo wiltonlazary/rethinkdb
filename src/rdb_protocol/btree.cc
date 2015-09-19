@@ -611,6 +611,8 @@ private:
     job_data_t job; // What to do next (stateful).
     const boost::optional<rget_sindex_data_t> sindex; // Optional sindex information.
 
+    scoped_ptr_t<ql::env_t> sindex_env;
+
     // State for internal bookkeeping.
     bool bad_init;
     scoped_ptr_t<profile::disabler_t> disabler;
@@ -628,6 +630,16 @@ rget_cb_t::rget_cb_t(rget_io_data_t &&_io,
     io.response->last_key = !reversed(job.sorting)
         ? range.left
         : (!range.right.unbounded ? range.right.key() : store_key_t::max());
+
+    if (sindex) {
+        // Secondary index functions are deterministic (so no need for an
+        // rdb_context_t) and evaluated in a pristine environment (without global
+        // optargs).
+        sindex_env.init(new ql::env_t(job.env->interruptor,
+                                      ql::return_empty_normal_batches_t::NO,
+                                      sindex->func_reql_version));
+    }
+
     // We must disable profiler events for subtasks, because multiple instances
     // of `handle_pair`are going to run in parallel which  would otherwise corrupt
     // the sequence of events in the profiler trace.
@@ -684,24 +696,32 @@ continue_bool_t rget_cb_t::handle_pair(
             io.response->last_key = key;
         }
 
-        // Check whether we're out of sindex range.
-        ql::datum_t sindex_val; // NULL if no sindex.
-        if (sindex) {
-            // Secondary index functions are deterministic (so no need for an
-            // rdb_context_t) and evaluated in a pristine environment (without global
-            // optargs).
-            ql::env_t sindex_env(job.env->interruptor,
-                                 ql::return_empty_normal_batches_t::NO,
-                                 sindex->func_reql_version);
-            sindex_val = sindex->func->call(&sindex_env, val)->as_datum();
-            if (sindex->multi == sindex_multi_bool_t::MULTI
-                && sindex_val.get_type() == ql::datum_t::R_ARRAY) {
-                boost::optional<uint64_t> tag = *ql::datum_t::extract_tag(key);
-                guarantee(tag);
-                sindex_val = sindex_val.get(*tag, ql::NOTHROW);
-                guarantee(sindex_val.has());
+        // There are certain transformations and accumulators that need the
+        // secondary index value, though many don't. We don't want to compute
+        // it if we don't end up needing it, because that would be expensive.
+        // So we provide a function that computes the secondary index value
+        // lazily the first time it's called.
+        ql::datum_t sindex_val_cache; // null until initialized
+        auto lazy_sindex_val = [&]() -> ql::datum_t {
+            if (sindex && !sindex_val_cache.has()) {
+                sindex_val_cache =
+                    sindex->func->call(sindex_env.get(), val)->as_datum();
+                if (sindex->multi == sindex_multi_bool_t::MULTI
+                    && sindex_val_cache.get_type() == ql::datum_t::R_ARRAY) {
+                    boost::optional<uint64_t> tag = *ql::datum_t::extract_tag(key);
+                    guarantee(tag);
+                    sindex_val_cache = sindex_val_cache.get(*tag, ql::NOTHROW);
+                    guarantee(sindex_val_cache.has());
+                }
             }
-            if (!sindex->range.contains(sindex_val)) {
+            return sindex_val_cache;
+        };
+
+        // Check whether we're outside the sindex range.
+        // We only need to check this if the tree has been truncated.
+        // TODO! Is that correct?
+        if (sindex && ql::datum_t::key_is_truncated(key)) {
+            if (!sindex->range.contains(lazy_sindex_val())) {
                 return continue_bool_t::CONTINUE;
             }
         }
@@ -710,15 +730,14 @@ continue_bool_t rget_cb_t::handle_pair(
         data = {{ql::datum_t(), ql::datums_t{val}}};
 
         for (auto it = job.transformers.begin(); it != job.transformers.end(); ++it) {
-            (**it)(job.env, &data, sindex_val);
-            //                     ^^^^^^^^^^ NULL if no sindex
+            (**it)(job.env, &data, lazy_sindex_val);
         }
         // We need lots of extra data for the accumulation because we might be
         // accumulating `rget_item_t`s for a batch.
         return (*job.accumulator)(job.env,
                                   &data,
                                   std::move(key),
-                                  std::move(sindex_val)); // NULL if no sindex
+                                  lazy_sindex_val);
     } catch (const ql::exc_t &e) {
         io.response->result = e;
         return continue_bool_t::ABORT;

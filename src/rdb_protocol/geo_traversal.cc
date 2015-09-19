@@ -228,12 +228,12 @@ continue_bool_t collect_all_geo_intersecting_cb_t::emit_result(
     data = {{ql::datum_t(), ql::datums_t{std::move(val)}}};
 
     for (auto it = job.transformers.begin(); it != job.transformers.end(); ++it) {
-        (**it)(job.env, &data, sindex_val);
+        (**it)(job.env, &data, [&]() { return sindex_val; });
     }
     return (*job.accumulator)(job.env,
                               &data,
                               std::move(key),
-                              std::move(sindex_val)); // NULL if no sindex
+                              [&]() { return sindex_val; });
 }
 
 void collect_all_geo_intersecting_cb_t::emit_error(
