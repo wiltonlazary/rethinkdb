@@ -4,6 +4,7 @@
 #include <stack>
 
 #include "containers/binary_blob.hpp"
+#include "logger.hpp"
 
 RDB_IMPL_SERIALIZABLE_2_SINCE_v1_13(version_t, branch, timestamp);
 
@@ -186,40 +187,65 @@ region_map_t<version_t> version_find_common(
             result_versions.push_back(version_t::zero());
         } else {
             /* The versions are on two separate branches. */
-            branch_birth_certificate_t b1 = bh->get_branch(x.v1.branch);
-            branch_birth_certificate_t b2 = bh->get_branch(x.v2.branch);
-            /* To simplify the algorithm, make sure that `b1` has a later start point or
-            the two branches have equal start points */
-            if (b1.initial_timestamp < b2.initial_timestamp) {
-                std::swap(x.v1, x.v2);
-                std::swap(x.v1_equiv, x.v2_equiv);
-                std::swap(b1, b2);
-            }
-            /* One of two things are true (we don't know which):
-            1. `b2` is not descended from `b1`. In this case, recursing into `b1`'s
-                parents will get us closer to the common ancestor without taking us past
-                it.
-            2. The common ancestor is `b1`'s start point. (Or, if `v1` is `b1`'s start
-                point, the common ancestor might be in `v1_equiv`.) In this case,
-                recursing from `b1` to its parents will take `v1` past the common
-                ancestor. But this is OK, because the common ancestor will still be
-                recorded in `v1_equiv`. */
+            try {
+                branch_birth_certificate_t b1 = bh->get_branch(x.v1.branch);
+                branch_birth_certificate_t b2 = bh->get_branch(x.v2.branch);
+                /* To simplify the algorithm, make sure that `b1` has a later start point or
+                the two branches have equal start points */
+                // TODO!
+                bool b1_has_gced_parent = false;
+                b1.origin.visit(x.r,
+                [&](const region_t &, const version_t &vers) {
+                    b1_has_gced_parent = b1_has_gced_parent || !bh->is_branch_known(vers.branch);
+                });
+                // TODO!
+                if (b1_has_gced_parent) {
+                    fprintf(stderr, "Switching branches\n");
+                }
+                if (b1_has_gced_parent || b1.initial_timestamp < b2.initial_timestamp) {
+                    std::swap(x.v1, x.v2);
+                    std::swap(x.v1_equiv, x.v2_equiv);
+                    std::swap(b1, b2);
+                }
+                /* One of two things are true (we don't know which):
+                1. `b2` is not descended from `b1`. In this case, recursing into `b1`'s
+                    parents will get us closer to the common ancestor without taking us past
+                    it.
+                2. The common ancestor is `b1`'s start point. (Or, if `v1` is `b1`'s start
+                    point, the common ancestor might be in `v1_equiv`.) In this case,
+                    recursing from `b1` to its parents will take `v1` past the common
+                    ancestor. But this is OK, because the common ancestor will still be
+                    recorded in `v1_equiv`. */
 
-            /* Prepare the new value of `v1_equiv`. We know that `b1`'s start point
-            belongs in `v1_equiv`. And if `x.v1` is equal to `b1`'s start point, then we
-            should also include the previous values of `v1_equiv`. */
-            std::set<version_t, version_set_less_t> v1_equiv;
-            v1_equiv.insert(version_t(x.v1.branch, b1.initial_timestamp));
-            if (x.v1.timestamp == b1.initial_timestamp) {
-                v1_equiv.insert(x.v1_equiv.begin(), x.v1_equiv.end());
-            }
+                /* Prepare the new value of `v1_equiv`. We know that `b1`'s start point
+                belongs in `v1_equiv`. And if `x.v1` is equal to `b1`'s start point, then we
+                should also include the previous values of `v1_equiv`. */
+                std::set<version_t, version_set_less_t> v1_equiv;
+                v1_equiv.insert(version_t(x.v1.branch, b1.initial_timestamp));
+                if (x.v1.timestamp == b1.initial_timestamp) {
+                    v1_equiv.insert(x.v1_equiv.begin(), x.v1_equiv.end());
+                }
 
-            /* OK, now recurse to `b1`'s parents. */
-            guarantee(region_is_superset(b1.origin.get_domain(), x.r));
-            b1.origin.visit(x.r,
-            [&](const region_t &reg, const version_t &vers) {
-                stack.push({reg, vers, x.v2, v1_equiv, x.v2_equiv});
-            });
+                /* OK, now recurse to `b1`'s parents. */
+                guarantee(region_is_superset(b1.origin.get_domain(), x.r));
+                b1.origin.visit(x.r,
+                [&](const region_t &reg, const version_t &vers) {
+                    stack.push({reg, vers, x.v2, v1_equiv, x.v2_equiv});
+                });
+            } catch (const missing_branch_exc_t &e) {
+                /* This probably means that there's a branch history GC bug.
+                In release mode we ignore this, and put in the root branch. This
+                might cause us to rebackfill from scratch, but is probably better
+                than crashing. */
+#ifndef NDEBUG
+                throw;
+#endif
+                logERR("Ignoring missing branch while looking for common ancestor. "
+                       "This probably means that there is a bug in RethinkDB. Please "
+                       "report this at https://github.com/rethinkdb/rethinkdb/issues/");
+                result_regions.push_back(x.r);
+                result_versions.push_back(version_t::zero());
+            }
         }
     }
     return region_map_t<version_t>::from_unordered_fragments(

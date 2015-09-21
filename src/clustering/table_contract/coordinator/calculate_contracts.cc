@@ -576,6 +576,8 @@ void calculate_all_contracts(
                 whether we can switch off the `after_emergency_repair` flag (if it was
                 on). */
                 bool can_gc_branch_history = true, can_end_after_emergency_repair = true;
+                
+                // TODO!
                 for (const server_id_t &server : new_contract.replicas) {
                     auto it = this_contract_acks->find(server);
                     if (it == this_contract_acks->end() || (
@@ -586,6 +588,38 @@ void calculate_all_contracts(
                         /* At least one replica can't be confirmed to be on
                         `current_branch`, so we should keep the branch history around in
                         order to make it easy for that replica to rejoin later. */
+                        can_gc_branch_history = false;
+
+                        if (new_contract.voters.count(server) == 1 ||
+                                (static_cast<bool>(new_contract.temp_voters) &&
+                                    new_contract.temp_voters->count(server) == 1)) {
+                            /* If the `after_emergency_repair` flag is set to `true`, we
+                            need to leave it set to `true` until we can confirm that
+                            the branch history is intact. */
+                            can_end_after_emergency_repair = false;
+                        }
+                    }
+                }
+                
+                
+                /* We use the union of replicas from `old_contract` and `new_contract`
+                for this check, to be extra conservative. (TODO! More info why this matters) */
+                std::set<server_id_t> all_replicas = old_contract.replicas;
+                all_replicas.insert(new_contract.replicas.begin(), new_contract.replicas.end());
+                for (const server_id_t &server : all_replicas) {
+                    auto it = this_contract_acks->find(server);
+                    if (it == this_contract_acks->end() || (
+                            it->second.state !=
+                                contract_ack_t::state_t::primary_ready &&
+                            it->second.state !=
+                                contract_ack_t::state_t::secondary_streaming)) {
+                        /* At least one replica can't be confirmed to be on
+                        `current_branch`, so we should keep the branch history around in
+                        order to make it easy for that replica to rejoin later. */
+                        // TODO!
+                        if(can_gc_branch_history) {
+                            fprintf(stderr, "Criteria disagreed\n");
+                        }
                         can_gc_branch_history = false;
 
                         if (new_contract.voters.count(server) == 1 ||
@@ -621,6 +655,11 @@ void calculate_all_contracts(
                 new_contract_vector.push_back(new_contract);
             });
         }
+    }
+
+    // TODO!
+    if (!remove_branches_out->empty()) {
+        fprintf(stderr, "Removing some branches\n");
     }
 
     /* Put the new contracts into a `region_map_t` to coalesce adjacent regions that have
