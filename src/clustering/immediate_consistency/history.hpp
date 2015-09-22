@@ -170,15 +170,15 @@ bool version_is_ancestor(
     THROWS_ONLY(missing_branch_exc_t);
 
 /* `version_find_common()` finds the last common ancestor of two other versions. The
-result may be different for different sub-regions, so it returns a `region_map_t`. Throws
-`missing_branch_exc_t` if the question can't be answered because some history is missing.
-*/
+result may be different for different sub-regions, so it returns a `region_map_t`.
+If a piece of the history is missing, it assumes the zero version to be the common
+ancestor. */
 region_map_t<version_t> version_find_common(
     const branch_history_reader_t *bh,
     const version_t &v1,
     const version_t &v2,
     const region_t &relevant_region)
-    THROWS_ONLY(missing_branch_exc_t);
+    THROWS_NOTHING;
 
 /* `version_find_branch_common()` is like `version_find_common()` but in place of one of
 the versions, it uses the latest version on the given branch. */
@@ -187,7 +187,7 @@ region_map_t<version_t> version_find_branch_common(
     const version_t &version,
     const branch_id_t &branch,
     const region_t &relevant_region)
-    THROWS_ONLY(missing_branch_exc_t);
+    THROWS_NOTHING;
 
 /* `branch_history_combiner_t` is a `branch_history_reader_t` that reads from two or more
 other `branch_history_reader_t`s. */
@@ -196,7 +196,7 @@ public:
     branch_history_combiner_t(
         const branch_history_reader_t *_r1,
         const branch_history_reader_t *_r2)
-        : r1(_r1), r2(_r2) { } 
+        : r1(_r1), r2(_r2) { }
     branch_birth_certificate_t get_branch(const branch_id_t& branch)
         const THROWS_ONLY(missing_branch_exc_t);
     bool is_branch_known(const branch_id_t &branch) const THROWS_NOTHING;
@@ -208,7 +208,7 @@ private:
 to add branches to the branch history. This is used for a branch history which is backed
 to disk. */
 class branch_history_manager_t :
-    public branch_history_reader_t,    
+    public branch_history_reader_t,
     public home_thread_mixin_t
 {
 public:

@@ -136,7 +136,7 @@ region_map_t<version_t> version_find_common(
         const version_t &initial_v1,
         const version_t &initial_v2,
         const region_t &initial_region)
-        THROWS_ONLY(missing_branch_exc_t) {
+        THROWS_NOTHING {
     /* In order to limit recursion depth in pathological cases, we use a heap-stack
     instead of the real stack. `stack` stores the sub-regions left to process and
     `result` stores the sub-regions that we've already solved. We repeatedly pop
@@ -192,15 +192,17 @@ region_map_t<version_t> version_find_common(
                 branch_birth_certificate_t b2 = bh->get_branch(x.v2.branch);
                 /* To simplify the algorithm, make sure that `b1` has a later start point or
                 the two branches have equal start points */
-                // TODO!
                 bool b1_has_gced_parent = false;
-                b1.origin.visit(x.r,
-                [&](const region_t &, const version_t &vers) {
-                    b1_has_gced_parent = b1_has_gced_parent || !bh->is_branch_known(vers.branch);
-                });
-                // TODO!
-                if (b1_has_gced_parent) {
-                    fprintf(stderr, "Switching branches\n");
+                if (b1.initial_timestamp == b2.initial_timestamp) {
+                    /* If the timestamps are equal, and at least one parent of
+                    `b1` is missing (usually: it was garbage collected), we
+                    prefer recursing into `b2` so we still have a chance at
+                    finding a common ancestor that is not the root. */
+                    b1.origin.visit(x.r,
+                    [&](const region_t &, const version_t &vers) {
+                        b1_has_gced_parent = b1_has_gced_parent ||
+                                             !bh->is_branch_known(vers.branch);
+                    });
                 }
                 if (b1_has_gced_parent || b1.initial_timestamp < b2.initial_timestamp) {
                     std::swap(x.v1, x.v2);
@@ -232,17 +234,26 @@ region_map_t<version_t> version_find_common(
                 [&](const region_t &reg, const version_t &vers) {
                     stack.push({reg, vers, x.v2, v1_equiv, x.v2_equiv});
                 });
-            } catch (const missing_branch_exc_t &e) {
-                /* This probably means that there's a branch history GC bug.
-                In release mode we ignore this, and put in the root branch. This
-                might cause us to rebackfill from scratch, but is probably better
-                than crashing. */
-#ifndef NDEBUG
-                throw;
-#endif
-                logERR("Ignoring missing branch while looking for common ancestor. "
-                       "This probably means that there is a bug in RethinkDB. Please "
-                       "report this at https://github.com/rethinkdb/rethinkdb/issues/");
+            } catch (const missing_branch_exc_t &) {
+                /* This commonly happens if parts of the branch history were
+                garbage collected. While the branch garbage collector in the
+                contract coordinator usually avoids this, it cannot always avoid
+                this under the following circumstance:
+                - a replica is removed for a given region
+                - the server starts erasing data for the region
+                - before the server has finished erasing all data, the server
+                 is added back as a replica for an overlapping region
+
+                Note that the coordinator has no way to know which branch the
+                region that is being erased is on, because erasing replicas do not
+                appear in any contract and do not send contract acks to the
+                coordinator. Hence the coordinator might garbage collect a branch
+                that later resurfaces when the server is added back as a replica.
+
+                We simply put in the zero version. This is correct, since zero is
+                a common ancestor of every other version (though it might lead to
+                backfilling from scratch where it isn't actually necessary). */
+                logINF("Could not find the common ancestor for a pair of versions.");
                 result_regions.push_back(x.r);
                 result_versions.push_back(version_t::zero());
             }
@@ -257,7 +268,7 @@ region_map_t<version_t> version_find_branch_common(
         const version_t &version,
         const branch_id_t &branch,
         const region_t &relevant_region)
-        THROWS_ONLY(missing_branch_exc_t) {
+        THROWS_NOTHING {
     version_t branch_version;
     if (branch.is_nil()) {
         branch_version = version_t::zero();

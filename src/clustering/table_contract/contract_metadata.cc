@@ -58,32 +58,28 @@ void contract_ack_t::sanity_check(
         (static_cast<bool>(contract.temp_voters) &&
             contract.temp_voters->count(server) == 1);
     if (!contract.after_emergency_repair && is_voter) {
-        try {
-            if (state == state_t::primary_need_branch) {
-                branch_history_combiner_t combiner(
-                    &raft_state.branch_history, &branch_history);
-                version_t branch_initial_version(
-                    *branch,
-                    branch_history.get_branch(*branch).initial_timestamp);
-                raft_state.current_branches.visit(region,
-                [&](const region_t &subregion, const branch_id_t &cur_branch) {
+        if (state == state_t::primary_need_branch) {
+            branch_history_combiner_t combiner(
+                &raft_state.branch_history, &branch_history);
+            version_t branch_initial_version(
+                *branch,
+                branch_history.get_branch(*branch).initial_timestamp);
+            raft_state.current_branches.visit(region,
+            [&](const region_t &subregion, const branch_id_t &cur_branch) {
+                version_find_branch_common(
+                    &combiner, branch_initial_version, cur_branch, subregion);
+            });
+        } else if (state == state_t::secondary_need_primary) {
+            branch_history_combiner_t combiner(
+                &raft_state.branch_history, &branch_history);
+            version->visit(region,
+            [&](const region_t &subregion, const version_t &subversion) {
+                raft_state.current_branches.visit(subregion,
+                [&](const region_t &subsubregion, const branch_id_t &cur_branch) {
                     version_find_branch_common(
-                        &combiner, branch_initial_version, cur_branch, subregion);
+                        &combiner, subversion, cur_branch, subsubregion);
                 });
-            } else if (state == state_t::secondary_need_primary) {
-                branch_history_combiner_t combiner(
-                    &raft_state.branch_history, &branch_history);
-                version->visit(region,
-                [&](const region_t &subregion, const version_t &subversion) {
-                    raft_state.current_branches.visit(subregion,
-                    [&](const region_t &subsubregion, const branch_id_t &cur_branch) {
-                        version_find_branch_common(
-                            &combiner, subversion, cur_branch, subsubregion);
-                    });
-                });
-            }
-        } catch (const missing_branch_exc_t &) {
-            crash("Branch history is missing pieces");
+            });
         }
     }
 }
