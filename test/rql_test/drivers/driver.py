@@ -360,7 +360,7 @@ class PyTestDriver:
         
         compOptions = {}
         if 'precision' in testopts:
-            compOptions['precision'] = testopts['precision']
+            compOptions['precision'] = float(testopts['precision']) # errors will bubble up
         
         conn = None
         if 'new-connection' in testopts and testopts['new-connection'] is True:
