@@ -6,7 +6,6 @@ from __future__ import print_function
 
 import atexit, collections, copy, datetime, distutils.version, distutils.spawn, itertools, json, optparse, os
 import re, resource, shutil, signal, stat, string, subprocess, sys, tempfile, threading, time, traceback, warnings
-import repr as reprlib
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "common"))
 import driver, parsePolyglot, test_exceptions, utils
@@ -19,12 +18,22 @@ try:
     import Queue
 except ImportError:
     import queue as Queue
+try:
+    import reprlib
+except ImportError:
+    import repr as reprlib
 
 # -- repr subclass
 
 class ReprReplace(reprlib.Repr):
-    def repr_unicode(self, obj, level):
+    def repr_str(self, obj, level):
         result = repr(obj)
+        if result.startswith("'"):
+            result = '"' + result[1:-1].replace('"', '\\"') + '"'
+        return result
+    
+    def repr_unicode(self, obj, level):
+        result = self.repr_str(obj, level)
         if len(result) > 1 and result[:2] in ('u"', "u'"):
             result = result[1:]
         return result
@@ -480,13 +489,9 @@ class RbLang(SrcLang):
                     
                 except Exception: pass
         
-        # - return the string
+        # - return the string, with extranious newlines striped out
         
-        return ''.join(source)
-    
-    def translate_query(self, src, quote=True, name=False):
-        result = super(RbLang, self).translate_query(src, quote=quote, name=name)
-        return result.replace('\\n', '\n')
+        return ''.join((x.strip('\n') for x in source))
     
     def get_interpreter_version(self, executablePath):
         '''Return the version string for this interpreter'''
@@ -695,8 +700,11 @@ class TestGroup(object):
                 
                 variableMatch = cls.variableRegex.match(test_case)
                 if variableMatch:
-                    testCode.testopts['variable'] = lang.nametranslate(variableMatch.group('variableName'))
-                    test_case = variableMatch.group('expression')
+                    testCode.testopts['variable'] = parsePolyglot.yamlValue(lang.nametranslate(variableMatch.group('variableName')))
+                    if isinstance(test_case, parsePolyglot.yamlValue):
+                        test_case = parsePolyglot.yamlValue(variableMatch.group('expression'), test_case.linenumber)
+                    else:
+                        test_case = variableMatch.group('expression')
                 
                 try:
                     out.write("test(%(code)s, %(expected)s, %(name)s, %(driveropts)s, %(testopts)s)\n" % {

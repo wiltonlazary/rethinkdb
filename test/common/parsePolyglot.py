@@ -15,18 +15,19 @@ except NameError:
 
 # ==
 
-def parseYAML(source):
-    
-    class yamlValue(unicode):
-        linenumber = None
-        def __new__(cls, value, linenumber):
-            real = unicode.__new__(cls, value.decode('utf-8'))
+class yamlValue(unicode):
+    linenumber = None
+    def __new__(cls, value, linenumber=None):
+        real = unicode.__new__(cls, value.decode('utf-8'))
+        if linenumber is not None:
             real.linenumber = int(linenumber)
-            return real
-        
-        def __repr__(self):
-            real = super(yamlValue, self).__repr__()
-            return real.lstrip('u')
+        return real
+    
+    def __repr__(self):
+        real = super(yamlValue, self).__repr__()
+        return real.lstrip('u')
+
+def parseYAML(source):
     
     def debug(message):
         if printDebug and message:
@@ -103,7 +104,7 @@ def parseYAML(source):
                 debug('\tvalue')
                 if returnItem is None:
                     returnItem = yamlValue('', linenumber)
-                    if lineContent.strip() == '|':
+                    if lineContent.strip() in ('|', '|-', '>'):
                         continue # yaml multiline marker
                 elif not isinstance(returnItem, yamlValue):
                     raise Exception('Bad YAML, got a value while working on a %s on line %d: %s' % (returnItem.__class__.__name__, linenumber, line.rstrip()))
