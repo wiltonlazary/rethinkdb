@@ -489,7 +489,7 @@ class RbLang(SrcLang):
                     
                 except Exception: pass
         
-        # - return the string, with extranious newlines striped out
+        # - return the string, with extraneous newlines striped out
         
         return ''.join((x.strip('\n') for x in source))
     
@@ -725,7 +725,6 @@ class TestGroup(object):
                             table_name = mo.group(1)
                             out.write('shard("%s")\n' % table_name)
                 except Exception as e:
-                    print('-----', type(test_case))
                     debug(traceback.format_exc())
                     raise Exception("Error while processing test: %s\n%s\n%s" % (testName, str(testCode.command), str(e)))
 
@@ -2011,7 +2010,7 @@ def main():
     
     # -- report final results
     
-    failedTestNames = sorted([test.name for test in failedTests])
+    failedTestNames = [test.name for test in failedTests].sort()
     
     if cancelRun is True:
         print('\n== Canceled after %.2f seconds with %d test%s running. %s test%s passed, %s test%s failed, and %s test%s remaining%s' % (

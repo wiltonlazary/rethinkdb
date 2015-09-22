@@ -163,7 +163,7 @@ tests:
       py:
         - r.expr(null) < null
         - null < r.expr(null)
-        - r.expr(null).gt(null)
+        - r.expr(null).lt(null)
       rb: r(null) < null
       ot: false
 
@@ -171,7 +171,7 @@ tests:
       py:
         - r.expr(null) > null
         - null > r.expr(null)
-        - r.expr(null).lt(null)
+        - r.expr(null).gt(null)
       rb: r(null) > null
       ot: false
 

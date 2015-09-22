@@ -1,5 +1,8 @@
 desc: Tests for basic usage of the add operation
 tests:
+    - cd: r.add(1, 1)
+      ot: 2
+    
     - js: r(1).add(1)
       py:
         - r.expr(1) + 1
