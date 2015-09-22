@@ -149,7 +149,7 @@ if __name__ == '__main__':
     (options, args) = parser.parse_args()
     printDebug = options.debug
     
-    if len(args) > 1:
+    if len(args) < 1:
        parser.error('%s needs files to process' % os.path.basename(__file__))
     
     for filePath in args:
