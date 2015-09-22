@@ -8,13 +8,8 @@ import parsePolyglot
 class Test_parseYAML(unittest.TestCase):
     
     def test_simple(self):
-        res = parsePolyglot.parseYAML('''     # leading comment
-desc: Simple example
-tests:
-    - cd: alpha
-      ot: gamma
-# comment''')
-        self.assertEqual(res, {'desc':'Simple example', 'tests':[{'cd':'alpha', 'ot':'gamma'}]})
+        res = parsePolyglot.parseYAML(''' # comment\ndesc: simple\ntests:\n  - cd: alpha\n    ot: gamma\n# comment''')
+        self.assertEqual(res, {'desc':'simple', 'tests':[{'cd':'alpha', 'ot':'gamma'}]})
     
     # - line numbers
     def test_line_numbers(self):
@@ -38,16 +33,10 @@ tests:
         res = parsePolyglot.parseYAML('''a:\n  b: 1\n  c: 2\n''')
         self.assertEqual(res, {'a': {'b': '1', 'c': '2'}})
     def test_dict_in_dict_b(self):
-        res = parsePolyglot.parseYAML('''
-a: b: 1
-   c: 2''') # start on same line
+        res = parsePolyglot.parseYAML('''a: b: 1\n   c: 2''') # start on same line
         self.assertEqual(res, {'a': {'b': '1', 'c': '2'}})
     def test_mixed_nesting(self):
-        
-        res = parsePolyglot.parseYAML('''
-- alpha:
-   - beta:
-      - gamma: smith''')
+        res = parsePolyglot.parseYAML('''- alpha:\n   - beta:\n      - gamma: smith''')
         self.assertEqual(res, [{'alpha':[{'beta':[{'gamma':'smith'}]}]}])
         
 

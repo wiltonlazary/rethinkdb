@@ -33,7 +33,7 @@ def parseYAML(source):
         if printDebug and message:
             message = str(message).rstrip()
             if message:
-                sys.stdout.write(message + "\n")
+                print(message)
                 sys.stdout.flush()
     
     commentLineRegex = re.compile('^\s*#')
@@ -149,11 +149,13 @@ if __name__ == '__main__':
     (options, args) = parser.parse_args()
     printDebug = options.debug
     
-    if len(args) != 2:
-       parser.error('%s takes two arguements: a file path and a language code' % os.path.basename(__file__))
-    filePath, language = args
+    if len(args) > 1:
+       parser.error('%s needs files to process' % os.path.basename(__file__))
     
-    if not os.path.isfile(filePath):
-        sys.exit('%s requires the first argument to be a file' % os.path.basename(__file__))
+    for filePath in args:
+        if not os.path.isfile(filePath):
+            sys.exit('target is not an existing file: %s' % os.path.basename(__file__))
     
-    pprint.pprint(parseYAML(filePath))
+    for filePath in args:
+        print('=== %s' % filePath)
+        pprint.pprint(parseYAML(filePath))
