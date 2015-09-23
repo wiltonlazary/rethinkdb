@@ -30,7 +30,7 @@ inline bool is_aux_block_id(const block_id_t id) {
 // Maps from the aux block ID space into a block ID space that starts at 0.
 // This is useful if you want to use an aux block ID to index into an array for
 // example.
-inline block_id_t convert_aux_block_id(const block_id_t id) {
+inline block_id_t make_aux_block_id_relative(const block_id_t id) {
     rassert(is_aux_block_id(id));
     return id - FIRST_AUX_BLOCK_ID;
 }

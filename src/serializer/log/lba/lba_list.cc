@@ -194,7 +194,7 @@ void lba_list_t::set_block_info(block_id_t block, repli_timestamp_t recency,
                                 flagged_off64_t offset, uint32_t ser_block_size,
                                 file_account_t *io_account, extent_transaction_t *txn) {
     rassert(state == state_ready || state == state_gc_shutting_down);
-    
+
     guarantee(ser_block_size <= std::numeric_limits<uint16_t>::max());
     uint16_t ser_block_size_16 = static_cast<uint16_t>(ser_block_size);
 
@@ -240,8 +240,6 @@ void lba_list_t::move_inline_entries_to_extents(file_account_t *io_account, exte
         current disk_structure, so it's meaningless but harmless to call add_entry(). However,
         since our changes are also being put into the in_memory_index, they will be
         incorporated into the new disk_structure that the GC creates, so they won't get lost. */
-        // TODO! Explain this assert
-        CT_ASSERT(FIRST_AUX_BLOCK_ID % LBA_SHARD_FACTOR == 0);
         disk_structures[e.block_id % LBA_SHARD_FACTOR]->add_entry(
                 e.block_id,
                 e.recency,
@@ -336,10 +334,13 @@ void lba_list_t::gc(int lba_shard, auto_drainer_t::lock_t) {
     for (block_id_t id = lba_shard; id < aux_end_id; id += LBA_SHARD_FACTOR) {
         // Once we are done with the regular block IDs, continue with the aux
         // block IDs.
+        // This assertion makes sure that we can simply restart at
+        // `lba_shard + FIRST_AUX_BLOCK_ID` and still be on the correct shard.
+        CT_ASSERT(FIRST_AUX_BLOCK_ID % LBA_SHARD_FACTOR == 0);
         if (!is_aux_block_id(id) && id >= end_id) {
             id = lba_shard + FIRST_AUX_BLOCK_ID;
         }
-        
+
         flagged_off64_t off = get_block_offset(id);
         if (off.has_value()) {
             uint32_t ser_block_size = get_ser_block_size(id);
@@ -451,7 +452,7 @@ bool lba_list_t::we_want_to_gc(int i) {
     int entries_per_extent = disk_structures[i]->num_entries_that_can_fit_in_an_extent();
     int64_t entries_total = disk_structures[i]->extents_in_superblock.size() * entries_per_extent;
     int64_t entries_live = end_block_id() / LBA_SHARD_FACTOR
-                            + convert_aux_block_id(end_aux_block_id()) / LBA_SHARD_FACTOR;
+                            + make_aux_block_id_relative(end_aux_block_id()) / LBA_SHARD_FACTOR;
     if ((entries_live / static_cast<double>(entries_total)) > LBA_MIN_UNGARBAGE_FRACTION) {  // TODO: multiply both sides by common denominator
         return false;
     }

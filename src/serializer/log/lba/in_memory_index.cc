@@ -18,7 +18,7 @@ block_id_t in_memory_index_t::end_aux_block_id() {
 
 index_block_info_t in_memory_index_t::get_block_info(block_id_t id) {
     if (is_aux_block_id(id)) {
-        index_aux_block_info_t aux_info = aux_infos_.get(convert_aux_block_id(id));
+        index_aux_block_info_t aux_info = aux_infos_.get(make_aux_block_id_relative(id));
         return index_block_info_t(aux_info.offset,
                                    repli_timestamp_t::invalid,
                                    aux_info.ser_block_size);
@@ -38,7 +38,7 @@ void in_memory_index_t::set_block_info(block_id_t id, repli_timestamp_t recency,
         // discarded anyway.
         rassert(recency == repli_timestamp_t::invalid);
         index_aux_block_info_t info(offset, ser_block_size);
-        aux_infos_.set(convert_aux_block_id(id), info);
+        aux_infos_.set(make_aux_block_id_relative(id), info);
     } else {
         if (id >= end_block_id_) {
             end_block_id_ = id + 1;
