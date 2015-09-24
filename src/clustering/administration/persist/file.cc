@@ -313,33 +313,35 @@ metadata_file_t::metadata_file_t(
 
     cluster_version_t metadata_version =
         magic_to_version(*static_cast<block_magic_t *>(sb_data));
-    if (metadata_version == cluster_version_t::v1_14 ||
-            metadata_version == cluster_version_t::v1_15 ||
-            metadata_version == cluster_version_t::v1_16 ||
-            metadata_version == cluster_version_t::v2_0) {
-        scoped_malloc_t<void> sb_copy(cache->max_block_size().value());
-        memcpy(sb_copy.get(), sb_data, cache->max_block_size().value());
-        init_metadata_superblock(sb_data, cache->max_block_size().value());
-        sb_write.reset();
-        sb_lock.reset();
+    switch (metadata_version) {
+    case cluster_version_t::v1_14: // fallthrough intentional
+    case cluster_version_t::v1_15: // fallthrough intentional
+    case cluster_version_t::v1_16: // fallthrough intentional
+    case cluster_version_t::v2_0: {
+            scoped_malloc_t<void> sb_copy(cache->max_block_size().value());
+            memcpy(sb_copy.get(), sb_data, cache->max_block_size().value());
+            init_metadata_superblock(sb_data, cache->max_block_size().value());
+            sb_write.reset();
+            sb_lock.reset();
 
-        logNTC("Migrating cluster metadata to v2.2");
-        migrate_cluster_metadata_to_v2_2(
-            io_backender, base_path,
-            buf_parent_t(&write_txn.txn), sb_copy.get(), &write_txn,
-            interruptor);
-    } else if (metadata_version != cluster_version_t::LATEST_DISK) {
-        update_metadata_superblock_version(sb_data);
-        sb_write.reset();
-        sb_lock.reset();
+            logNTC("Migrating cluster metadata to v2.2");
+            migrate_cluster_metadata_to_v2_2(
+                io_backender, base_path,
+                buf_parent_t(&write_txn.txn), sb_copy.get(), &write_txn,
+                interruptor);
+        } break;
+    case cluster_version_t::v2_1: {
+            update_metadata_superblock_version(sb_data);
+            sb_write.reset();
+            sb_lock.reset();
 
-        logNTC("Rewriting cluster metadata for v2.2");
-        rewrite_cluster_metadata(&write_txn, interruptor);
+            logNTC("Rewriting cluster metadata for v2.2");
+            rewrite_cluster_metadata(&write_txn, interruptor);
+        } break;
+    case cluster_version_t::v2_2:
+        break; // Up-to-date, do nothing
+    default: unreachable();
     }
-    // This is here so you don't forget to handle migration to the new version
-    // Please also update the log strings to the latest version
-    static_assert(cluster_version_t::LATEST_DISK == cluster_version_t::v2_2,
-        "Please update metadata migration code.");
 }
 
 metadata_file_t::metadata_file_t(
