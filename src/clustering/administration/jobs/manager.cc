@@ -82,9 +82,9 @@ void jobs_manager_t::on_get_job_reports(
         {
             on_thread_t thread((threadnum_t(threadnum)));
 
-            for (auto const &query_cache
+            for (const auto &query_cache
                     : *rdb_context->get_query_caches_for_this_thread()) {
-                for (auto const &pair : *query_cache) {
+                for (const auto &pair : *query_cache) {
                     if (pair.second->persistent_interruptor.is_pulsed()) {
                         continue;
                     }

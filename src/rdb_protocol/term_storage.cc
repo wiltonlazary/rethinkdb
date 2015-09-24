@@ -302,7 +302,7 @@ bool json_term_storage_t::static_optarg_as_bool(const std::string &key,
     const rapidjson::Value *global_optargs = &query_json[2];
     r_sanity_check(global_optargs->IsObject());
 
-    auto const it = global_optargs->FindMember(key.c_str());
+    const auto it = global_optargs->FindMember(key.c_str());
     if (it == global_optargs->MemberEnd()) {
         return default_value;
     } else if (it->value.IsBool()) {

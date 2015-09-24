@@ -120,11 +120,11 @@ void write_response_internal(ql::response_t *response,
                     thread_writer.EndArray();
                 });
 
-            for (auto const &buffer : buffers) {
+            for (const auto &buffer : buffers) {
                 writer.SpliceArray(buffer);
             }
         } else {
-            for (auto const &item : response->data()) {
+            for (const auto &item : response->data()) {
                 item.write_json(&writer);
             }
         }
@@ -141,7 +141,7 @@ void write_response_internal(ql::response_t *response,
             response->type() == Response::SUCCESS_SEQUENCE) {
             writer.Key("n", 1);
             writer.StartArray();
-            for (auto const &note : response->notes()) {
+            for (const auto &note : response->notes()) {
                 writer.Int(note);
             }
             writer.EndArray();

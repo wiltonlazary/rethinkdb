@@ -87,7 +87,7 @@ arg_terms_t::arg_terms_t(const raw_term_t &_src, argspec_t _argspec,
       src(_src),
       argspec(std::move(_argspec)),
       original_args(std::move(_original_args)) {
-    for (auto const &arg : original_args) {
+    for (const auto &arg : original_args) {
         if (arg->get_src().type() == Term::ARGS) {
             return;
         }
@@ -104,7 +104,7 @@ argvec_t arg_terms_t::start_eval(scope_env_t *env, eval_flags_t flags) const {
     eval_flags_t new_flags = static_cast<eval_flags_t>(
         flags | argspec.get_eval_flags());
     std::vector<counted_t<const runtime_term_t> > args;
-    for (auto const &arg : original_args) {
+    for (const auto &arg : original_args) {
         if (arg->get_src().type() == Term::ARGS) {
             bool det = arg->is_deterministic();
             scoped_ptr_t<val_t> v = arg->eval(env, new_flags);
@@ -261,7 +261,7 @@ void accumulate_all_captures(
 void op_term_t::accumulate_captures(var_captures_t *captures) const {
     const std::vector<counted_t<const term_t> > &original_args
         = arg_terms->get_original_args();
-    for (auto const &arg : original_args) {
+    for (const auto &arg : original_args) {
         arg->accumulate_captures(captures);
     }
     accumulate_all_captures(optargs, captures);

@@ -80,7 +80,7 @@ public:
         datum_object_builder_t acc;
         {
             profile::sampler_t sampler("Evaluating elements in make_obj.", env->env->trace);
-            for (auto const &pair : optargs) {
+            for (const auto &pair : optargs) {
                 bool dup = acc.add(datum_string_t(pair.first),
                                    pair.second->eval(env, new_flags)->as_datum());
                 rcheck(!dup, base_exc_t::LOGIC,

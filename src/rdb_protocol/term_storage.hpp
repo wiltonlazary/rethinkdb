@@ -63,7 +63,7 @@ public:
                 }
             },
             [&] (const std::map<std::string, maybe_generated_term_t> &optargs) {
-                for (auto const &it : optargs) {
+                for (const auto &it : optargs) {
                     cb(raw_term_t(it.second, it.first));
                 }
             });

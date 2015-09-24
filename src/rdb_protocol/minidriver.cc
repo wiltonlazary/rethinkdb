@@ -42,7 +42,7 @@ minidriver_t::reql_t::reql_t(minidriver_t *_r, const datum_t &d) :
 
 minidriver_t::reql_t::reql_t(minidriver_t *_r, std::vector<reql_t> &&val) :
         r(_r), term(make_counted<generated_term_t>(Term::MAKE_ARRAY, r->bt)) {
-    for (auto const &item : val) {
+    for (const auto &item : val) {
         term->args.push_back(item.term);
     }
 }
