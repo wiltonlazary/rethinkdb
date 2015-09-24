@@ -31,7 +31,7 @@ scoped_ptr_t<ql::query_params_t> json_protocol_t::parse_query_from_buffer(
         } catch (const ql::bt_exc_t &ex) {
             error_out->fill_error(Response::CLIENT_ERROR,
                                   ex.error_type,
-                                  strprintf("Failed to initialize query: %s",
+                                  strprintf("Server could not parse query: %s",
                                             ex.message.c_str()),
                                   ex.bt_datum);
         }

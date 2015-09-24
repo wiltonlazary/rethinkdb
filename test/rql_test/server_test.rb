@@ -133,14 +133,37 @@ Query: #{PP.pp(query, "")}\nBatch Conf: #{bc}
       $dispatch_hook = nil
     end
     $c.register_query(1337, {})
-    assert_equal({ "t"=>16, "b"=>[], "r"=>["Failed to initialize query: Expected 1 to 3 elements in the top-level query, but found 4."] },
+    assert_equal({ "t"=>16, "b"=>[], "r"=>["Server could not parse query: Expected 1 to 3 elements in the top-level query, but found 4."] },
                  $c.wait($c.dispatch([1, 1337, 1, {}], 1337), nil))
+
     $c.register_query(-1, {})
-    assert_equal({ "t"=>16, "b"=>[], "r"=>["Failed to initialize query: Expected a query type as a number, but found STRING."] },
+    assert_equal({ "t"=>16, "b"=>[], "r"=>["Server could not parse query: Expected a query type as a number, but found STRING."] },
                  $c.wait($c.dispatch(["a", 1337, {}], -1), nil))
+
     $c.register_query(16, {})
-    assert_equal({ "t"=>16, "b"=>[], "r"=>["Failed to initialize query: Expected global optargs as an object, but found NUMBER."] },
+    assert_equal({ "t"=>16, "b"=>[], "r"=>["Server could not parse query: Expected global optargs as an object, but found NUMBER."] },
                  $c.wait($c.dispatch([1, 1337, 1], 16), nil))
+
+    $c.register_query(50, {})
+    assert_equal({ "t"=>16, "b"=>[], "r"=>["Server could not parse query: Unrecognized QueryType: 5843."] },
+                 $c.wait($c.dispatch([5843, 1, {}], 50), nil))
+
+    $c.register_query(82, {})
+    assert_equal({ "t"=>17, "b"=>[], "r"=>["Unrecognized TermType: 45784."] },
+                 $c.wait($c.dispatch([1, [45784], {}], 82), nil))
+
+    # Test some backtraces
+    $c.register_query(82, {})
+    assert_equal({ "t"=>17, "b"=>[1], "r"=>["Unrecognized TermType: 45784."] },
+                 $c.wait($c.dispatch([1, [24, [1, [45784]]], {}], 82), nil))
+
+    $c.register_query(82, {})
+    assert_equal({ "t"=>17, "b"=>['fake'], "r"=>["Unrecognized TermType: 45784."] },
+                 $c.wait($c.dispatch([1, [24, [1, 1], {'fake'=>[45784]}], {}], 82), nil))
+
+    $c.register_query(82, {})
+    assert_equal({ "t"=>17, "b"=>[], "r"=>["Unrecognized TermType: 45784."] },
+                 $c.wait($c.dispatch([1, [24, [1, 1], {'fake'=>[24, [45784]]}], {}], 82), nil))
   end
 
   def test_gmr_slow

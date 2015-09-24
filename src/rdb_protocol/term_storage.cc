@@ -23,6 +23,18 @@ const char *rapidjson_typestr(rapidjson::Type t) {
     unreachable();
 }
 
+bool query_type_is_valid(Query::QueryType query_type) {
+    switch (query_type) {
+    case Query::START:
+    case Query::CONTINUE:
+    case Query::STOP:
+    case Query::NOREPLY_WAIT:
+        return true;
+    default:
+        return false;
+    }
+}
+
 generated_term_t::generated_term_t(Term::TermType _type, backtrace_id_t _bt) :
         type(_type), bt(_bt) { }
 
@@ -265,6 +277,11 @@ json_term_storage_t::json_term_storage_t(scoped_array_t<char> &&_original_data,
         throw bt_exc_t(Response::CLIENT_ERROR, Response::QUERY_LOGIC,
                        strprintf("Expected a query type as a number, but found %s.",
                                  rapidjson_typestr(query_json[0].GetType())),
+                       backtrace_registry_t::EMPTY_BACKTRACE);
+    }
+    if (!query_type_is_valid(static_cast<Query::QueryType>(query_json[0].GetInt()))) {
+        throw bt_exc_t(Response::CLIENT_ERROR, Response::QUERY_LOGIC,
+                       strprintf("Unrecognized QueryType: %d.", query_json[0].GetInt()),
                        backtrace_registry_t::EMPTY_BACKTRACE);
     }
 
