@@ -153,7 +153,7 @@ tests:
         
     - cd: db.table()
       ot:
-        ot: err("ReqlQueryLogicError", "Expected type DATUM but found DATABASE:", [])
+        cd: err("ReqlQueryLogicError", "Expected type DATUM but found DATABASE:", [])
         js: err("ReqlCompileError", "Expected 1 argument (not including options) but found 0.", [])
 
     - cd: tbl.reduce()

@@ -1180,7 +1180,7 @@ rethinkdb.expr = varar 1, 2, (val, nestingDepth=20) ->
         throw new err.ReqlDriverCompileError "Cannot wrap undefined with r.expr()."
 
     if nestingDepth <= 0
-        throw new err.ReqlDriverCompileError "Nesting depth limit exceeded"
+        throw new err.ReqlDriverCompileError "Nesting depth limit exceeded."
 
     if typeof nestingDepth isnt "number" or isNaN(nestingDepth)
         throw new err.ReqlDriverCompileError "Second argument to `r.expr` must be a number or undefined."
