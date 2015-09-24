@@ -182,7 +182,7 @@ op_term_t::op_term_t(compile_env_t *env, const raw_term_t &term,
     }
     arg_terms.init(new arg_terms_t(term, std::move(argspec), std::move(original_args)));
 
-    term.each_optarg([&] (raw_term_t o) {
+    term.each_optarg([&](raw_term_t o) {
             rcheck_src(o.bt(), optargspec.contains(o.optarg_name()),
                        base_exc_t::LOGIC,
                        strprintf("Unrecognized optional argument `%s`.",

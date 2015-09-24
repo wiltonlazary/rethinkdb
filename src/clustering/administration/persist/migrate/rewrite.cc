@@ -14,12 +14,12 @@ void rewrite_values(const metadata_file_t::key_t<T> &prefix,
                     signal_t *interruptor) {
     std::map<std::string, T> values;
     txn->read_many<T, cluster_version_t::v2_1>(prefix,
-        [&] (const std::string &key_suffix, const T &value) {
+        [&](const std::string &key_suffix, const T &value) {
             values.insert(std::make_pair(key_suffix, value));
         }, interruptor);
 
     // Perform the writes separately to avoid recursive locking
-    for (auto const &pair : values) {
+    for (const auto &pair : values) {
         txn->write(prefix.suffix(pair.first), pair.second, interruptor);
     }
 }

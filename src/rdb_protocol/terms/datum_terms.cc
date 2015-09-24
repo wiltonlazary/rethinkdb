@@ -65,7 +65,7 @@ public:
                base_exc_t::LOGIC,
                "MAKE_OBJ term must not have any args.");
 
-        term.each_optarg([&] (raw_term_t o) {
+        term.each_optarg([&](raw_term_t o) {
                 counted_t<const term_t> t = compile_term(env, o);
                 auto res = optargs.insert(std::make_pair(o.optarg_name(), t));
                 rcheck(res.second, base_exc_t::LOGIC,

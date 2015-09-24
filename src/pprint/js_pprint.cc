@@ -129,7 +129,7 @@ private:
 
     counted_t<const document_t> to_js_natural_object(const ql::raw_term_t &t) {
         std::vector<counted_t<const document_t> > term;
-        t.each_optarg([&] (ql::raw_term_t item) {
+        t.each_optarg([&](ql::raw_term_t item) {
                 if (!term.empty()) { term.push_back(comma_linebreak); }
                 term.push_back(make_nc(
                     make_text(strprintf("\"%s\":", item.optarg_name().c_str())),
@@ -141,7 +141,7 @@ private:
 
     counted_t<const document_t> to_js_wrapped_object(const ql::raw_term_t &t) {
         std::vector<counted_t<const document_t> > term;
-        t.each_optarg([&] (ql::raw_term_t item) {
+        t.each_optarg([&](ql::raw_term_t item) {
                 if (!term.empty()) { term.push_back(comma_linebreak); }
                 term.push_back(make_text(
                     strprintf("\"%s\"", item.optarg_name().c_str())));
@@ -207,7 +207,7 @@ private:
 
     counted_t<const document_t> render_optargs(const ql::raw_term_t &t) {
         std::vector<counted_t<const document_t> > optargs;
-        t.each_optarg([&] (ql::raw_term_t item) {
+        t.each_optarg([&](ql::raw_term_t item) {
                 if (!optargs.empty()) { optargs.push_back(comma_linebreak); }
                 counted_t<const document_t> inner = make_c(make_text(
                         strprintf("\"%s\":", to_js_name(item.optarg_name()).c_str())),

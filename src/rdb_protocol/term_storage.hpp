@@ -54,7 +54,7 @@ public:
     template <typename callable_t>
     void each_optarg(callable_t &&cb) const {
         visit_optargs(
-            [&] (const rapidjson::Value *optargs) {
+            [&](const rapidjson::Value *optargs) {
                 if (optargs != nullptr) {
                     for (auto it = optargs->MemberBegin();
                          it != optargs->MemberEnd(); ++it) {
@@ -62,7 +62,7 @@ public:
                     }
                 }
             },
-            [&] (const std::map<std::string, maybe_generated_term_t> &optargs) {
+            [&](const std::map<std::string, maybe_generated_term_t> &optargs) {
                 for (const auto &it : optargs) {
                     cb(raw_term_t(it.second, it.first));
                 }

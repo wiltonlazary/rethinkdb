@@ -102,7 +102,7 @@ void write_response_internal(ql::response_t *response,
             buffers.resize(num_threads);
 
             size_t per_thread = response->data().size() / num_threads;
-            pmap(num_threads, [&] (int64_t m) {
+            pmap(num_threads, [&](int64_t m) {
                     int32_t target_thread =
                         (thread_offset + static_cast<int32_t>(m)) % get_num_db_threads();
                     on_thread_t rethreader((threadnum_t(target_thread)));

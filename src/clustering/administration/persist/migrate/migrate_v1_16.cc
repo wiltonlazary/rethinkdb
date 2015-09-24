@@ -236,7 +236,7 @@ void migrate_databases(const metadata_v1_16::cluster_semilattice_metadata_t &met
         new_birth_certificate.initial_timestamp = branch_it->second.initial_timestamp;
         new_birth_certificate.origin =
             branch_it->second.origin.map(branch_it->second.region,
-            [&] (const metadata_v1_16::version_range_t &v) -> ::version_t {
+            [&](const metadata_v1_16::version_range_t &v) -> ::version_t {
                 ::version_t res(v.earliest.branch, v.earliest.timestamp);
                 guarantee(v.is_coherent());
                 if (seen_branches.count(res.branch) == 0) {
@@ -400,8 +400,8 @@ void check_for_obsolete_sindexes(io_backender_t *io_backender,
     dummy_cache_balancer_t balancer(GIGABYTE);
     auto &tables = metadata.rdb_namespaces.namespaces;
     pmap(tables.begin(), tables.end(),
-         [&] (std::pair<const namespace_id_t,
-                        deletable_t<metadata_v1_16::namespace_semilattice_metadata_t> > &info) {
+         [&](std::pair<const namespace_id_t,
+                       deletable_t<metadata_v1_16::namespace_semilattice_metadata_t> > &info) {
             if (!info.second.is_deleted()) {
                 perfmon_collection_t dummy_stats;
                 serializer_filepath_t table_path(base_path, uuid_to_str(info.first));
@@ -414,7 +414,7 @@ void check_for_obsolete_sindexes(io_backender_t *io_backender,
                 std::vector<serializer_t *> underlying({ &merger_serializer });
                 serializer_multiplexer_t multiplexer(underlying);
 
-                pmap(CPU_SHARDING_FACTOR, [&] (int index) {
+                pmap(CPU_SHARDING_FACTOR, [&](int index) {
                         perfmon_collection_t inner_dummy_stats;
                         store_t store(cpu_sharding_subspace(index),
                                       multiplexer.proxies[index],
@@ -443,8 +443,8 @@ void migrate_tables(io_backender_t *io_backender,
     dummy_cache_balancer_t balancer(GIGABYTE);
     auto &tables = metadata.rdb_namespaces.namespaces;
     pmap(tables.begin(), tables.end(),
-         [&] (std::pair<const namespace_id_t,
-                        deletable_t<metadata_v1_16::namespace_semilattice_metadata_t> > &info) {
+         [&](std::pair<const namespace_id_t,
+                       deletable_t<metadata_v1_16::namespace_semilattice_metadata_t> > &info) {
             // We don't need to store anything for deleted tables
             if (!info.second.is_deleted()) {
                 perfmon_collection_t dummy_stats;
@@ -461,7 +461,7 @@ void migrate_tables(io_backender_t *io_backender,
                 std::vector<regioned_version_t> table_versions;
                 std::map<std::string, std::pair<sindex_config_t, sindex_status_t> > sindex_list;
 
-                pmap(CPU_SHARDING_FACTOR, [&] (int index) {
+                pmap(CPU_SHARDING_FACTOR, [&](int index) {
                         perfmon_collection_t inner_dummy_stats;
                         store_t store(cpu_sharding_subspace(index),
                                       multiplexer.proxies[index],
@@ -486,7 +486,7 @@ void migrate_tables(io_backender_t *io_backender,
                             store.migrate_metainfo(
                                 order_token_t::ignore, &write_token,
                                 cluster_version_t::v2_0, cluster_version_t::v2_1,
-                                [&] (const region_t &r, const binary_blob_t &blob) -> binary_blob_t {
+                                [&](const region_t &r, const binary_blob_t &blob) -> binary_blob_t {
                                     auto const &v =
                                         binary_blob_t::get<metadata_v1_16::version_range_t>(blob);
                                     ::version_t res(v.earliest.branch, v.earliest.timestamp);

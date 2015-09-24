@@ -87,12 +87,12 @@ void raw_term_t::init_json(const rapidjson::Value *src) {
 size_t raw_term_t::num_args() const {
     size_t res = 0;
     visit_args(
-        [&] (const rapidjson::Value *args) {
+        [&](const rapidjson::Value *args) {
             if (args != nullptr) {
                 res = args->Size();
             }
         },
-        [&] (const std::vector<maybe_generated_term_t> &args) {
+        [&](const std::vector<maybe_generated_term_t> &args) {
             res = args.size();
         });
     return res;
@@ -101,12 +101,12 @@ size_t raw_term_t::num_args() const {
 size_t raw_term_t::num_optargs() const {
     size_t res = 0;
     visit_optargs(
-        [&] (const rapidjson::Value *optargs) {
+        [&](const rapidjson::Value *optargs) {
             if (optargs != nullptr) {
                 res = optargs->MemberCount();
             }
         },
-        [&] (const std::map<std::string, maybe_generated_term_t> &optargs) {
+        [&](const std::map<std::string, maybe_generated_term_t> &optargs) {
             res = optargs.size();
         });
     return res;
@@ -115,11 +115,11 @@ size_t raw_term_t::num_optargs() const {
 raw_term_t raw_term_t::arg(size_t index) const {
     raw_term_t res;
     visit_args(
-        [&] (const rapidjson::Value *args) {
+        [&](const rapidjson::Value *args) {
             guarantee(args->Size() > index);
             res.init_json(&(*args)[index]);
         },
-        [&] (const std::vector<maybe_generated_term_t> &args) {
+        [&](const std::vector<maybe_generated_term_t> &args) {
             guarantee(args.size() > index);
             res = raw_term_t(args[index], std::string());
         });
@@ -129,7 +129,7 @@ raw_term_t raw_term_t::arg(size_t index) const {
 boost::optional<raw_term_t> raw_term_t::optarg(const std::string &name) const {
     boost::optional<raw_term_t> res;
     visit_optargs(
-        [&] (const rapidjson::Value *optargs) {
+        [&](const rapidjson::Value *optargs) {
             if (optargs != nullptr) {
                 auto it = optargs->FindMember(name.c_str());
                 if (it != optargs->MemberEnd()) {
@@ -137,7 +137,7 @@ boost::optional<raw_term_t> raw_term_t::optarg(const std::string &name) const {
                 }
             }
         },
-        [&] (const std::map<std::string, maybe_generated_term_t> &optargs) {
+        [&](const std::map<std::string, maybe_generated_term_t> &optargs) {
             auto it = optargs.find(name);
             if (it != optargs.end()) {
                 res = raw_term_t(it->second, it->first);
@@ -149,12 +149,12 @@ boost::optional<raw_term_t> raw_term_t::optarg(const std::string &name) const {
 datum_t raw_term_t::datum(const configured_limits_t &limits, reql_version_t version) const {
     datum_t res;
     visit_datum(
-        [&] (const rapidjson::Value *datum) {
+        [&](const rapidjson::Value *datum) {
             if (datum != nullptr) {
                 res = to_datum(*datum, limits, version);
             }
         },
-        [&] (const datum_t &d) {
+        [&](const datum_t &d) {
             res = d;
         });
     return res;
@@ -402,7 +402,7 @@ rapidjson::Value convert_datum(const Datum &src,
     case Datum::R_ARRAY: {
         rapidjson::Value dest(rapidjson::kArrayType);
         for (int i = 0; i < src.r_array_size(); ++i) {
-            call_with_enough_stack([&] () {
+            call_with_enough_stack([&]() {
                     dest.PushBack(convert_datum(src.r_array(i), allocator),
                                   *allocator);
                 }, MIN_TERM_TREE_STACK_SPACE);
@@ -467,7 +467,7 @@ rapidjson::Value convert_term_tree(const Term &src,
             dest.PushBack(rapidjson::Value(rapidjson::kArrayType), *allocator);
             rapidjson::Value *args = &dest[dest.Size() - 1];
             for (int i = 0; i < src.args_size(); ++i) {
-                call_with_enough_stack([&] () {
+                call_with_enough_stack([&]() {
                         args->PushBack(convert_term_tree(src.args(i), allocator),
                                        *allocator);
                     }, MIN_TERM_TREE_STACK_SPACE);
@@ -547,7 +547,7 @@ void write_term(rapidjson::Writer<rapidjson::StringBuffer> *writer,
             if (term.num_args() > 0) {
                 writer->StartArray();
                 for (size_t i = 0; i < term.num_args(); ++i) {
-                    call_with_enough_stack([&] () {
+                    call_with_enough_stack([&]() {
                             write_term(writer, term.arg(i));
                         }, MIN_TERM_TREE_STACK_SPACE);
                 }
@@ -555,10 +555,10 @@ void write_term(rapidjson::Writer<rapidjson::StringBuffer> *writer,
             }
             if (term.num_optargs() > 0) {
                 writer->StartObject();
-                term.each_optarg([&] (const raw_term_t &subterm) {
+                term.each_optarg([&](const raw_term_t &subterm) {
                         writer->Key(subterm.optarg_name().c_str(),
                                     subterm.optarg_name().size(), true);
-                        call_with_enough_stack([&] () {
+                        call_with_enough_stack([&]() {
                                 write_term(writer, subterm);
                             }, MIN_TERM_TREE_STACK_SPACE);
                     });

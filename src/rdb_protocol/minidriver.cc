@@ -64,7 +64,7 @@ raw_term_t minidriver_t::reql_t::root_term() {
 }
 
 void minidriver_t::reql_t::copy_optargs_from_term(const raw_term_t &from) {
-    from.each_optarg([&] (raw_term_t optarg) {
+    from.each_optarg([&](raw_term_t optarg) {
             add_arg(r->optarg(optarg.optarg_name(), optarg));
         });
 }

@@ -131,7 +131,7 @@ private:
                     backtrace_id_t child_bt 
                         = make_bt(bt, datum_t(static_cast<double>(i)));
                     walker_frame_t child_frame(parent, i == 0, this);
-                    call_with_enough_stack([&] () {
+                    call_with_enough_stack([&]() {
                             child_frame.walk(&(*args)[i], child_bt);
                         }, MIN_WALK_STACK_SPACE);
                 }
@@ -145,7 +145,7 @@ private:
                         datum_t(datum_string_t(it->name.GetStringLength(),
                                                it->name.GetString())));
                     walker_frame_t child_frame(parent, false, this);
-                    call_with_enough_stack([&] () {
+                    call_with_enough_stack([&]() {
                             child_frame.walk(&it->value, child_bt);
                         }, MIN_WALK_STACK_SPACE);
                 }

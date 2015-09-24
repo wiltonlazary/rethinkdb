@@ -418,7 +418,7 @@ void query_server_t::connection_loop(tcp_conn_t *conn,
         if (outer_query.has()) {
             outer_query->throttler.init(&sem, 1);
             wait_interruptible(outer_query->throttler.acquisition_signal(), &interruptor);
-            coro_t::spawn_now_dangerously([&] () {
+            coro_t::spawn_now_dangerously([&]() {
                 // We grab this right away while it's still valid.
                 scoped_ptr_t<ql::query_params_t> query = std::move(outer_query);
                 // Since we `spawn_now_dangerously` it's always safe to acquire this.

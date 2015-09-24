@@ -56,7 +56,7 @@ sindex_config_t sindex_config_from_string(
     sindex_disk_info_t sindex_info;
     try {
         deserialize_sindex_info(vec, &sindex_info,
-            [target] () {
+            [target]() {
                 rfail_target(target, base_exc_t::LOGIC,
                              "Attempted to import a RethinkDB 1.13 secondary index, "
                              "which is no longer supported.  This secondary index "

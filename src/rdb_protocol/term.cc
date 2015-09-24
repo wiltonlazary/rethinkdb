@@ -211,7 +211,7 @@ counted_t<const term_t> compile_on_current_stack(
 }
 
 counted_t<const term_t> compile_term(compile_env_t *env, const raw_term_t &t) {
-    return call_with_enough_stack<counted_t<const term_t> >([&] () {
+    return call_with_enough_stack<counted_t<const term_t> >([&]() {
             return compile_on_current_stack(env, std::move(t));
         }, MIN_COMPILE_STACK_SPACE);
 }
@@ -288,7 +288,7 @@ scoped_ptr_t<val_t> runtime_term_t::eval_on_current_stack(
 scoped_ptr_t<val_t> runtime_term_t::eval(
         scope_env_t *env,
         eval_flags_t eval_flags) const {
-    return call_with_enough_stack<scoped_ptr_t<val_t> >([&] () {
+    return call_with_enough_stack<scoped_ptr_t<val_t> >([&]() {
             return eval_on_current_stack(env, std::move(eval_flags));
         }, MIN_EVAL_STACK_SPACE);
 }
