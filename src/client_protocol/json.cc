@@ -113,7 +113,6 @@ void write_response_internal(ql::response_t *response,
                     size_t offset = per_thread * m;
                     size_t end = (m == num_threads - 1) ?
                         response->data().size() : (per_thread * (m + 1));
-                    debugf("writing items %zu up to %zu\n", offset, end);
                     for (size_t i = offset; i < end; ++i) {
                         response->data()[i].write_json(&thread_writer);
                     }
@@ -190,6 +189,10 @@ void json_protocol_t::send_response(ql::response_t *response,
     write_response_to_buffer(response, &buffer);
     int64_t payload_size = buffer.GetSize() - prefix_size;
     guarantee(payload_size > 0);
+
+    static_assert(std::is_same<decltype(wire_protocol_t::TOO_LARGE_RESPONSE_SIZE),
+                               const uint32_t>::value,
+                  "The largest response must fit in 32 bits.");
 
     if (payload_size >= wire_protocol_t::TOO_LARGE_RESPONSE_SIZE) {
         response->fill_error(Response::RUNTIME_ERROR,
