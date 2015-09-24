@@ -10,16 +10,18 @@ namespace ql {
 class datum_term_t : public term_t {
 public:
     explicit datum_term_t(const raw_term_t &term)
-            : term_t(term) {
-        r_sanity_check(term.datum().has());
+            : term_t(term),
+              datum(term.datum(configured_limits_t::unlimited, reql_version_t::LATEST)) {
+        r_sanity_check(datum.has());
     }
 private:
     virtual void accumulate_captures(var_captures_t *) const { /* do nothing */ }
     virtual bool is_deterministic() const { return true; }
     virtual scoped_ptr_t<val_t> term_eval(scope_env_t *env, eval_flags_t) const {
-        return new_val(get_src().datum(env->env->limits(), env->env->reql_version()));
+        return new_val(datum);
     }
     virtual const char *name() const { return "datum"; }
+    const datum_t datum;
 };
 
 class constant_term_t : public op_term_t {
@@ -67,7 +69,7 @@ public:
 
         term.each_optarg([&](raw_term_t o) {
                 counted_t<const term_t> t = compile_term(env, o);
-                auto res = optargs.insert(std::make_pair(o.optarg_name(), t));
+                auto res = optargs.insert(std::make_pair(o.optarg_name(), std::move(t)));
                 rcheck(res.second, base_exc_t::LOGIC,
                        strprintf("Duplicate object key: %s.",
                                  o.optarg_name().c_str()));
