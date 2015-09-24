@@ -150,7 +150,12 @@ tests:
         - tbl.update()
         - tbl.replace()
         - tbl.insert()
-        - db.table()
+        
+    - cd: db.table()
+      ot:
+        rb: err("ReqlCompileError", "Expected 2 arguments but found 1.", [])
+        py: err("ReqlQueryLogicError", "Expected type DATUM but found DATABASE:", [])
+        js: err("ReqlCompileError", "Expected 1 argument (not including options) but found 0.", [])
 
     - cd: tbl.reduce()
       ot: err("ReqlCompileError", "Expected 2 arguments but found 1.", [])
@@ -211,7 +216,7 @@ tests:
       js: r.expr({})(1,2)
       ot:
         js: err('ReqlCompileError', "Expected 1 argument but found 2.", [])
-        py: err('ReqlCompileError', 'Expected NUMBER or STRING as second argument to `bracket` but found ARRAY.')
+        py: err('ReqlQueryLogicError', 'Expected NUMBER or STRING as second argument to `bracket` but found ARRAY.')
         rb: err('ArgumentError', 'wrong number of arguments (2 for 1)')
 
     - cd: tbl.insert([{'id':0},{'id':1},{'id':2},{'id':3},{'id':4},{'id':5},{'id':6},{'id':7},{'id':8},{'id':9}]).get_field('inserted')
