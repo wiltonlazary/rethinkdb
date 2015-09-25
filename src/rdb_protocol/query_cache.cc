@@ -189,7 +189,6 @@ void query_cache_t::ref_t::fill_response(response_t *res) {
                   query_cache->return_empty_normal_batches,
                   &combined_interruptor,
                   entry->global_optargs,
-                  entry->start_time,
                   trace.get_or_null());
 
         if (entry->state == entry_t::state_t::START) {
@@ -332,7 +331,7 @@ query_cache_t::entry_t::entry_t(query_params_t *query_params,
                                         profile_bool_t::DONT_PROFILE),
         term_storage(std::move(query_params->term_storage)),
         global_optargs(std::move(_global_optargs)),
-        start_time(pseudo::time_now()),
+        start_time(current_microtime()),
         term_tree(std::move(_term_tree)),
         has_sent_batch(false) { }
 

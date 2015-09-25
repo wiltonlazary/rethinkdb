@@ -107,7 +107,7 @@ private:
         const profile_bool_t profile;
         const scoped_ptr_t<const term_storage_t> term_storage;
         const global_optargs_t global_optargs;
-        const datum_t start_time;
+        const microtime_t start_time;
 
         cond_t persistent_interruptor;
 

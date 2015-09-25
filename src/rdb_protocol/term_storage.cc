@@ -429,11 +429,13 @@ rapidjson::Value convert_datum(const Datum &src,
     case Datum::R_OBJECT: {
         rapidjson::Value dest(rapidjson::kObjectType);
         for (int i = 0; i < src.r_object_size(); ++i) {
-            const Datum_AssocPair &item = src.r_object(i);
-            guarantee(item.has_key());
-            guarantee(item.has_val());
-            dest.AddMember(rapidjson::Value(item.key(), *allocator),
-                           convert_datum(item.val(), allocator), *allocator);
+            call_with_enough_stack([&]() {
+                    const Datum_AssocPair &item = src.r_object(i);
+                    guarantee(item.has_key());
+                    guarantee(item.has_val());
+                    dest.AddMember(rapidjson::Value(item.key(), *allocator),
+                                   convert_datum(item.val(), allocator), *allocator);
+                }, MIN_TERM_TREE_STACK_SPACE);
         }
         return dest;
     }

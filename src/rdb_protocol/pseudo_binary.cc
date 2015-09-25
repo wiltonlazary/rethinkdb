@@ -30,6 +30,19 @@ void encode_base64_ptype(
     writer->EndObject();
 }
 
+rapidjson::Value encode_base64_ptype(const datum_string_t &data,
+                                     rapidjson::Value::AllocatorType *allocator) {
+    rapidjson::Value res(rapidjson::kObjectType);
+    res.AddMember(rapidjson::Value(datum_t::reql_type_string.data(),
+                                   datum_t::reql_type_string.size(),
+                                   *allocator),
+                  rapidjson::Value(binary_string, *allocator), *allocator);
+    res.AddMember(rapidjson::Value(data_key, *allocator),
+                  rapidjson::Value(encode_base64(data.data(), data.size()).c_str(),
+                                   *allocator), *allocator);
+    return res;
+}
+
 scoped_cJSON_t encode_base64_ptype(const datum_string_t &data) {
     scoped_cJSON_t res(cJSON_CreateObject());
     res.AddItemToObject(datum_t::reql_type_string.to_std().c_str(),

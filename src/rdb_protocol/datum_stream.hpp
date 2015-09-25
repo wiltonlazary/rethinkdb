@@ -397,7 +397,6 @@ class readgen_t {
 public:
     explicit readgen_t(
         global_optargs_t global_optargs,
-        datum_t start_time,
         std::string table_name,
         profile_bool_t profile,
         read_mode_t read_mode,
@@ -442,7 +441,6 @@ public:
     const std::string &get_table_name() const { return table_name; }
 protected:
     const global_optargs_t global_optargs;
-    const datum_t start_time;
     const std::string table_name;
     const profile_bool_t profile;
     const read_mode_t read_mode;
@@ -453,7 +451,6 @@ class rget_readgen_t : public readgen_t {
 public:
     explicit rget_readgen_t(
         global_optargs_t global_optargs,
-        datum_t start_time,
         std::string table_name,
         const datum_range_t &original_datum_range,
         profile_bool_t profile,
@@ -498,7 +495,6 @@ public:
 
 private:
     primary_readgen_t(global_optargs_t global_optargs,
-                      datum_t start_time,
                       std::string table_name,
                       datum_range_t range,
                       profile_bool_t profile,
@@ -544,7 +540,6 @@ public:
 private:
     sindex_readgen_t(
         global_optargs_t global_optargs,
-        datum_t start_time,
         std::string table_name,
         const std::string &sindex,
         datum_range_t sindex_range,
@@ -602,7 +597,6 @@ public:
 private:
     intersecting_readgen_t(
         global_optargs_t global_optargs,
-        datum_t start_time,
         std::string table_name,
         const std::string &sindex,
         const datum_t &query_geometry,

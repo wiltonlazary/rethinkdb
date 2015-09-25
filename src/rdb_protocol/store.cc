@@ -271,7 +271,7 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
 
     void operator()(const changefeed_limit_subscribe_t &s) {
         ql::env_t env(ctx, ql::return_empty_normal_batches_t::NO,
-                      interruptor, s.optargs, s.start_time, trace);
+                      interruptor, s.optargs, trace);
         ql::stream_t stream;
         {
             std::vector<scoped_ptr_t<ql::op_t> > ops;
@@ -328,7 +328,6 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
             s.table,
             ctx,
             s.optargs,
-            s.start_time,
             s.uuid,
             s.spec,
             ql::changefeed::limit_order_t(s.spec.range.sorting),
@@ -389,8 +388,7 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
 
     void operator()(const intersecting_geo_read_t &geo_read) {
         ql::env_t ql_env(ctx, ql::return_empty_normal_batches_t::NO,
-                         interruptor, geo_read.optargs,
-                         geo_read.start_time, trace);
+                         interruptor, geo_read.optargs, trace);
 
         response->response = rget_read_response_t();
         rget_read_response_t *res =
@@ -440,8 +438,7 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
 
     void operator()(const nearest_geo_read_t &geo_read) {
         ql::env_t ql_env(ctx, ql::return_empty_normal_batches_t::NO,
-                         interruptor, geo_read.optargs,
-                         geo_read.start_time, trace);
+                         interruptor, geo_read.optargs, trace);
 
         response->response = nearest_geo_read_response_t();
         nearest_geo_read_response_t *res =
@@ -512,7 +509,7 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
             rassert(rget.optargs.has_optarg("db"));
         }
         ql::env_t ql_env(ctx, ql::return_empty_normal_batches_t::NO,
-                         interruptor, rget.optargs, rget.start_time, trace);
+                         interruptor, rget.optargs, trace);
         do_read(&ql_env, store, btree, superblock, rget, res,
                 release_superblock_t::RELEASE);
     }
@@ -634,7 +631,7 @@ private:
 struct rdb_write_visitor_t : public boost::static_visitor<void> {
     void operator()(const batched_replace_t &br) {
         ql::env_t ql_env(ctx, ql::return_empty_normal_batches_t::NO,
-                         interruptor, br.optargs, br.start_time, trace);
+                         interruptor, br.optargs, trace);
         rdb_modification_report_cb_t sindex_cb(
             store, &sindex_block,
             auto_drainer_t::lock_t(&store->drainer));

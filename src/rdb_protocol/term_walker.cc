@@ -68,8 +68,8 @@ private:
 
         void walk(rapidjson::Value *src, backtrace_id_t bt) {
             r_sanity_check(src != nullptr);
-            rapidjson::Value *args(nullptr);
-            rapidjson::Value *optargs(nullptr);
+            rapidjson::Value *args = nullptr;
+            rapidjson::Value *optargs = nullptr;
 
             if (src->IsArray()) {
                 size_t size = src->Size();
@@ -112,16 +112,27 @@ private:
                 rewrite(src, Term::DATUM);
             }
 
-            // Append a backtrace to the term
-            src->PushBack(rapidjson::Value(bt.get()), *parent->allocator);
-
             if (type == Term::ASC || type == Term::DESC) {
                 rcheck_src(bt,
                     prev_frame == nullptr || prev_frame->type == Term::ORDER_BY,
                     base_exc_t::LOGIC,
                     strprintf("%s may only be used as an argument to ORDER_BY.",
                               (type == Term::ASC ? "ASC" : "DESC")));
+            } else if (type == Term::NOW) {
+                // Set r.now() terms to the same literal time so it can be deteministic
+                type = Term::DATUM;
+                rapidjson::Value rewritten;
+                rewritten.SetArray();
+                rewritten.Reserve(2, *parent->allocator);
+                rewritten.PushBack(rapidjson::Value(static_cast<int>(type)),
+                                   *parent->allocator);
+                rewritten.PushBack(get_time_now().as_json(parent->allocator),
+                                   *parent->allocator);
+                src->Swap(rewritten);
             }
+
+            // Append a backtrace to the term
+            src->PushBack(rapidjson::Value(bt.get()), *parent->allocator);
 
             rcheck_src(bt, !term_is_write_or_meta(type) || writes_legal,
                 base_exc_t::LOGIC,
@@ -162,6 +173,13 @@ private:
             return parent->bt_reg->new_frame(prev, d);
         }
 
+        datum_t get_time_now() {
+            if (!parent->time_now.has()) {
+                parent->time_now = pseudo::time_now();
+            }
+            return parent->time_now;
+        }
+
         // True if writes are still legal at this node.  Basically:
         // * Once writes become illegal, they are never legal again.
         // * Writes are legal at the root.
@@ -177,6 +195,7 @@ private:
     backtrace_registry_t *bt_reg;
     intrusive_list_t<walker_frame_t> frames;
     rapidjson::Value::AllocatorType *allocator;
+    datum_t time_now;
 };
 
 void preprocess_term_tree(rapidjson::Value *term_tree,

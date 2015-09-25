@@ -290,6 +290,7 @@ public:
     // json_writer_t can be rapidjson::Writer<rapidjson::StringBuffer>
     // or rapidjson::PrettyWriter<rapidjson::StringBuffer>
     template <class json_writer_t> void write_json(json_writer_t *writer) const;
+    rapidjson::Value as_json(rapidjson::Value::AllocatorType *allocator) const;
 
     // DEPRECATED: Used for backwards compatibility with reql_versions before 2.1
     cJSON *as_json_raw() const;

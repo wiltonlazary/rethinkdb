@@ -273,7 +273,16 @@ bool reql_func_t::filter_helper(env_t *env, datum_t arg) const {
 }
 
 std::string reql_func_t::print_source() const {
-    return pprint::pretty_print(80, pprint::render_as_javascript(body->get_src()));
+    std::string ret = "function (captures = " + captured_scope.print() + ") (args = [";
+    for (size_t i = 0; i < arg_names.size(); ++i) {
+        if (i != 0) {
+            ret += ", ";
+        }
+        ret += strprintf("%" PRIi64, arg_names[i].value);
+    }
+    ret += "]) ";
+    ret += pprint::pretty_print(80, pprint::render_as_javascript(body->get_src()));
+    return ret;
 }
 
 std::string js_func_t::print_source() const {

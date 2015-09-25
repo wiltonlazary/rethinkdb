@@ -294,7 +294,6 @@ test_rdb_env_t::instance_t::instance_t(test_rdb_env_t &&test_env) :
                            ql::return_empty_normal_batches_t::NO,
                            &interruptor,
                            ql::global_optargs_t(),
-                           ql::pseudo::time_now(),
                            nullptr /* no profile trace */));
 
     // Set up any databases, tables, and data

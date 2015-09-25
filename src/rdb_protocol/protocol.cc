@@ -658,7 +658,7 @@ void rdb_r_unshard_visitor_t::unshard_range_batch(const query_t &q, sorting_t so
     }
     scoped_ptr_t<profile::trace_t> trace = ql::maybe_make_profile_trace(profile);
     ql::env_t env(ctx, ql::return_empty_normal_batches_t::NO,
-                  interruptor, q.optargs, q.start_time, trace.get_or_null());
+                  interruptor, q.optargs, trace.get_or_null());
 
     // Initialize response.
     response_out->response = query_response_t();
@@ -979,7 +979,7 @@ struct rdb_w_shard_visitor_t : public boost::static_visitor<bool> {
         if (!shard_keys.empty()) {
             *payload_out = batched_replace_t(std::move(shard_keys), br.pkey,
                                              br.f.compile_wire_func(), br.optargs,
-                                             br.start_time, br.return_changes);
+                                             br.return_changes);
             return true;
         } else {
             return false;

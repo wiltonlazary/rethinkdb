@@ -22,6 +22,9 @@ void encode_base64_ptype(
         const datum_string_t &data,
         rapidjson::Writer<rapidjson::StringBuffer> *writer);
 
+rapidjson::Value encode_base64_ptype(const datum_string_t &data,
+                                     rapidjson::Value::AllocatorType *allocator);
+
 // DEPRECATED
 scoped_cJSON_t encode_base64_ptype(const datum_string_t &data);
 

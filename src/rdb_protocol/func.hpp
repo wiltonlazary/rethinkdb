@@ -107,7 +107,8 @@ private:
     // The argument names, for the corresponding positional argument number.
     std::vector<sym_t> arg_names;
 
-    // Term storage used when this was deserialized off the wire
+    // Term storage if this was deserialized off the wire to ensure the lifetime of
+    // the raw term tree.
     scoped_ptr_t<term_storage_t> term_storage;
 
     // The body of the function, which gets ->eval(...) called when call(...) is called.
