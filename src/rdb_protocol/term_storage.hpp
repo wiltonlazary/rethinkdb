@@ -85,17 +85,6 @@ private:
     raw_term_t();
     void init_json(const rapidjson::Value *src);
 
-    template <typename json_cb_t, typename generated_cb_t>
-    void visit_source(json_cb_t &&json_cb, generated_cb_t &&generated_cb) const {
-        if (auto json = boost::get<json_data_t>(&info)) {
-            json_cb(*json);
-        } else if (auto gen = boost::get<counted_t<generated_term_t> >(&info)) {
-            generated_cb(*gen);
-        } else {
-            unreachable();
-        }
-    }
-
     std::string optarg_name_;
 
     struct json_data_t {
@@ -106,6 +95,28 @@ private:
     };
 
     boost::variant<json_data_t, counted_t<generated_term_t> > info;
+
+    template <typename json_cb_t, typename generated_cb_t>
+    class source_visitor_t : public boost::static_visitor<void> {
+    public:
+        source_visitor_t(json_cb_t &&_json_cb, generated_cb_t &&_generated_cb) :
+            json_cb(std::move(_json_cb)), generated_cb(std::move(_generated_cb)) { }
+        void operator() (const json_data_t &source) {
+            json_cb(source);
+        }
+        void operator() (const counted_t<generated_term_t> &source) {
+            generated_cb(source);
+        }
+        json_cb_t json_cb;
+        generated_cb_t generated_cb;
+    };
+
+    template <typename json_cb_t, typename generated_cb_t>
+    void visit_source(json_cb_t &&json_cb, generated_cb_t &&generated_cb) const {
+        source_visitor_t<json_cb_t, generated_cb_t> visitor(std::move(json_cb),
+                                                            std::move(generated_cb));
+        boost::apply_visitor(visitor, info);
+    }
 };
 
 class term_storage_t {
