@@ -69,18 +69,18 @@ void raw_term_t::init_json(const rapidjson::Value *src) {
 
     const rapidjson::Value *raw_type = &(*src)[0];
     r_sanity_check(raw_type->IsInt());
-    data->type = static_cast<Term::TermType>(raw_type->GetInt64());
+    Term::TermType type = static_cast<Term::TermType>(raw_type->GetInt64());
 
     const rapidjson::Value *raw_bt = &(*src)[size - 1];
     r_sanity_check(raw_bt->IsInt());
-    data->bt = backtrace_id_t(raw_bt->GetUint());
+    backtrace_id_t bt(raw_bt->GetUint());
 
     data->args = nullptr;
     data->optargs = nullptr;
     data->datum = nullptr;
 
-    if (data->type == Term::DATUM) {
-        rcheck_src(data->bt, size == 3, base_exc_t::LOGIC,
+    if (type == Term::DATUM) {
+        rcheck_src(bt, size == 3, base_exc_t::LOGIC,
                    strprintf("Expected 3 items in array, but found %zu.", size));
         data->datum = &(*src)[1];
     } else {
@@ -98,60 +98,60 @@ void raw_term_t::init_json(const rapidjson::Value *src) {
 
 size_t raw_term_t::num_args() const {
     size_t res = 0;
-    visit_args(
-        [&](const rapidjson::Value *args) {
-            if (args != nullptr) {
-                res = args->Size();
+    visit_source(
+        [&](const json_data_t &source) {
+            if (source.args != nullptr) {
+                res = source.args->Size();
             }
         },
-        [&](const std::vector<maybe_generated_term_t> &args) {
-            res = args.size();
+        [&](const counted_t<generated_term_t> &source) {
+            res = source->args.size();
         });
     return res;
 }
 
 size_t raw_term_t::num_optargs() const {
     size_t res = 0;
-    visit_optargs(
-        [&](const rapidjson::Value *optargs) {
-            if (optargs != nullptr) {
-                res = optargs->MemberCount();
+    visit_source(
+        [&](const json_data_t &source) {
+            if (source.optargs != nullptr) {
+                res = source.optargs->MemberCount();
             }
         },
-        [&](const std::map<std::string, maybe_generated_term_t> &optargs) {
-            res = optargs.size();
+        [&](const counted_t<generated_term_t> &source) {
+            res = source->optargs.size();
         });
     return res;
 }
 
 raw_term_t raw_term_t::arg(size_t index) const {
     raw_term_t res;
-    visit_args(
-        [&](const rapidjson::Value *args) {
-            guarantee(args->Size() > index);
-            res.init_json(&(*args)[index]);
+    visit_source(
+        [&](const json_data_t &source) {
+            guarantee(source.args->Size() > index);
+            res.init_json(&(*source.args)[index]);
         },
-        [&](const std::vector<maybe_generated_term_t> &args) {
-            guarantee(args.size() > index);
-            res = raw_term_t(args[index], std::string());
+        [&](const counted_t<generated_term_t> &source) {
+            guarantee(source->args.size() > index);
+            res = raw_term_t(source->args[index], std::string());
         });
     return res;
 }
 
 boost::optional<raw_term_t> raw_term_t::optarg(const std::string &name) const {
     boost::optional<raw_term_t> res;
-    visit_optargs(
-        [&](const rapidjson::Value *optargs) {
-            if (optargs != nullptr) {
-                auto it = optargs->FindMember(name.c_str());
-                if (it != optargs->MemberEnd()) {
+    visit_source(
+        [&](const json_data_t &source) {
+            if (source.optargs != nullptr) {
+                auto it = source.optargs->FindMember(name.c_str());
+                if (it != source.optargs->MemberEnd()) {
                     res = raw_term_t(&it->value, it->name.GetString());
                 }
             }
         },
-        [&](const std::map<std::string, maybe_generated_term_t> &optargs) {
-            auto it = optargs.find(name);
-            if (it != optargs.end()) {
+        [&](const counted_t<generated_term_t> &source) {
+            auto it = source->optargs.find(name);
+            if (it != source->optargs.end()) {
                 res = raw_term_t(it->second, it->first);
             }
         });
@@ -160,14 +160,14 @@ boost::optional<raw_term_t> raw_term_t::optarg(const std::string &name) const {
 
 datum_t raw_term_t::datum(const configured_limits_t &limits, reql_version_t version) const {
     datum_t res;
-    visit_datum(
-        [&](const rapidjson::Value *datum) {
-            if (datum != nullptr) {
-                res = to_datum(*datum, limits, version);
+    visit_source(
+        [&](const json_data_t &source) {
+            if (source.datum != nullptr) {
+                res = to_datum(*source.datum, limits, version);
             }
         },
-        [&](const datum_t &d) {
-            res = d;
+        [&](const counted_t<generated_term_t> &source) {
+            res = source->datum;
         });
     return res;
 }
@@ -181,52 +181,39 @@ const std::string &raw_term_t::optarg_name() const {
 }
 
 Term::TermType raw_term_t::type() const {
-    if (auto json = boost::get<json_data_t>(&info)) {
-        return json->type;
-    } else if (auto gen = boost::get<counted_t<generated_term_t> >(&info)) {
-        return (*gen)->type;
-    }
-    unreachable();
+    Term::TermType res;
+    visit_source(
+        [&](const json_data_t& source) {
+            res = static_cast<Term::TermType>((*source.source)[0].GetInt64());
+        },
+        [&](const counted_t<generated_term_t> &source) {
+            res = source->type;
+        });
+    return res;
 }
 
 backtrace_id_t raw_term_t::bt() const {
-    if (auto json = boost::get<json_data_t>(&info)) {
-        return json->bt;
-    } else if (auto gen = boost::get<counted_t<generated_term_t> >(&info)) {
-        return (*gen)->bt;
-    }
-    unreachable();
+    backtrace_id_t res;
+    visit_source(
+        [&](const json_data_t& source) {
+            res = backtrace_id_t((*source.source)[source.source->Size() - 1].GetUint());
+        },
+        [&](const counted_t<generated_term_t> &source) {
+            res = source->bt;
+        });
+    return res;
 }
 
 maybe_generated_term_t raw_term_t::get_src() const {
-    if (auto json = boost::get<json_data_t>(&info)) {
-        return json->source;
-    } else if (auto gen = boost::get<counted_t<generated_term_t> >(&info)) {
-        return *gen;
-    }
-    unreachable();
-}
-
-template <typename json_cb_t, typename generated_cb_t>
-void raw_term_t::visit_args(json_cb_t &&json_cb, generated_cb_t &&generated_cb) const {
-    if (auto json = boost::get<json_data_t>(&info)) {
-        json_cb(json->args);
-    } else if (auto gen = boost::get<counted_t<generated_term_t> >(&info)) {
-        generated_cb((*gen)->args);
-    } else {
-        unreachable();
-    }
-}
-
-template <typename json_cb_t, typename generated_cb_t>
-void raw_term_t::visit_datum(json_cb_t &&json_cb, generated_cb_t &&generated_cb) const {
-    if (auto json = boost::get<json_data_t>(&info)) {
-        json_cb(json->datum);
-    } else if (auto gen = boost::get<counted_t<generated_term_t> >(&info)) {
-        generated_cb((*gen)->datum);
-    } else {
-        unreachable();
-    }
+    maybe_generated_term_t res;
+    visit_source(
+        [&](const json_data_t& source) {
+            res = source.source;
+        },
+        [&](const counted_t<generated_term_t> &source) {
+            res = source;
+        });
+    return res;
 }
 
 Query::QueryType term_storage_t::query_type() const {

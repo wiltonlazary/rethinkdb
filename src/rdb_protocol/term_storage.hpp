@@ -53,17 +53,17 @@ public:
 
     template <typename callable_t>
     void each_optarg(callable_t &&cb) const {
-        visit_optargs(
-            [&](const rapidjson::Value *optargs) {
-                if (optargs != nullptr) {
-                    for (auto it = optargs->MemberBegin();
-                         it != optargs->MemberEnd(); ++it) {
+        visit_source(
+            [&](const json_data_t &source) {
+                if (source.optargs != nullptr) {
+                    for (auto it = source.optargs->MemberBegin();
+                         it != source.optargs->MemberEnd(); ++it) {
                         cb(raw_term_t(&it->value, it->name.GetString()));
                     }
                 }
             },
-            [&](const std::map<std::string, maybe_generated_term_t> &optargs) {
-                for (const auto &it : optargs) {
+            [&](const counted_t<generated_term_t> &source) {
+                for (const auto &it : source->optargs) {
                     cb(raw_term_t(it.second, it.first));
                 }
             });
@@ -86,31 +86,23 @@ private:
     void init_json(const rapidjson::Value *src);
 
     template <typename json_cb_t, typename generated_cb_t>
-    void visit_args(json_cb_t &&json_cb, generated_cb_t &&generated_cb) const;
-
-    template <typename json_cb_t, typename generated_cb_t>
-    void visit_optargs(json_cb_t &&json_cb, generated_cb_t &&generated_cb) const {
+    void visit_source(json_cb_t &&json_cb, generated_cb_t &&generated_cb) const {
         if (auto json = boost::get<json_data_t>(&info)) {
-            json_cb(json->optargs);
+            json_cb(*json);
         } else if (auto gen = boost::get<counted_t<generated_term_t> >(&info)) {
-            generated_cb((*gen)->optargs);
+            generated_cb(*gen);
         } else {
             unreachable();
         }
     }
 
-    template <typename json_cb_t, typename generated_cb_t>
-    void visit_datum(json_cb_t &&json_cb, generated_cb_t &&generated_cb) const;
-
     std::string optarg_name_;
 
     struct json_data_t {
-        Term::TermType type;
-        backtrace_id_t bt;
+        const rapidjson::Value *source;
         const rapidjson::Value *args;
         const rapidjson::Value *optargs;
         const rapidjson::Value *datum;
-        const rapidjson::Value *source;
     };
 
     boost::variant<json_data_t, counted_t<generated_term_t> > info;
