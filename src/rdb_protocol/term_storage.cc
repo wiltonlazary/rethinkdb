@@ -49,7 +49,7 @@ raw_term_t::raw_term_t(const rapidjson::Value *source, std::string _optarg_name)
     init_json(source);
 }
 
-raw_term_t::raw_term_t(const maybe_generated_term_t &source, std::string _optarg_name) :
+raw_term_t::raw_term_t(const term_variant_t &source, std::string _optarg_name) :
         optarg_name_(std::move(_optarg_name)) {
     if (auto json_source = boost::get<rapidjson::Value *>(&source)) {
         init_json(*json_source);
@@ -204,8 +204,8 @@ backtrace_id_t raw_term_t::bt() const {
     return res;
 }
 
-maybe_generated_term_t raw_term_t::get_src() const {
-    maybe_generated_term_t res;
+term_variant_t raw_term_t::get_src() const {
+    term_variant_t res;
     visit_source(
         [&](const json_data_t& source) {
             res = source.source;
@@ -536,7 +536,7 @@ MUST_USE archive_result_t deserialize_term_tree<cluster_version_t::v2_2_is_lates
 
 void write_term(rapidjson::Writer<rapidjson::StringBuffer> *writer,
                 const raw_term_t &term) {
-    maybe_generated_term_t src = term.get_src();
+    term_variant_t src = term.get_src();
     if (auto json = boost::get<const rapidjson::Value *>(&src)) {
         (*json)->Accept(*writer);
     } else if (boost::get<counted_t<generated_term_t> >(&src)) {

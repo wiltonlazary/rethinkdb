@@ -24,14 +24,14 @@ const char *rapidjson_typestr(rapidjson::Type t);
 struct generated_term_t;
 
 typedef boost::variant<const rapidjson::Value *, counted_t<generated_term_t> >
-    maybe_generated_term_t;
+    term_variant_t;
 
 struct generated_term_t : public slow_atomic_countable_t<generated_term_t> {
     generated_term_t(Term::TermType _type, backtrace_id_t _bt);
 
     const Term::TermType type;
-    std::vector<maybe_generated_term_t> args;
-    std::map<std::string, maybe_generated_term_t> optargs;
+    std::vector<term_variant_t> args;
+    std::map<std::string, term_variant_t> optargs;
     datum_t datum;
     const backtrace_id_t bt;
 };
@@ -42,7 +42,7 @@ struct generated_term_t : public slow_atomic_countable_t<generated_term_t> {
 class raw_term_t {
 public:
     raw_term_t(const rapidjson::Value *source, std::string _optarg_name);
-    raw_term_t(const maybe_generated_term_t &source, std::string _optarg_name);
+    raw_term_t(const term_variant_t &source, std::string _optarg_name);
     explicit raw_term_t(const counted_t<generated_term_t> &source);
     raw_term_t(const raw_term_t &) = default;
 
@@ -79,7 +79,7 @@ public:
     Term::TermType type() const;
     backtrace_id_t bt() const;
     const std::string &optarg_name() const;
-    maybe_generated_term_t get_src() const;
+    term_variant_t get_src() const;
 
 private:
     raw_term_t();
