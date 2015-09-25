@@ -59,6 +59,7 @@ $gmrdata = [{"a"=>0, "arr"=>[0, 0], "id"=>0}, {"a"=>1, "arr"=>[1, 1], "b"=>1, "i
 $tbl = r.db('test').table('gmrdata')
 
 class ClientTest < UNIT_TEST_CLASS
+
   def setup
     r.db_create('test').run rescue nil
     r.db('test').table_create('test').run rescue nil
@@ -158,12 +159,12 @@ Query: #{PP.pp(query, "")}\nBatch Conf: #{bc}
                  $c.wait($c.dispatch([1, [24, [1, [45784]]], {}], 82), nil))
 
     $c.register_query(82, {})
-    assert_equal({ "t"=>17, "b"=>['fake'], "r"=>["Unrecognized TermType: 45784."] },
-                 $c.wait($c.dispatch([1, [24, [1, 1], {'fake'=>[45784]}], {}], 82), nil))
+    assert_equal({ "t"=>17, "b"=>['data'], "r"=>["Unrecognized TermType: 45785."] },
+                 $c.wait($c.dispatch([1, [24, [1, 1], {'data'=>[45785]}], {}], 82), nil))
 
     $c.register_query(82, {})
-    assert_equal({ "t"=>17, "b"=>[], "r"=>["Unrecognized TermType: 45784."] },
-                 $c.wait($c.dispatch([1, [24, [1, 1], {'fake'=>[24, [45784]]}], {}], 82), nil))
+    assert_equal({ "t"=>17, "b"=>['data', 0], "r"=>["Unrecognized TermType: 45786."] },
+                 $c.wait($c.dispatch([1, [24, [1, 1], {'data'=>[24, [[45786]]]}], {}], 82), nil))
   end
 
   def test_gmr_slow
@@ -275,6 +276,7 @@ Query: #{PP.pp(query, "")}\nBatch Conf: #{bc}
            2=>{"a"=>2, "arr"=>[0, 3], "b"=>2, "id"=>8}})
     }
   end
+
 end
 
 
