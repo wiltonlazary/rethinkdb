@@ -128,27 +128,95 @@ contract_t calculate_contract(
     new_c.replicas.insert(config.all_replicas.begin(), config.all_replicas.end());
 
     /* If there is a mismatch between `config.voting_replicas()` and `c.voters`, then
-    correct it */
+    add and/or remove voters until both sets match.
+    There are two important restrictions we have to consider here:
+    1. We should not remove voters if that would reduce the total number of voters
+       below the minimum of the size of the current voter set and the size of the
+       configured voter set. Consider the case where a user wants to replace
+       a few replicas by different ones. Without this restriction, we would often
+       remove all the old replicas from the voters set before enough of the new
+       replicas would become streaming to replace them.
+    2. Only replicas that are streaming are guaranteed to have a complete branch
+       history. Once we make a replica voting, some parts of our logic assume that
+       the branch history is intact (most importantly our call to
+       `break_ack_into_fragments()` in `calculate_all_contracts()`).
+       To avoid this condition, we only add a replica to the voters list after it
+       has started streaming.
+       See https://github.com/rethinkdb/rethinkdb/issues/4866 for more details. */
     std::set<server_id_t> config_voting_replicas = config.voting_replicas();
     if (!static_cast<bool>(old_c.temp_voters) &&
             old_c.voters != config_voting_replicas) {
-        size_t num_streaming = 0;
+        bool voters_changed = false;
+        std::set<server_id_t> new_voters = old_c.voters;
+
+        /* Step 1: Check if we can add any voters */
         for (const server_id_t &server : config_voting_replicas) {
+            if (old_c.voters.count(server)) {
+                /* The replica is already a voter */
+                continue;
+            }
             auto it = acks.find(server);
             if (it != acks.end() &&
                     (it->second.state == contract_ack_t::state_t::secondary_streaming ||
                     (static_cast<bool>(old_c.primary) &&
                         old_c.primary->server == server))) {
-                ++num_streaming;
+                /* The replica is streaming. We can add it to the voter set. */
+                new_voters.insert(server);
+                voters_changed = true;
             }
         }
 
-        /* We don't want to initiate the change until a majority of the new replicas are
-        already streaming, or else we'll lose write availability as soon as we set
-        `temp_voters`. */
-        if (num_streaming > config_voting_replicas.size() / 2) {
-            /* OK, we're ready to go */
-            new_c.temp_voters = boost::make_optional(config_voting_replicas);
+        /* Step 2: Remove voters */
+        /* We try to remove non-streaming replicas first before we start removing
+        streaming ones.
+
+        Consider this current set of replicas:
+         rep1:  streaming
+         rep2:  not streaming
+         rep3:  streaming
+
+        Say we want to remove rep1 and rep2, and instead add rep4, and assume
+        rep4 isn't streaming yet.
+        If we remove rep1 first, the table will become unavailable.
+        Instead we want to remove rep2 first, and then only remove rep1 once
+        we've added rep4. */
+
+        std::list<server_id_t> to_remove;
+        for (auto server : new_voters) {
+            if (config_voting_replicas.count(server) > 0) {
+                /* The replica should remain a voter */
+                continue;
+            }
+            auto acks_it = acks.find(server);
+            if (acks_it != acks.end() &&
+                    (acks_it->second.state ==
+                        contract_ack_t::state_t::secondary_streaming ||
+                    (static_cast<bool>(old_c.primary) &&
+                        old_c.primary->server == server))) {
+                /* The replica is streaming. Put it at the end of the `to_remove`
+                list. */
+                to_remove.push_back(server);
+            } else {
+                to_remove.push_front(server);
+            }
+        }
+
+        size_t min_voters_size = std::min(old_c.voters.size(),
+                                          config_voting_replicas.size());
+        for (auto server_to_remove : to_remove) {
+            /* Check if we can remove more voters without going below
+            `min_voters_size` */
+            if (new_voters.size() <= min_voters_size) {
+                break;
+            }
+            new_voters.erase(server_to_remove);
+            voters_changed = true;
+        }
+
+        /* Step 3: If anything changed, stage the new voter set into `temp_voters` */
+        rassert(voters_changed == (old_c.voters != new_voters));
+        if (voters_changed) {
+            new_c.temp_voters = boost::make_optional(new_voters);
         }
     }
 
