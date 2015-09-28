@@ -5,7 +5,7 @@
 import copy, os, pprint, sys, time
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir, 'common')))
-import rdb_unittest, utils
+import driver, rdb_unittest, utils
 
 # ==
 
@@ -15,16 +15,20 @@ recordsToAdd = 10
 
 class SingleServerFailure(rdb_unittest.RdbTestCase):
     
-    servers = ['PrinceHamlet', 'KingHamlet', 'Gertrude'] # note: self.conn will be to the first in this list
+    servers = ['PrinceHamlet', 'KingHamlet', 'Gertrude', 'Polonius'] # note: self.conn will be to the first in this list
     
     def test_primary(self):
+        
+        # -- add a proxy server to the cluster
+        
+        proxyServer = driver.ProxyProcess(cluster=self.cluster, console_output=True)
         
         # -- data
         
         tables = [
             {   'name': 'no_effect',
                 'primary': 'PrinceHamlet', 'primaryEffect': 'same',
-                'replicas': ['PrinceHamlet', 'Gertrude'],
+                'replicas': ['PrinceHamlet', 'Gertrude', 'Polonius'], 'nonvoting_replicas':['Polonius'],
                 'status': { 'all_replicas_ready': True,
                              'ready_for_outdated_reads': True,
                              'ready_for_reads': True,
@@ -32,7 +36,7 @@ class SingleServerFailure(rdb_unittest.RdbTestCase):
                 'issue': None},
             {   'name': 'fully_avalible',
                 'primary': 'PrinceHamlet', 'primaryEffect': 'same',
-                'replicas': ['PrinceHamlet', 'KingHamlet', 'Gertrude'],
+                'replicas': ['PrinceHamlet', 'KingHamlet', 'Gertrude', 'Polonius'], 'nonvoting_replicas':['Polonius'],
                 'status': { 'all_replicas_ready': False,
                              'ready_for_outdated_reads': True,
                              'ready_for_reads': True,
@@ -40,7 +44,7 @@ class SingleServerFailure(rdb_unittest.RdbTestCase):
                 'issue': 'Table `test.fully_avalible` is available for all operations, but some replicas are not ready. The following servers are not reachable: KingHamlet'},
             {   'name': 'change_primary',
                 'primary': 'KingHamlet', 'primaryEffect': 'changed',
-                'replicas': ['PrinceHamlet', 'KingHamlet', 'Gertrude'],
+                'replicas': ['PrinceHamlet', 'KingHamlet', 'Gertrude', 'Polonius'], 'nonvoting_replicas':['Polonius'],
                 'status': { 'all_replicas_ready': False,
                              'ready_for_outdated_reads': True,
                              'ready_for_reads': True,
@@ -48,15 +52,23 @@ class SingleServerFailure(rdb_unittest.RdbTestCase):
                 'issue': 'Table `test.change_primary` is available for all operations, but some replicas are not ready. The following servers are not reachable: KingHamlet'},
             {   'name': 'outdated_reads',
                 'primary': 'KingHamlet', 'primaryEffect': 'none',
-                'replicas': ['PrinceHamlet', 'KingHamlet'],
+                'replicas': ['PrinceHamlet', 'KingHamlet', 'Polonius'], 'nonvoting_replicas':['Polonius'],
                 'status': { 'all_replicas_ready': False,
                              'ready_for_outdated_reads': True,
                              'ready_for_reads': False,
                              'ready_for_writes': False},
                 'issue': 'Table `test.outdated_reads` is available for outdated reads, but not up-to-date reads or writes. The following servers are not reachable: KingHamlet'},
+            {   'name': 'nonvoter',
+                'primary': 'KingHamlet', 'primaryEffect': 'none',
+                'replicas': ['KingHamlet', 'Polonius'], 'nonvoting_replicas':['Polonius'],
+                'status': { 'all_replicas_ready': False,
+                             'ready_for_outdated_reads': True,
+                             'ready_for_reads': False,
+                             'ready_for_writes': False},
+                'issue': 'Table `test.nonvoter` is available for outdated reads, but not up-to-date reads or writes. The following servers are not reachable: KingHamlet'},
             {   'name': 'unavailable',
                 'primary': 'KingHamlet', 'primaryEffect': 'none',
-                'replicas': ['KingHamlet'],
+                'replicas': ['KingHamlet'], 'nonvoting_replicas':[],
                 'status': { 'all_replicas_ready': False,
                              'ready_for_outdated_reads': False,
                              'ready_for_reads': False,
@@ -67,7 +79,7 @@ class SingleServerFailure(rdb_unittest.RdbTestCase):
         # - make both write_acks versions
         for i in range(len(tables)):
             single = tables[i]
-            majority = copy.copy(tables[i])
+            majority = copy.deepcopy(tables[i])
             tables.append(majority)
             
             if single['issue']:
@@ -85,7 +97,7 @@ class SingleServerFailure(rdb_unittest.RdbTestCase):
         utils.print_with_time("Creating %d tables" % len(tables))
         newTableInfo = []
         for table in tables:
-            newTableInfo.append({
+            thisTableInfo = {
                 'db':self.dbName,
                 'name':table['name'],
                 'shards':[{
@@ -93,9 +105,12 @@ class SingleServerFailure(rdb_unittest.RdbTestCase):
                     'replicas':table['replicas']
                 }],
                 'write_acks':table['write_acks']
-            })
+            }
+            if table['nonvoting_replicas']:
+                thisTableInfo['shards'][0]['nonvoting_replicas'] = table['nonvoting_replicas']
+            newTableInfo.append(thisTableInfo)
         res = self.r.db("rethinkdb").table("table_config").insert(newTableInfo).run(self.conn)
-        self.assertEqual(res['inserted'], len(tables))
+        self.assertEqual(res['inserted'], len(tables), 'Table creation was not sucessfull:\n%sFor config:\n%s' % (pprint.pformat(res), pprint.pformat(newTableInfo)))
         self.db.wait().run(self.conn)
         
         # - fill each with a small amount of data
@@ -135,7 +150,7 @@ class SingleServerFailure(rdb_unittest.RdbTestCase):
             if len(roundExpectedIssues) == 0:
                 break
         if len(roundExpectedIssues) != 0:
-            self.fail('Missing issues after killing KingHamlet:\n%sActual:\n%s' % (pprint.pformat(roundExpectedIssues.keys()), pprint.pformat(roundActualIssues)))
+            self.fail('Missing issues after killing KingHamlet:\n%s\nActual:\n%s' % (pprint.pformat(roundExpectedIssues.keys()), pprint.pformat(roundActualIssues)))
         if len(roundExtraIssues) != 0:
             self.fail('Got unexpected issues after killing KingHamlet:\n%s' % pprint.pformat(roundExtraIssues))
         
