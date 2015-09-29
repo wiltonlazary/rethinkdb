@@ -1130,9 +1130,9 @@ lib_pkg_name () {
         boost_system) echo boost ;;
         crypto) echo openssl ;;
         ssl) echo openssl ;;
-        icui18n) echo icu ;;
-        icuuc) echo icu ;;
-        icudata) echo icu ;;
+        icui18n) echo v8 ;;
+        icuuc) echo v8 ;;
+        icudata) echo v8 ;;
         *) echo "$1" ;;
     esac
 }
