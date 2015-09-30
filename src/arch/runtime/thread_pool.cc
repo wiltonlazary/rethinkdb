@@ -213,7 +213,7 @@ void linux_thread_pool_t::run_thread_pool(linux_thread_message_t *initial_messag
         // Don't set affinity for the utility thread
         if (do_set_affinity && !is_utility_thread) {
             // On Apple, the thread affinity API has awful documentation, so we don't even bother.
-#ifndef __MACH__
+#ifdef _GNU_SOURCE
             // Distribute threads evenly among CPUs
             int ncpus = get_cpu_count();
             cpu_set_t mask;
