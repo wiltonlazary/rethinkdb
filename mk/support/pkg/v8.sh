@@ -4,13 +4,6 @@ version=3.30.33.16
 
 src_url=http://commondatastorage.googleapis.com/chromium-browser-official/v8-$version.tar.bz2
 
-pkg_fetch () {
-    pkg_fetch_archive
-    if [[ "$CROSS_COMPILING" != 1 ]]; then
-        find "$src_dir"/third_party/icu/* -maxdepth 0 -not -name 'icu.gyp*' -print0 | xargs -0 rm -rf
-    fi
-}
-
 pkg_install-include () {
     pkg_copy_src_to_build
     
