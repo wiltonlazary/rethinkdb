@@ -1222,7 +1222,7 @@ connectivity_cluster_t::connectivity_cluster_t() THROWS_NOTHING :
     /* We assign threads from the highest thread number downwards. This is to reduce the
     potential for conflicting with btree threads, which assign threads from the lowest
     thread number upwards. */
-    thread_allocator([] (threadnum_t a, threadnum_t b) {
+    thread_allocator([](threadnum_t a, threadnum_t b) {
         return a.threadnum > b.threadnum;
     }),
     current_run(NULL),

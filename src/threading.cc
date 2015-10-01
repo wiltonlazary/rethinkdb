@@ -52,7 +52,7 @@ int get_num_db_threads() {
 }
 
 thread_allocator_t::thread_allocator_t(
-        const std::function<bool(threadnum_t, threadnum_t)> &_secondary_lt) 
+        const std::function<bool(threadnum_t, threadnum_t)> &_secondary_lt)
     : secondary_lt(_secondary_lt),
       num_allocated(get_num_db_threads(), 0) { }
 
@@ -67,7 +67,7 @@ thread_allocation_t::thread_allocation_t(thread_allocator_t *p)
       parent(p) {
     parent->assert_thread();
     int32_t best_thread = 0;
-    for (int32_t i = 0; static_cast<size_t>(i) < parent->num_allocated.size(); ++i) {
+    for (int32_t i = 1; static_cast<size_t>(i) < parent->num_allocated.size(); ++i) {
         if (parent->num_allocated[i] < parent->num_allocated[best_thread]) {
             best_thread = i;
         } else if (parent->num_allocated[i] == parent->num_allocated[best_thread] &&

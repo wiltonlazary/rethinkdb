@@ -28,7 +28,7 @@ public:
         /* We assign threads from the lowest thread number upwards. This is to reduce
         the potential for conflicting with cluster connection threads, which are
         assigned from the highest thread number downwards. */
-        thread_allocator([] (threadnum_t a, threadnum_t b) {
+        thread_allocator([](threadnum_t a, threadnum_t b) {
             return a.threadnum < b.threadnum;
         })
         { }
