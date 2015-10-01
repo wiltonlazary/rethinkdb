@@ -34,7 +34,7 @@ class SingleServerFailure(rdb_unittest.RdbTestCase):
                              'ready_for_reads': True,
                              'ready_for_writes': True},
                 'issue': None},
-            {   'name': 'fully_avalible',
+            {   'name': 'fully_available',
                 'primary': 'PrinceHamlet', 'primaryEffect': 'same',
                 'replicas': ['PrinceHamlet', 'KingHamlet', 'Gertrude', 'Polonius'], 'nonvoting_replicas':['Polonius'],
                 'status': { 'all_replicas_ready': False,
