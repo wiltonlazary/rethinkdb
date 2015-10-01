@@ -59,7 +59,7 @@ pkg_link-flags () {
     for lib in libv8_{base,libbase,snapshot,libplatform}; do
         echo "$install_dir/lib/$lib.a"
     done
-    for lib in libicu{data,i18n,uc}; do
+    for lib in libicu{i18n,uc,data}; do
         echo "$install_dir/lib/$lib.a"
     done
 }
