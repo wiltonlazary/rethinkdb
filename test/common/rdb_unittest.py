@@ -160,8 +160,8 @@ class RdbTestCase(unittest.TestCase):
         # - make sure we have any named servers
         
         if hasattr(self.servers, '__iter__'):
-            firstServer = len(self.cluster) == 0
             for name in self.servers:
+                firstServer = len(self.cluster) == 0
                 if not name in self.cluster:
                     driver.Process(cluster=self.cluster, name=name, console_output=True, command_prefix=self.server_command_prefix, extra_options=self.server_extra_options, wait_until_ready=firstServer)
         
@@ -170,7 +170,10 @@ class RdbTestCase(unittest.TestCase):
         
         serverCount = max(self.shards * self.replicas, len(self.servers) if hasattr(self.servers, '__iter__') else self.servers)
         for _ in range(serverCount - len(self.cluster)):
+            firstServer = len(self.cluster) == 0
             driver.Process(cluster=self.cluster, wait_until_ready=firstServer, command_prefix=self.server_command_prefix, extra_options=self.server_extra_options)
+        
+        self.cluster.wait_until_ready()
         
         # -- ensure db is available
         
