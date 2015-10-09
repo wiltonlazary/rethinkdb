@@ -12,8 +12,7 @@ void response_t::fill_error(Response::ResponseType _type,
                             const std::string &message,
                             const ql::datum_t &_backtrace) {
     clear();
-    type_is_initialized_ = true;
-    type_ = _type;
+    set_type(_type);
     error_type_ = _error_type;
     backtrace_ = _backtrace;
     data_.push_back(ql::datum_t(datum_string_t(message)));
@@ -24,8 +23,8 @@ void response_t::fill_error(Response::ResponseType _type,
 }
 
 void response_t::set_type(Response::ResponseType _type) {
-    type_is_initialized_ = true;
     type_ = _type;
+    type_is_initialized_ = true;
 }
 
 void response_t::set_data(const ql::datum_t &_data) {
