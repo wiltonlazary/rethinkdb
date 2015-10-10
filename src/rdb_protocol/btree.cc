@@ -792,22 +792,31 @@ continue_bool_t rget_cb_t::handle_pair(
         if (sindex) {
             sindex->datumspec.visit<void>(
                 [&](const ql::datum_range_t &r) {
-                    std::string skey = ql::datum_t::extract_truncated_secondary(
-                            key_to_unescaped_str(key));
                     bool must_check_copies = false;
                     if (static_cast<bool>(sindex->left_bound_trunc_key)) {
-                        if (skey < *sindex->left_bound_trunc_key
-                            || ((r.left_bound_type == key_range_t::bound_t::open
-                                 || ql::datum_t::key_is_truncated(key))
-                                && skey == *sindex->left_bound_trunc_key)) {
+                        int cmp = memcmp(
+                            reinterpret_cast<const char *>(key.contents()),
+                            sindex->left_bound_trunc_key->data(),
+                            std::min<size_t>(key.size(),
+                                             sindex->left_bound_trunc_key->length()));
+                        if (cmp < 0
+                            || (cmp == 0
+                                && (r.left_bound_type == key_range_t::bound_t::open
+                                    || ql::datum_t::key_is_truncated(key)))) {
                             must_check_copies = true;
                         }
                     }
-                    if (static_cast<bool>(sindex->right_bound_trunc_key)) {
-                        if (skey > *sindex->right_bound_trunc_key
-                            || ((r.right_bound_type == key_range_t::bound_t::open
-                                 || ql::datum_t::key_is_truncated(key))
-                                && skey == *sindex->right_bound_trunc_key)) {
+                    if (!must_check_copies
+                        && static_cast<bool>(sindex->right_bound_trunc_key)) {
+                        int cmp = memcmp(
+                            reinterpret_cast<const char *>(key.contents()),
+                            sindex->right_bound_trunc_key->data(),
+                            std::min<size_t>(key.size(),
+                                             sindex->right_bound_trunc_key->length()));
+                        if (cmp > 0
+                            || (cmp == 0
+                                && (r.right_bound_type == key_range_t::bound_t::open
+                                    || ql::datum_t::key_is_truncated(key)))) {
                             must_check_copies = true;
                         }
                     }
