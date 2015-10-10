@@ -677,30 +677,6 @@ continue_bool_t rget_cb_t::handle_pair(
     waiter.wait_interruptible();
 
     try {
-        // Update the last considered key.
-        // TODO: it would be really nice if this wasn't duplicated across the
-        // groups, but that would require making `append_t` not be a
-        // `grouped_acc_t` which is a bit of a pain.
-        debugf("pointer: %p\n",
-               boost::get<ql::grouped_t<ql::stream_t> >(&io.response->result));
-        if (auto *grouped_stream
-            = boost::get<ql::grouped_t<ql::stream_t> >(&io.response->result)) {
-            for (auto &&pair : *grouped_stream) {
-                guarantee(pair.second.substreams.size() == 1);
-                auto *keyed_stream = &pair.second.substreams.begin()->second;
-                debugf("1 last_key (key): %s (%s)\n",
-                       key_to_debug_str(keyed_stream->last_key).c_str(),
-                       key_to_debug_str(key).c_str());
-                if ((keyed_stream->last_key < key && !reversed(job.sorting)) ||
-                    (keyed_stream->last_key > key && reversed(job.sorting))) {
-                    keyed_stream->last_key = key;
-                }
-                debugf("1 last_key (key): %s (%s)\n",
-                       key_to_debug_str(keyed_stream->last_key).c_str(),
-                       key_to_debug_str(key).c_str());
-            }
-        }
-
         // Check whether we're out of sindex range.
         ql::datum_t sindex_val; // NULL if no sindex.
         if (sindex) {

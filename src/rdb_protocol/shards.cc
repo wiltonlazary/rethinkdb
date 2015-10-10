@@ -186,6 +186,11 @@ protected:
         auto *keyed_stream = &stream->substreams.begin()->second;
         keyed_stream->stream.push_back(
             rget_item_t(store_key_t(key), rget_sindex_val, el));
+        // Update the last considered key.
+        if ((keyed_stream->last_key < key && !reversed(sorting))
+            || (keyed_stream->last_key > key && reversed(sorting))) {
+            keyed_stream->last_key = key;
+        }
         return true;
     }
 
