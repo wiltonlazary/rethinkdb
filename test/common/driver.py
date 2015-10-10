@@ -16,6 +16,10 @@ try:
     xrange
 except NameError:
     xrange = range
+try:
+    unicode
+except NameError:
+    unicode = str
 
 # == resunder support
 
@@ -288,19 +292,27 @@ class Cluster(object):
             if not (-1 * len(self.processes) <= pos < len(self.processes) ):
                 raise IndexError('This cluster only has %d servers, so index %s is invalid' % (len(self.processes), str(pos)))
             return self.processes[pos]
+        elif isinstance(pos, (str, unicode)):
+            for server in self.processes:
+                if pos == server.name:
+                    return server
+            else:
+                raise KeyError('This cluster does not have a server named: %s' % pos) 
         else:
             raise TypeError("Invalid argument type: %s" % repr(pos))
     
     def __iter__(self):
         return iter(self.processes)
+    
+    def __len__(self):
+        if not self.processes:
+            return 0
+        return len(self.processes)
 
 class Process(object):
     '''A running RethinkDB server'''
     
     startupTimeout = 30
-    
-    running = False
-    ready = False
     
     server_type = 'server'
     cluster = None
@@ -343,7 +355,7 @@ class Process(object):
         '''generate a non-existing name with a bit of randomness at the end'''
         newPath = path # should always exist
         while os.path.exists(newPath):
-            newPath = '%s_%s' % (os.path.join(path, name), ''.join(random.choice(string.lowercase) for i in range(extraLetters)))
+            newPath = '%s_%s' % (os.path.join(path, name), ''.join(random.choice(string.ascii_lowercase) for i in range(extraLetters)))
         os.mkdir(newPath)
         return newPath
     
@@ -568,14 +580,15 @@ class Process(object):
             
             # - start thread to tail output for needed info
             thread.start_new_thread(self.read_ports_from_log, ())
-            
-            # - move console file if necessary
-            if self._console_file_path and os.path.isfile(self._console_file_path) and not os.path.samefile(self._console_file_path, self.console_file.name):
-                os.rename(self.console_file.name, self._console_file_path)
 
         except Exception:
             self.stop()
             raise
+        
+        finally:
+            # - move console file if necessary
+            if self._console_file_path and not os.path.exists(self._console_file_path):
+                os.rename(self.console_file.name, self._console_file_path)
         
         # -- wait until ready (if requested)
         if wait_until_ready:

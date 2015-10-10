@@ -1,4 +1,4 @@
-// Copyright 2010-2013 RethinkDB, all rights reserved.
+// Copyright 2010-2015 RethinkDB, all rights reserved.
 #include "rdb_protocol/terms/terms.hpp"
 
 #include "rdb_protocol/op.hpp"
@@ -8,7 +8,7 @@ namespace ql {
 
 class keys_term_t : public op_term_t {
 public:
-    keys_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    keys_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(1)) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -19,7 +19,8 @@ private:
             break;
         case reql_version_t::v1_16:
         case reql_version_t::v2_0:
-        case reql_version_t::v2_1_is_latest:
+        case reql_version_t::v2_1:
+        case reql_version_t::v2_2_is_latest:
             rcheck_target(v,
                           d.has() && d.get_type() == datum_t::R_OBJECT && !d.is_ptype(),
                           base_exc_t::LOGIC,
@@ -44,7 +45,7 @@ private:
 
 class values_term_t : public op_term_t {
 public:
-    values_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    values_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(1)) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -69,7 +70,7 @@ private:
 
 class object_term_t : public op_term_t {
 public:
-    object_term_t(compile_env_t *env, const protob_t<const Term> &term)
+    object_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(0, -1)) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -83,9 +84,9 @@ private:
             datum_t keyval = args->arg(env, i + 1)->as_datum();
             bool b = obj.add(key, keyval);
             rcheck(!b, base_exc_t::LOGIC,
-                   strprintf("Duplicate key `%s` in object.  "
-                             "(got `%s` and `%s` as values)",
-                             key.to_std().c_str(),
+                   strprintf("Duplicate key %s in object.  "
+                             "(got %s and %s as values)",
+                             datum_t(key).print().c_str(),
                              obj.at(key).trunc_print().c_str(),
                              keyval.trunc_print().c_str()));
         }
@@ -96,17 +97,17 @@ private:
 };
 
 counted_t<term_t> make_keys_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<keys_term_t>(env, term);
 }
 
 counted_t<term_t> make_values_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<values_term_t>(env, term);
 }
 
 counted_t<term_t> make_object_term(
-        compile_env_t *env, const protob_t<const Term> &term) {
+        compile_env_t *env, const raw_term_t &term) {
     return make_counted<object_term_t>(env, term);
 }
 
