@@ -18,14 +18,14 @@ datum_range_t::datum_range_t()
 datum_range_t::datum_range_t(
     datum_t _left_bound, key_range_t::bound_t _left_bound_type,
     datum_t _right_bound, key_range_t::bound_t _right_bound_type)
-    : left_bound(_left_bound), right_bound(_right_bound),
-      left_bound_type(_left_bound_type), right_bound_type(_right_bound_type) {
+    : left_bound_type(_left_bound_type), right_bound_type(_right_bound_type),
+      left_bound(_left_bound), right_bound(_right_bound) {
     r_sanity_check(left_bound.has() && right_bound.has());
 }
 
 datum_range_t::datum_range_t(datum_t val)
-    : left_bound(val), right_bound(val),
-      left_bound_type(key_range_t::closed), right_bound_type(key_range_t::closed) {
+    : left_bound_type(key_range_t::closed), right_bound_type(key_range_t::closed),
+      left_bound(val), right_bound(val) {
     r_sanity_check(val.has());
 }
 

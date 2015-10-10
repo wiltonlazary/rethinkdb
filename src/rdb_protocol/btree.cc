@@ -1,4 +1,4 @@
-// Copyright 2010-2014 RethinkDB, all rights reserved.
+// Copyright 2010-2015 RethinkDB, all rights reserved.
 #include "rdb_protocol/btree.hpp"
 
 #include <functional>
@@ -791,17 +791,23 @@ continue_bool_t rget_cb_t::handle_pair(
         size_t copies = default_copies;
         if (sindex) {
             sindex->datumspec.visit<void>(
-                [&](const ql::datum_range_t &) {
+                [&](const ql::datum_range_t &r) {
                     std::string skey = ql::datum_t::extract_truncated_secondary(
                             key_to_unescaped_str(key));
                     bool must_check_copies = false;
                     if (static_cast<bool>(sindex->left_bound_trunc_key)) {
-                        if (skey <= *sindex->left_bound_trunc_key) {
+                        if (skey < *sindex->left_bound_trunc_key
+                            || ((r.left_bound_type == key_range_t::bound_t::open
+                                 || ql::datum_t::key_is_truncated(key))
+                                && skey == *sindex->left_bound_trunc_key)) {
                             must_check_copies = true;
                         }
                     }
                     if (static_cast<bool>(sindex->right_bound_trunc_key)) {
-                        if (skey >= *sindex->right_bound_trunc_key) {
+                        if (skey > *sindex->right_bound_trunc_key
+                            || ((r.right_bound_type == key_range_t::bound_t::open
+                                 || ql::datum_t::key_is_truncated(key))
+                                && skey == *sindex->right_bound_trunc_key)) {
                             must_check_copies = true;
                         }
                     }
