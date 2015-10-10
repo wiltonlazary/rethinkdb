@@ -1,3 +1,6 @@
+
+#include <boost/none.hpp>
+
 // Copyright 2010-2014 RethinkDB, all rights reserved.
 #include "rdb_protocol/datumspec.hpp"
 
@@ -104,6 +107,27 @@ key_range_t datum_range_t::to_sindex_keyrange(reql_version_t reql_version) const
     return rdb_protocol::sindex_key_range(
         store_key_t(left_bound.truncated_secondary(reql_version, extrema_ok_t::OK)),
         store_key_t(right_bound.truncated_secondary(reql_version, extrema_ok_t::OK)));
+}
+
+boost::optional<std::string> datum_range_t::get_left_bound_trunc_key(
+        reql_version_t reql_ver) const {
+    if (left_bound_type != key_range_t::bound_t::none) {
+        return key_to_unescaped_str(left_bound.truncated_secondary(
+            reql_ver,
+            ql::extrema_ok_t::OK));
+    } else {
+        return boost::optional<std::string>();
+    }
+}
+boost::optional<std::string> datum_range_t::get_right_bound_trunc_key(
+        reql_version_t reql_ver) const {
+    if (right_bound_type != key_range_t::bound_t::none) {
+        return key_to_unescaped_str(right_bound.truncated_secondary(
+            reql_ver,
+            ql::extrema_ok_t::OK));
+    } else {
+        return boost::optional<std::string>();
+    }
 }
 
 datum_range_t datum_range_t::with_left_bound(datum_t d, key_range_t::bound_t type) {

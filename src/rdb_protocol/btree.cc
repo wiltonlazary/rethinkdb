@@ -1,3 +1,6 @@
+
+#include "datum.hpp"
+
 // Copyright 2010-2014 RethinkDB, all rights reserved.
 #include "rdb_protocol/btree.hpp"
 
@@ -549,7 +552,14 @@ public:
           active_region_range_inout(_active_region_range_inout),
           func_reql_version(wire_func_reql_version),
           func(wire_func.compile_wire_func()),
-          multi(_multi) { }
+          multi(_multi) {
+        datumspec.visit<void>(
+            [&](const ql::datum_range_t &r) {
+                left_bound_trunc_key = r.get_left_bound_trunc_key(func_reql_version);
+                right_bound_trunc_key = r.get_right_bound_trunc_key(func_reql_version);
+            },
+            [](const std::map<ql::datum_t, uint64_t> &) { });
+    }
 private:
     friend class rget_cb_t;
     const key_range_t pkey_range;
@@ -558,6 +568,10 @@ private:
     const reql_version_t func_reql_version;
     const counted_t<const ql::func_t> func;
     const sindex_multi_bool_t multi;
+    // The (truncated) boundary keys for the datum range stored in `datumspec`,
+    // if any.
+    boost::optional<std::string> left_bound_trunc_key;
+    boost::optional<std::string> right_bound_trunc_key;
 };
 
 class job_data_t {
@@ -775,17 +789,36 @@ continue_bool_t rget_cb_t::handle_pair(
         };
 
         // Check whether we're outside the sindex range.
-        // We only need to check this if the tree has been truncated.
-        // TODO! Is that correct?
-        // TODO! We also need to check if datumspec is more than just a range
+        // We only need to check this if we can have non-default counts or if we
+        // are on the boundary of the sindex range.
         size_t copies = default_copies;
         if (sindex) {
-            bool datum_is_range = sindex->datumspec.visit<bool>(
-                [](const ql::datum_range_t &) { return true; },
-                [](const std::map<ql::datum_t, uint64_t> &) { return false; });
-            if (!datum_is_range || ql::datum_t::key_is_truncated(key)) {
-                copies = sindex->datumspec.copies(lazy_sindex_val());
-                if (copies == 0) return continue_bool_t::CONTINUE;
+            sindex->datumspec.visit<void>(
+                [&](const ql::datum_range_t &) {
+                    std::string skey = ql::datum_t::extract_truncated_secondary(
+                            key_to_unescaped_str(key));
+                    bool must_check_copies = false;
+                    if (static_cast<bool>(sindex->left_bound_trunc_key)) {
+                        if (skey <= *sindex->left_bound_trunc_key) {
+                            must_check_copies = true;
+                        }
+                    }
+                    if (static_cast<bool>(sindex->right_bound_trunc_key)) {
+                        if (skey >= *sindex->right_bound_trunc_key) {
+                            must_check_copies = true;
+                        }
+                    }
+                    if (must_check_copies) {
+                        copies = sindex->datumspec.copies(lazy_sindex_val());
+                    } else {
+                        copies = 1;
+                    }
+                },
+                [&](const std::map<ql::datum_t, uint64_t> &) {
+                    copies = sindex->datumspec.copies(lazy_sindex_val());
+                });
+            if (copies == 0) {
+                return continue_bool_t::CONTINUE;
             }
         }
 
