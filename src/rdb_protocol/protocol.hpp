@@ -720,7 +720,9 @@ region_t monokey_region(const store_key_t &k);
 // Constructs a region which will query an sindex for matches to a specific key
 // TODO consider relocating this
 key_range_t sindex_key_range(const store_key_t &start,
-                             const store_key_t &end);
+                             const store_key_t &end,
+                             key_range_t::bound_t end_type,
+                             ql::skey_version_t skey_version);
 }  // namespace rdb_protocol
 
 

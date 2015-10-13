@@ -1,3 +1,6 @@
+
+#include "datum.hpp"
+
 // Copyright 2010-2015 RethinkDB, all rights reserved.
 #include "rdb_protocol/protocol.hpp"
 
@@ -272,23 +275,40 @@ region_t monokey_region(const store_key_t &k) {
 }
 
 key_range_t sindex_key_range(const store_key_t &start,
-                             const store_key_t &end) {
+                             const store_key_t &end,
+                             key_range_t::bound_t end_type,
+                             ql::skey_version_t skey_version) {
+
+    const size_t max_trunc_size = ql::datum_t::max_trunc_size(skey_version);
+
+    // TODO! What if start isn't truncated?
+
+    // If `end` is not truncated and right bound is open, we don't increment the right
+    // bound.
+    guarantee(static_cast<size_t>(end.size()) <= max_trunc_size);
     store_key_t end_key;
-    std::string end_key_str(key_to_unescaped_str(end));
+    const bool end_is_truncated = static_cast<size_t>(end.size()) == max_trunc_size;
+    if (end_is_truncated || end_type == key_range_t::bound_t::closed) {
+        // The key range we generate must be open on the right end because the keys in the
+        // btree have extra data appended to the secondary key part.
+        // Hence we need to make the next largest store_key_t without making the key longer.
+        // (theoretically it's ok to instead append a '\1' if `end` is not truncated)
+        std::string end_key_str(key_to_unescaped_str(end));
+        while (end_key_str.length() > 0 &&
+               end_key_str[end_key_str.length() - 1] == static_cast<char>(255)) {
+            end_key_str.erase(end_key_str.length() - 1);
+        }
 
-    // Need to make the next largest store_key_t without making the key longer
-    while (end_key_str.length() > 0 &&
-           end_key_str[end_key_str.length() - 1] == static_cast<char>(255)) {
-        end_key_str.erase(end_key_str.length() - 1);
-    }
-
-    if (end_key_str.length() == 0) {
-        end_key = store_key_t::max();
+        if (end_key_str.length() == 0) {
+            end_key = store_key_t::max();
+        } else {
+            ++end_key_str[end_key_str.length() - 1];
+            end_key = store_key_t(end_key_str);
+        }
     } else {
-        ++end_key_str[end_key_str.length() - 1];
-        end_key = store_key_t(end_key_str);
+        end_key = end;
     }
-    return key_range_t(key_range_t::closed, start, key_range_t::open, end_key);
+    return key_range_t(key_range_t::closed, start, key_range_t::open, std::move(end_key));
 }
 
 }  // namespace rdb_protocol

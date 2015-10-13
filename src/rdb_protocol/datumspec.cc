@@ -103,7 +103,9 @@ key_range_t datum_range_t::to_sindex_keyrange(reql_version_t reql_version) const
     object_buffer_t<store_key_t> lb, rb;
     return rdb_protocol::sindex_key_range(
         store_key_t(left_bound.truncated_secondary(reql_version, extrema_ok_t::OK)),
-        store_key_t(right_bound.truncated_secondary(reql_version, extrema_ok_t::OK)));
+        store_key_t(right_bound.truncated_secondary(reql_version, extrema_ok_t::OK)),
+        right_bound_type,
+        ql::skey_version_from_reql_version(reql_version));
 }
 
 boost::optional<std::string> datum_range_t::get_left_bound_trunc_key(

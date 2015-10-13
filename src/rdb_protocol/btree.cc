@@ -1,3 +1,6 @@
+
+#include "datum.hpp"
+
 // Copyright 2010-2015 RethinkDB, all rights reserved.
 #include "rdb_protocol/btree.hpp"
 
@@ -552,8 +555,8 @@ public:
           multi(_multi) {
         datumspec.visit<void>(
             [&](const ql::datum_range_t &r) {
-                left_bound_trunc_key = r.get_left_bound_trunc_key(func_reql_version);
-                right_bound_trunc_key = r.get_right_bound_trunc_key(func_reql_version);
+                lbound_trunc_key = r.get_left_bound_trunc_key(func_reql_version);
+                rbound_trunc_key = r.get_right_bound_trunc_key(func_reql_version);
             },
             [](const std::map<ql::datum_t, uint64_t> &) { });
     }
@@ -567,8 +570,8 @@ private:
     const sindex_multi_bool_t multi;
     // The (truncated) boundary keys for the datum range stored in `datumspec`,
     // if any.
-    boost::optional<std::string> left_bound_trunc_key;
-    boost::optional<std::string> right_bound_trunc_key;
+    boost::optional<std::string> lbound_trunc_key;
+    boost::optional<std::string> rbound_trunc_key;
 };
 
 class job_data_t {
@@ -791,44 +794,65 @@ continue_bool_t rget_cb_t::handle_pair(
         size_t copies = default_copies;
         if (sindex) {
             sindex->datumspec.visit<void>(
-                [&](const ql::datum_range_t &r) {
-                    bool must_check_copies = false;
-                    if (static_cast<bool>(sindex->left_bound_trunc_key)) {
+            [&](const ql::datum_range_t &r) {
+                const size_t max_trunc_size =
+                    ql::datum_t::max_trunc_size(
+                        ql::skey_version_from_reql_version(sindex->func_reql_version));
+                bool must_check_copies = false;
+                std::string skey =
+                    ql::datum_t::extract_truncated_secondary(key_to_unescaped_str(key));
+                if (static_cast<bool>(sindex->lbound_trunc_key)) {
+                    const bool left_bound_is_truncated =
+                        sindex->lbound_trunc_key->size() == max_trunc_size;
+                    if (left_bound_is_truncated
+                        || r.left_bound_type == key_range_t::bound_t::open) {
                         int cmp = memcmp(
-                            reinterpret_cast<const char *>(key.contents()),
-                            sindex->left_bound_trunc_key->data(),
-                            std::min<size_t>(key.size(),
-                                             sindex->left_bound_trunc_key->length()));
-                        if (cmp < 0
-                            || (cmp == 0
-                                && (r.left_bound_type == key_range_t::bound_t::open
-                                    || ql::datum_t::key_is_truncated(key)))) {
+                            skey.data(),
+                            sindex->lbound_trunc_key->data(),
+                            std::min<size_t>(skey.size(),
+                                             sindex->lbound_trunc_key->size()));
+                        if (skey.size() < sindex->lbound_trunc_key->size()) {
+                            guarantee(cmp != 0);
+                        }
+                        guarantee(cmp >= 0);
+                        if (cmp == 0
+                            && skey.size() == sindex->lbound_trunc_key->size()) {
                             must_check_copies = true;
                         }
                     }
-                    if (!must_check_copies
-                        && static_cast<bool>(sindex->right_bound_trunc_key)) {
+                }
+                if (!must_check_copies
+                    && static_cast<bool>(sindex->rbound_trunc_key)) {
+                    const bool right_bound_is_truncated =
+                        sindex->rbound_trunc_key->size() == max_trunc_size;
+                    if (right_bound_is_truncated
+                        || r.right_bound_type == key_range_t::bound_t::open) {
                         int cmp = memcmp(
-                            reinterpret_cast<const char *>(key.contents()),
-                            sindex->right_bound_trunc_key->data(),
-                            std::min<size_t>(key.size(),
-                                             sindex->right_bound_trunc_key->length()));
-                        if (cmp > 0
-                            || (cmp == 0
-                                && (r.right_bound_type == key_range_t::bound_t::open
-                                    || ql::datum_t::key_is_truncated(key)))) {
+                            skey.data(),
+                            sindex->rbound_trunc_key->data(),
+                            std::min<size_t>(skey.size(),
+                                             sindex->rbound_trunc_key->size()));
+                        if (skey.size() > sindex->rbound_trunc_key->size()) {
+                            guarantee(cmp != 0);
+                        }
+                        guarantee(cmp <= 0);
+                        if (cmp == 0
+                            && skey.size() == sindex->rbound_trunc_key->size()) {
                             must_check_copies = true;
                         }
                     }
-                    if (must_check_copies) {
-                        copies = sindex->datumspec.copies(lazy_sindex_val());
-                    } else {
-                        copies = 1;
-                    }
-                },
-                [&](const std::map<ql::datum_t, uint64_t> &) {
+                }
+                if (must_check_copies) {
                     copies = sindex->datumspec.copies(lazy_sindex_val());
-                });
+                } else {
+                    copies = 1;
+                }
+            },
+            [&](const std::map<ql::datum_t, uint64_t> &) {
+
+                // TODO! Optimize this
+                copies = sindex->datumspec.copies(lazy_sindex_val());
+            });
             if (copies == 0) {
                 return continue_bool_t::CONTINUE;
             }
