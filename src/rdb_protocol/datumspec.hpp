@@ -34,9 +34,9 @@ public:
     key_range_t to_sindex_keyrange(reql_version_t reql_version) const;
 
     // Computes the truncated keys corresponding to `left_bound`/`right_bound`
-    // respectively, if any.
-    boost::optional<std::string> get_left_bound_trunc_key(reql_version_t ver) const;
-    boost::optional<std::string> get_right_bound_trunc_key(reql_version_t ver) const;
+    // respectively.
+    std::string get_left_bound_trunc_key(reql_version_t ver) const;
+    std::string get_right_bound_trunc_key(reql_version_t ver) const;
 
     datum_range_t with_left_bound(datum_t d, key_range_t::bound_t type);
     datum_range_t with_right_bound(datum_t d, key_range_t::bound_t type);

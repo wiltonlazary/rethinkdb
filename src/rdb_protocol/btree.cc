@@ -568,10 +568,9 @@ private:
     const reql_version_t func_reql_version;
     const counted_t<const ql::func_t> func;
     const sindex_multi_bool_t multi;
-    // The (truncated) boundary keys for the datum range stored in `datumspec`,
-    // if any.
-    boost::optional<std::string> lbound_trunc_key;
-    boost::optional<std::string> rbound_trunc_key;
+    // The (truncated) boundary keys for the datum range stored in `datumspec`.
+    std::string lbound_trunc_key;
+    std::string rbound_trunc_key;
 };
 
 class job_data_t {
@@ -801,43 +800,39 @@ continue_bool_t rget_cb_t::handle_pair(
                 bool must_check_copies = false;
                 std::string skey =
                     ql::datum_t::extract_truncated_secondary(key_to_unescaped_str(key));
-                if (static_cast<bool>(sindex->lbound_trunc_key)) {
-                    const bool left_bound_is_truncated =
-                        sindex->lbound_trunc_key->size() == max_trunc_size;
-                    if (left_bound_is_truncated
-                        || r.left_bound_type == key_range_t::bound_t::open) {
-                        int cmp = memcmp(
-                            skey.data(),
-                            sindex->lbound_trunc_key->data(),
-                            std::min<size_t>(skey.size(),
-                                             sindex->lbound_trunc_key->size()));
-                        if (skey.size() < sindex->lbound_trunc_key->size()) {
-                            guarantee(cmp != 0);
-                        }
-                        guarantee(cmp >= 0);
-                        if (cmp == 0
-                            && skey.size() == sindex->lbound_trunc_key->size()) {
-                            must_check_copies = true;
-                        }
+                const bool left_bound_is_truncated =
+                    sindex->lbound_trunc_key.size() == max_trunc_size;
+                if (left_bound_is_truncated
+                    || r.left_bound_type == key_range_t::bound_t::open) {
+                    int cmp = memcmp(
+                        skey.data(),
+                        sindex->lbound_trunc_key.data(),
+                        std::min<size_t>(skey.size(), sindex->lbound_trunc_key.size()));
+                    if (skey.size() < sindex->lbound_trunc_key.size()) {
+                        guarantee(cmp != 0);
+                    }
+                    guarantee(cmp >= 0);
+                    if (cmp == 0
+                        && skey.size() == sindex->lbound_trunc_key.size()) {
+                        must_check_copies = true;
                     }
                 }
-                if (!must_check_copies
-                    && static_cast<bool>(sindex->rbound_trunc_key)) {
+                if (!must_check_copies) {
                     const bool right_bound_is_truncated =
-                        sindex->rbound_trunc_key->size() == max_trunc_size;
+                        sindex->rbound_trunc_key.size() == max_trunc_size;
                     if (right_bound_is_truncated
                         || r.right_bound_type == key_range_t::bound_t::open) {
                         int cmp = memcmp(
                             skey.data(),
-                            sindex->rbound_trunc_key->data(),
+                            sindex->rbound_trunc_key.data(),
                             std::min<size_t>(skey.size(),
-                                             sindex->rbound_trunc_key->size()));
-                        if (skey.size() > sindex->rbound_trunc_key->size()) {
+                                             sindex->rbound_trunc_key.size()));
+                        if (skey.size() > sindex->rbound_trunc_key.size()) {
                             guarantee(cmp != 0);
                         }
                         guarantee(cmp <= 0);
                         if (cmp == 0
-                            && skey.size() == sindex->rbound_trunc_key->size()) {
+                            && skey.size() == sindex->rbound_trunc_key.size()) {
                             must_check_copies = true;
                         }
                     }

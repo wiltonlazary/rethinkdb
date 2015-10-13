@@ -1172,12 +1172,8 @@ components_t parse_secondary(const std::string &key) THROWS_NOTHING {
     uint8_t start_of_tag = key[key.size() - 1];
     uint8_t end_of_primary = start_of_tag;
 
-    // TODO: this parses the NULL byte into secondary (and did before as well).
-    // This is currently OK for the same reason the sindex portion of the query
-    // compares correctly lexicographically (since that's about the only useful
-    // thing we can do with the secondary portion).  It's still fragile, though,
-    // so we should consider changing this in the future when we have more time
-    // to test the change.  Tracked in #3630.
+    // This parses the NULL byte into secondary. We rely on this in
+    // `rget_cb_t::handle_pair()`.
     skey_version_t skey_version = skey_version_t::pre_1_16;
     std::string secondary = key.substr(0, start_of_primary);
     if (secondary[0] & 0x80) {
@@ -1247,7 +1243,9 @@ boost::optional<uint64_t> datum_t::extract_tag(const store_key_t &key) {
 // but the amount truncated depends on the length of the primary key.  Since we
 // do not know how much was truncated, we have to truncate the maximum amount,
 // then return all matches and filter them out later.
-store_key_t datum_t::truncated_secondary(reql_version_t reql_version, extrema_ok_t extrema_ok) const {
+store_key_t datum_t::truncated_secondary(
+        reql_version_t reql_version,
+        extrema_ok_t extrema_ok) const {
 
     escape_nulls_t escape_nulls = escape_nulls_from_reql_version_for_sindex(reql_version);
 
@@ -1276,6 +1274,16 @@ store_key_t datum_t::truncated_secondary(reql_version_t reql_version, extrema_ok
     }
 
     skey_version_t skey_version = skey_version_from_reql_version(reql_version);
+
+    switch (skey_version) {
+    case skey_version_t::pre_1_16:
+        break;
+    case skey_version_t::post_1_16:
+        s.push_back('\0');
+        break;
+    default:
+        unreachable();
+    }
 
     // Truncate the key if necessary
     size_t mts = max_trunc_size(skey_version);
