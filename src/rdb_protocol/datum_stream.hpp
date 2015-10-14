@@ -392,6 +392,7 @@ private:
 enum class range_state_t { ACTIVE, SATURATED, EXHAUSTED };
 void debug_print(printf_buffer_t *buf, const range_state_t &rs);
 struct hash_range_with_cache_t {
+    // RSI: should this just be a `store_key_t` like in `hints`?
     key_range_t key_range;
     raw_stream_t cache; // Entries we weren't able to unshard.
     range_state_t state;
@@ -411,6 +412,7 @@ void debug_print(printf_buffer_t *buf, const hash_ranges_t &hr);
 
 struct active_ranges_t {
     std::map<key_range_t, hash_ranges_t> ranges;
+    bool totally_exhausted() const;
 };
 void debug_print(printf_buffer_t *buf, const active_ranges_t &ar);
 
@@ -646,6 +648,14 @@ public:
     }
 
 protected:
+    bool shards_exhausted() const {
+        return active_ranges ? active_ranges->totally_exhausted() : false;
+    }
+    void mark_shards_exhausted() {
+        r_sanity_check(!active_ranges);
+        active_ranges = active_ranges_t();
+    }
+
     // Returns `true` if there's data in `items`.
     // Overwrite this in an implementation
     virtual bool load_items(env_t *env, const batchspec_t &batchspec) = 0;
@@ -655,7 +665,7 @@ protected:
     std::vector<transform_variant_t> transforms;
     boost::optional<changefeed_stamp_t> stamp;
 
-    bool started, shards_exhausted;
+    bool started;
     const scoped_ptr_t<const readgen_t> readgen;
     store_key_t last_read_start;
     boost::optional<active_ranges_t> active_ranges;

@@ -109,6 +109,8 @@ private:
     virtual void unshard(env_t *env, const std::vector<result_t *> &results) {
         guarantee(acc.size() == 0);
         std::map<datum_t, std::vector<T *>, optional_datum_less_t> vecs;
+        debugf("unshard results: %zu\n", results.size());
+        r_sanity_check(results.size() != 0);
         for (auto res = results.begin(); res != results.end(); ++res) {
             guarantee(*res);
             grouped_t<T> *gres = boost::get<grouped_t<T> >(*res);
@@ -119,6 +121,7 @@ private:
                 vecs[kv->first].push_back(&kv->second);
             }
         }
+        debugf("unshard vecs: %zu\n", vecs.size());
         for (auto kv = vecs.begin(); kv != vecs.end(); ++kv) {
             auto t_it = acc.insert(std::make_pair(kv->first, default_val)).first;
             unshard_impl(env, &t_it->second, kv->second);
@@ -202,7 +205,11 @@ protected:
     virtual void unshard_impl(env_t *,
                               stream_t *out,
                               const std::vector<stream_t *> &streams) {
+        debugf("streams size: %zu\n", streams.size());
+        r_sanity_check(streams.size() > 0);
         for (auto &&stream : streams) {
+            debugf("substreams size: %zu\n", stream->substreams.size());
+            r_sanity_check(stream->substreams.size() > 0);
             for (auto &&pair : stream->substreams) {
                 bool inserted = out->substreams.insert(pair).second;
                 guarantee(inserted);
