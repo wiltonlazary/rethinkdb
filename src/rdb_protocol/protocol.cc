@@ -281,18 +281,16 @@ key_range_t sindex_key_range(const store_key_t &start,
 
     const size_t max_trunc_size = ql::datum_t::max_trunc_size(skey_version);
 
-    // TODO! What if start isn't truncated?
-
     // If `end` is not truncated and right bound is open, we don't increment the right
     // bound.
     guarantee(static_cast<size_t>(end.size()) <= max_trunc_size);
     store_key_t end_key;
     const bool end_is_truncated = static_cast<size_t>(end.size()) == max_trunc_size;
-    if (end_is_truncated || end_type == key_range_t::bound_t::closed) {
-        // The key range we generate must be open on the right end because the keys in the
-        // btree have extra data appended to the secondary key part.
-        // Hence we need to make the next largest store_key_t without making the key longer.
-        // (theoretically it's ok to instead append a '\1' if `end` is not truncated)
+    // The key range we generate must be open on the right end because the keys in the
+    // btree have extra data appended to the secondary key part.
+    if (end_is_truncated) {
+        // Since the key is already truncated, we must make it larger without making it
+        // longer.
         std::string end_key_str(key_to_unescaped_str(end));
         while (end_key_str.length() > 0 &&
                end_key_str[end_key_str.length() - 1] == static_cast<char>(255)) {
@@ -305,6 +303,14 @@ key_range_t sindex_key_range(const store_key_t &start,
             ++end_key_str[end_key_str.length() - 1];
             end_key = store_key_t(end_key_str);
         }
+    } else if (end_type == key_range_t::bound_t::closed) {
+        // `end` is not truncated, but the range is closed. We know that `end` is
+        // currently terminated by a null byte. We can replace that by a '\1' to ensure
+        // that any key in the btree with that exact secondary index value will be
+        // included in the range.
+        end_key = end;
+        guarantee(end_key.contents()[end_key.size() - 1] == 0);
+        end_key.contents()[end_key.size() - 1] = 1;
     } else {
         end_key = end;
     }

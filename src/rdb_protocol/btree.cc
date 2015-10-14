@@ -633,6 +633,7 @@ public:
     continue_bool_t handle_pair(
         scoped_key_value_t &&keyvalue,
         size_t default_copies,
+        const boost::optional<std::string> &skey_left,
         concurrent_traversal_fifo_enforcer_signal_t waiter)
         THROWS_ONLY(interrupted_exc_t);
 
@@ -659,17 +660,25 @@ private:
 // little bit more so we use this wrapper to hold the extra information.
 class rget_cb_wrapper_t : public concurrent_traversal_callback_t {
 public:
-    rget_cb_wrapper_t(rget_cb_t *_cb, size_t _copies)
-        : cb(_cb), copies(_copies) { }
+    rget_cb_wrapper_t(
+            rget_cb_t *_cb,
+            size_t _copies,
+            boost::optional<std::string> _skey_left)
+        : cb(_cb), copies(_copies), skey_left(std::move(_skey_left)) { }
     virtual continue_bool_t handle_pair(
         scoped_key_value_t &&keyvalue,
         concurrent_traversal_fifo_enforcer_signal_t waiter)
         THROWS_ONLY(interrupted_exc_t) {
-        return cb->handle_pair(std::move(keyvalue), copies, std::move(waiter));
+        return cb->handle_pair(
+            std::move(keyvalue),
+            copies,
+            skey_left,
+            std::move(waiter));
     }
 private:
     rget_cb_t *cb;
     size_t copies;
+    boost::optional<std::string> skey_left;
 };
 
 rget_cb_t::rget_cb_t(rget_io_data_t &&_io,
@@ -717,8 +726,10 @@ void rget_cb_t::finish() THROWS_ONLY(interrupted_exc_t) {
 continue_bool_t rget_cb_t::handle_pair(
     scoped_key_value_t &&keyvalue,
     size_t default_copies,
+    const boost::optional<std::string> &skey_left,
     concurrent_traversal_fifo_enforcer_signal_t waiter)
     THROWS_ONLY(interrupted_exc_t) {
+
     sampler->new_sample();
 
     if (bad_init || boost::get<ql::exc_t>(&io.response->result) != NULL) {
@@ -792,28 +803,29 @@ continue_bool_t rget_cb_t::handle_pair(
         // are on the boundary of the sindex range.
         size_t copies = default_copies;
         if (sindex) {
+            const size_t max_trunc_size =
+                ql::datum_t::max_trunc_size(
+                    ql::skey_version_from_reql_version(sindex->func_reql_version));
             sindex->datumspec.visit<void>(
             [&](const ql::datum_range_t &r) {
-                const size_t max_trunc_size =
-                    ql::datum_t::max_trunc_size(
-                        ql::skey_version_from_reql_version(sindex->func_reql_version));
                 bool must_check_copies = false;
-                std::string skey =
+                std::string skey_current =
                     ql::datum_t::extract_truncated_secondary(key_to_unescaped_str(key));
                 const bool left_bound_is_truncated =
                     sindex->lbound_trunc_key.size() == max_trunc_size;
                 if (left_bound_is_truncated
                     || r.left_bound_type == key_range_t::bound_t::open) {
                     int cmp = memcmp(
-                        skey.data(),
+                        skey_current.data(),
                         sindex->lbound_trunc_key.data(),
-                        std::min<size_t>(skey.size(), sindex->lbound_trunc_key.size()));
-                    if (skey.size() < sindex->lbound_trunc_key.size()) {
+                        std::min<size_t>(skey_current.size(),
+                                         sindex->lbound_trunc_key.size()));
+                    if (skey_current.size() < sindex->lbound_trunc_key.size()) {
                         guarantee(cmp != 0);
                     }
                     guarantee(cmp >= 0);
                     if (cmp == 0
-                        && skey.size() == sindex->lbound_trunc_key.size()) {
+                        && skey_current.size() == sindex->lbound_trunc_key.size()) {
                         must_check_copies = true;
                     }
                 }
@@ -823,16 +835,16 @@ continue_bool_t rget_cb_t::handle_pair(
                     if (right_bound_is_truncated
                         || r.right_bound_type == key_range_t::bound_t::open) {
                         int cmp = memcmp(
-                            skey.data(),
+                            skey_current.data(),
                             sindex->rbound_trunc_key.data(),
-                            std::min<size_t>(skey.size(),
+                            std::min<size_t>(skey_current.size(),
                                              sindex->rbound_trunc_key.size()));
-                        if (skey.size() > sindex->rbound_trunc_key.size()) {
+                        if (skey_current.size() > sindex->rbound_trunc_key.size()) {
                             guarantee(cmp != 0);
                         }
                         guarantee(cmp <= 0);
                         if (cmp == 0
-                            && skey.size() == sindex->rbound_trunc_key.size()) {
+                            && skey_current.size() == sindex->rbound_trunc_key.size()) {
                             must_check_copies = true;
                         }
                     }
@@ -844,9 +856,18 @@ continue_bool_t rget_cb_t::handle_pair(
                 }
             },
             [&](const std::map<ql::datum_t, uint64_t> &) {
+                guarantee(skey_left);
+                std::string skey_current =
+                    ql::datum_t::extract_secondary(key_to_unescaped_str(key));
+                const bool skey_current_is_truncated =
+                    skey_current.size() >= max_trunc_size;
+                const bool skey_left_is_truncated = skey_left->size() >= max_trunc_size;
 
-                // TODO! Optimize this
-                copies = sindex->datumspec.copies(lazy_sindex_val());
+                if (skey_current_is_truncated || skey_left_is_truncated) {
+                    copies = sindex->datumspec.copies(lazy_sindex_val());
+                } else if (*skey_left != skey_current) {
+                    copies = 0;
+                }
             });
             if (copies == 0) {
                 return continue_bool_t::CONTINUE;
@@ -902,7 +923,7 @@ void rdb_rget_slice(
     direction_t direction = reversed(sorting) ? BACKWARD : FORWARD;
     if (primary_keys) {
         auto cb = [&](const std::pair<store_key_t, uint64_t> &pair, bool is_last) {
-            rget_cb_wrapper_t wrapper(&callback, pair.second);
+            rget_cb_wrapper_t wrapper(&callback, pair.second, boost::none);
             btree_concurrent_traversal(
                 superblock,
                 key_range_t::one_key(pair.first),
@@ -929,7 +950,7 @@ void rdb_rget_slice(
             }
         }
     } else {
-        rget_cb_wrapper_t wrapper(&callback, 1);
+        rget_cb_wrapper_t wrapper(&callback, 1, boost::none);
         btree_concurrent_traversal(
             superblock, range, &wrapper, direction, release_superblock);
     }
@@ -972,9 +993,13 @@ void rdb_rget_secondary_slice(
 
     direction_t direction = reversed(sorting) ? BACKWARD : FORWARD;
     auto cb = [&](const std::pair<ql::datum_range_t, uint64_t> &pair, bool is_last) {
-        rget_cb_wrapper_t wrapper(&callback, pair.second);
-        key_range_t active_range = active_region_range.intersection(
-            pair.first.to_sindex_keyrange(sindex_func_reql_version));
+        key_range_t sindex_keyrange =
+            pair.first.to_sindex_keyrange(sindex_func_reql_version);
+        rget_cb_wrapper_t wrapper(
+            &callback,
+            pair.second,
+            key_to_unescaped_str(sindex_keyrange.left));
+        key_range_t active_range = active_region_range.intersection(sindex_keyrange);
         // This can happen sometimes with truncated keys.
         if (active_range.is_empty()) return false;
         btree_concurrent_traversal(
