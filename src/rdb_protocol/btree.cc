@@ -1,6 +1,3 @@
-
-#include "datum.hpp"
-
 // Copyright 2010-2015 RethinkDB, all rights reserved.
 #include "rdb_protocol/btree.hpp"
 
@@ -1455,13 +1452,21 @@ void serialize_sindex_info(write_message_t *wm,
 void deserialize_sindex_info(
         const std::vector<char> &data,
         sindex_disk_info_t *info_out,
-        const std::function<void()> &obsolete_cb) {
+        const std::function<void(obsolete_reql_version_t)> &obsolete_cb) {
     buffer_read_stream_t read_stream(data.data(), data.size());
     // This cluster version field is _not_ a ReQL evaluation version field, which is
     // in secondary_index_t -- it only says how the value was serialized.
     cluster_version_t cluster_version;
+    static_assert(obsolete_cluster_version_t::v1_13_2_is_latest
+                  == obsolete_cluster_version_t::v1_13_2,
+                  "1.13 is no longer the only obsolete cluster version.  "
+                  "Instead of passing a constant obsolete_reql_version_t::v1_13 into "
+                  "`obsolete_cb` below, there should be a separate `obsolete_cb` to "
+                  "handle the different obsolete cluster versions.");
     archive_result_t success = deserialize_cluster_version(
-        &read_stream, &cluster_version, obsolete_cb);
+        &read_stream,
+        &cluster_version,
+        std::bind(obsolete_cb, obsolete_reql_version_t::v1_13));
     throw_if_bad_deserialization(success, "sindex description");
 
     switch (cluster_version) {
@@ -1520,10 +1525,22 @@ void deserialize_sindex_info_or_crash(
         sindex_disk_info_t *info_out)
             THROWS_ONLY(archive_exc_t) {
     deserialize_sindex_info(data, info_out,
-        [] () -> void {
-            fail_due_to_user_error("Encountered a RethinkDB 1.13 secondary index, "
-                                   "which is no longer supported.  You can use "
-                                   "RethinkDB 2.0 to update your secondary index.");
+        [](obsolete_reql_version_t ver) -> void {
+            switch (ver) {
+            case obsolete_reql_version_t::v1_13:
+                fail_due_to_user_error("Encountered a RethinkDB 1.13 secondary index, "
+                                       "which is no longer supported.  You can use "
+                                       "RethinkDB 2.0.5 to update your secondary index.");
+                break;
+            // v1_15 is equal to v1_14
+            case obsolete_reql_version_t::v1_14:
+                fail_due_to_user_error("Encountered an index from before RethinkDB "
+                                       "1.16, which is no longer supported.  You can "
+                                       "use RethinkDB 2.1 to update your secondary "
+                                       "index.");
+                break;
+            default: unreachable();
+            }
         });
 }
 

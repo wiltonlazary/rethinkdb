@@ -33,11 +33,13 @@ bool find_pred(S2CellId id, S2CellId *pred_out) {
 void test_btree_key(const std::string &str_key) {
     SCOPED_TRACE("test_btree_key(" + ::testing::PrintToString(str_key) + ")");
     store_key_t key(str_key);
+    // Set the top bit in `key` to 1 to match the format in which we store secondary
+    // keys to the btree (since 1.16).
+    key.contents()[0] |= 0x80;
     std::pair<S2CellId, bool> res =
         order_btree_key_relative_to_s2cellid_keys(
             key.btree_key(),
-            /* `pre_1_16` matches the output of `s2cellid_to_key()`. */
-            ql::skey_version_t::pre_1_16);
+            ql::skey_version_t::post_1_16);
     if (res.first == S2CellId::Sentinel()) {
         ASSERT_LT(s2cellid_to_key(S2CellId::FromFacePosLevel(5, 0, 0).range_max()),
             str_key);
@@ -49,7 +51,7 @@ void test_btree_key(const std::string &str_key) {
         SCOPED_TRACE("note: res.first = " +
             ::testing::PrintToString(s2cellid_to_key(res.first)));
         S2CellId pred;
-        if (find_pred(res.first, &pred)) { 
+        if (find_pred(res.first, &pred)) {
             std::string prefix = s2cellid_to_key(pred);
             ASSERT_LE(prefix, str_key);
             ASSERT_NE(prefix, str_key.substr(0, prefix.size()));

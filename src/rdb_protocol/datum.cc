@@ -411,52 +411,29 @@ datum_t datum_t::binary(datum_string_t &&_data) {
 
 // two versions of these, because std::string is not necessarily null
 // terminated.
-inline void fail_if_invalid(reql_version_t reql_version, const std::string &string) {
-    switch (reql_version) {
-        case reql_version_t::v1_14: // v1_15 is the same as v1_14
-            break;
-        case reql_version_t::v1_16:
-        case reql_version_t::v2_0:
-        case reql_version_t::v2_1:
-        case reql_version_t::v2_2_is_latest:
-            utf8::reason_t reason;
-            if (!utf8::is_valid(string, &reason)) {
-                int truncation_length = std::min<size_t>(reason.position, 20);
-                rfail_datum(base_exc_t::LOGIC,
-                            "String `%.*s` (truncated) is not a UTF-8 string; "
-                            "%s at position %zu.",
-                            truncation_length, string.c_str(), reason.explanation,
-                            reason.position);
-            }
-            break;
-        default:
-            unreachable();
+inline void fail_if_invalid(const std::string &string) {
+    utf8::reason_t reason;
+    if (!utf8::is_valid(string, &reason)) {
+        int truncation_length = std::min<size_t>(reason.position, 20);
+        rfail_datum(base_exc_t::LOGIC,
+                    "String `%.*s` (truncated) is not a UTF-8 string; "
+                    "%s at position %zu.",
+                    truncation_length, string.c_str(), reason.explanation,
+                    reason.position);
     }
 }
 
 inline void fail_if_invalid(
-        reql_version_t reql_version,
         const char *string,
         size_t string_length) {
-    switch (reql_version) {
-        case reql_version_t::v1_14: // v1_15 is the same as v1_14
-            break;
-        case reql_version_t::v1_16:
-        case reql_version_t::v2_0:
-        case reql_version_t::v2_1:
-        case reql_version_t::v2_2_is_latest:
-            utf8::reason_t reason;
-            if (!utf8::is_valid(string, string + string_length, &reason)) {
-                int truncation_length = std::min<size_t>(reason.position, 20);
-                rfail_datum(base_exc_t::LOGIC,
-                            "String `%.*s` (truncated) is not a UTF-8 string; "
-                            "%s at position %zu.",
-                            truncation_length, string, reason.explanation,
-                            reason.position);
-            }
-            break;
-        default:
-            unreachable();
+    utf8::reason_t reason;
+    if (!utf8::is_valid(string, string + string_length, &reason)) {
+        int truncation_length = std::min<size_t>(reason.position, 20);
+        rfail_datum(base_exc_t::LOGIC,
+                    "String `%.*s` (truncated) is not a UTF-8 string; "
+                    "%s at position %zu.",
+                    truncation_length, string, reason.explanation,
+                    reason.position);
     }
 }
 
@@ -477,8 +454,7 @@ datum_t to_datum(const rapidjson::Value &json, const configured_limits_t &limits
         for (rapidjson::Value::ConstMemberIterator it = json.MemberBegin();
              it != json.MemberEnd();
              ++it) {
-            fail_if_invalid(reql_version,
-                            it->name.GetString(),
+            fail_if_invalid(it->name.GetString(),
                             it->name.GetStringLength());
             datum_string_t key(it->name.GetStringLength(),
                                it->name.GetString());
@@ -501,7 +477,7 @@ datum_t to_datum(const rapidjson::Value &json, const configured_limits_t &limits
         return std::move(builder).to_datum();
     } break;
     case rapidjson::kStringType: {
-        fail_if_invalid(reql_version, json.GetString(), json.GetStringLength());
+        fail_if_invalid(json.GetString(), json.GetStringLength());
         return datum_t(datum_string_t(json.GetStringLength(), json.GetString()));
     } break;
     case rapidjson::kNumberType: {
@@ -1032,11 +1008,12 @@ std::string datum_t::print_primary() const {
 }
 
 // Returns `true` if it tagged the skey version.
+// Since we've removed support for pre 1.16 indexes, this function now always returns
+// `true`.
 bool tag_skey_version(skey_version_t skey_version, std::string *s) {
     guarantee(s->size() > 0);
     guarantee(!((*s)[0] & 0x80)); // None of our types have the top bit set
     switch (skey_version) {
-    case skey_version_t::pre_1_16: return false;
     case skey_version_t::post_1_16:
         (*s)[0] |= 0x80; // Flip the top bit to indicate 1.16+ skey_version.
         return true;
@@ -1131,7 +1108,6 @@ std::string datum_t::print_secondary(reql_version_t reql_version,
     }
 
     switch (skey_version) {
-    case skey_version_t::pre_1_16: break;
     case skey_version_t::post_1_16:
         secondary_key_string.append(1, '\x00');
         break;
@@ -1141,22 +1117,14 @@ std::string datum_t::print_secondary(reql_version_t reql_version,
     return compose_secondary(skey_version, secondary_key_string, primary_key, tag_num);
 }
 
-skey_version_t skey_version_from_reql_version(reql_version_t rv) {
-    switch (rv) {
-    case reql_version_t::v1_14: // v1_15 == v1_14
-        return skey_version_t::pre_1_16;
-    case reql_version_t::v1_16:
-    case reql_version_t::v2_0:
-    case reql_version_t::v2_1:
-    case reql_version_t::v2_2_is_latest:
-        return skey_version_t::post_1_16;
-    default: unreachable();
-    }
+skey_version_t skey_version_from_reql_version(reql_version_t) {
+    // We only have one value at the moment, since we've dropped support for pre-1.16
+    // indexes.
+    return skey_version_t::post_1_16;
 }
 
 escape_nulls_t escape_nulls_from_reql_version_for_sindex(reql_version_t rv) {
     switch (rv) {
-    case reql_version_t::v1_14:
     case reql_version_t::v1_16:
     case reql_version_t::v2_0:
     case reql_version_t::v2_1:
@@ -1174,12 +1142,15 @@ components_t parse_secondary(const std::string &key) THROWS_NOTHING {
 
     // This parses the NULL byte into secondary. We rely on this in
     // `rget_cb_t::handle_pair()`.
-    skey_version_t skey_version = skey_version_t::pre_1_16;
+    skey_version_t skey_version = skey_version_t::post_1_16;
     std::string secondary = key.substr(0, start_of_primary);
     if (secondary[0] & 0x80) {
         skey_version = skey_version_t::post_1_16;
         // To account for extra NULL byte in 1.16+.
         end_of_primary -= 1;
+    } else {
+        // pre 1.16 versions are no longer supported
+        unreachable();
     }
     guarantee(start_of_primary < end_of_primary);
     std::string primary =
@@ -1276,8 +1247,6 @@ store_key_t datum_t::truncated_secondary(
     skey_version_t skey_version = skey_version_from_reql_version(reql_version);
 
     switch (skey_version) {
-    case skey_version_t::pre_1_16:
-        break;
     case skey_version_t::post_1_16:
         s.push_back('\0');
         break;
@@ -1807,11 +1776,11 @@ datum_t to_datum(const Datum *d, const configured_limits_t &limits,
         return datum_t(d->r_num());
     } break;
     case Datum::R_STR: {
-        fail_if_invalid(reql_version, d->r_str());
+        fail_if_invalid(d->r_str());
         return datum_t(datum_string_t(d->r_str()));
     } break;
     case Datum::R_JSON: {
-        fail_if_invalid(reql_version, d->r_str());
+        fail_if_invalid(d->r_str());
         if (reql_version < reql_version_t::v2_1) {
             scoped_cJSON_t cjson(cJSON_Parse(d->r_str().c_str()));
             return to_datum(cjson.get(), limits, reql_version);
@@ -1836,7 +1805,7 @@ datum_t to_datum(const Datum *d, const configured_limits_t &limits,
             const Datum_AssocPair *ap = &d->r_object(i);
             datum_string_t key(ap->key());
             datum_t::check_str_validity(key);
-            fail_if_invalid(reql_version, ap->key());
+            fail_if_invalid(ap->key());
             auto res = map.insert(std::make_pair(key,
                                                  to_datum(&ap->val(), limits,
                                                           reql_version)));
@@ -1867,7 +1836,7 @@ datum_t to_datum(cJSON *json, const configured_limits_t &limits,
         return datum_t(json->valuedouble);
     } break;
     case cJSON_String: {
-        fail_if_invalid(reql_version, json->valuestring);
+        fail_if_invalid(json->valuestring);
         return datum_t(json->valuestring);
     } break;
     case cJSON_Array: {
@@ -1882,7 +1851,7 @@ datum_t to_datum(cJSON *json, const configured_limits_t &limits,
         datum_object_builder_t builder;
         json_object_iterator_t it(json);
         while (cJSON *item = it.next()) {
-            fail_if_invalid(reql_version, item->string);
+            fail_if_invalid(item->string);
             bool dup = builder.add(item->string, to_datum(item, limits, reql_version));
             rcheck_datum(!dup, base_exc_t::LOGIC,
                          strprintf("Duplicate key `%s` in JSON.", item->string));
@@ -1904,7 +1873,6 @@ size_t datum_t::trunc_size(skey_version_t skey_version, size_t primary_key_size)
     // used to extract the primary key and tag num).
     size_t terminated_primary_key_size = primary_key_size;
     switch (skey_version) {
-    case skey_version_t::pre_1_16: break;
     case skey_version_t::post_1_16:
         terminated_primary_key_size += 1;
         break;

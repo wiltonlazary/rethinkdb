@@ -120,9 +120,9 @@ struct rget_read_response_t {
     store_key_t last_key;
 
     rget_read_response_t()
-        : reql_version(reql_version_t::v1_14), truncated(false) { }
+        : reql_version(reql_version_t::EARLIEST), truncated(false) { }
     explicit rget_read_response_t(const ql::exc_t &ex)
-        : result(ex), reql_version(reql_version_t::v1_14), truncated(false) { }
+        : result(ex), reql_version(reql_version_t::EARLIEST), truncated(false) { }
 };
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(rget_read_response_t);
 
