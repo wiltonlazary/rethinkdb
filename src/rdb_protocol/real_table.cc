@@ -87,21 +87,22 @@ counted_t<ql::datum_stream_t> real_table_t::read_all(
         const std::string &sindex,
         ql::backtrace_id_t bt,
         const std::string &table_name,
-        const ql::datum_range_t &range,
+        const ql::datumspec_t &datumspec,
         sorting_t sorting,
         read_mode_t read_mode) {
     if (sindex == get_pkey()) {
         return make_counted<ql::lazy_datum_stream_t>(
             make_scoped<ql::rget_reader_t>(
                 counted_t<real_table_t>(this),
-                ql::primary_readgen_t::make(env, table_name, read_mode, range, sorting)),
+                ql::primary_readgen_t::make(
+                    env, table_name, read_mode, datumspec, sorting)),
             bt);
     } else {
         return make_counted<ql::lazy_datum_stream_t>(
             make_scoped<ql::rget_reader_t>(
                 counted_t<real_table_t>(this),
                 ql::sindex_readgen_t::make(
-                    env, table_name, read_mode, sindex, range, sorting)),
+                    env, table_name, read_mode, sindex, datumspec, sorting)),
             bt);
     }
 }
@@ -156,9 +157,8 @@ ql::datum_t real_table_t::read_nearest(
         const ql::configured_limits_t &limits) {
 
     nearest_geo_read_t geo_read(
-        region_t::universe(),
-        center, max_dist, max_results, geo_system, table_name, sindex,
-        env->get_all_optargs());
+        region_t::universe(), center, max_dist, max_results,
+        geo_system, table_name, sindex, env->get_all_optargs());
     read_t read(geo_read, env->profile(), read_mode);
     read_response_t res;
     try {
@@ -247,8 +247,8 @@ ql::datum_t real_table_t::write_batched_replace(
     bool batch_succeeded = false;
     for (auto &&batch : batches) {
         try {
-            batched_replace_t write(
-                std::move(batch), pkey, func, env->get_all_optargs(), return_changes);
+            batched_replace_t write(std::move(batch), pkey, func,
+                                    env->get_all_optargs(), return_changes);
             write_t w(std::move(write), durability, env->profile(), env->limits());
             write_response_t response;
             write_with_profile(env, &w, &response);
