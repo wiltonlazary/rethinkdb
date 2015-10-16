@@ -213,7 +213,7 @@ logs_artificial_table_backend_t::cfeed_machinery_t::cfeed_machinery_t(
 void logs_artificial_table_backend_t::cfeed_machinery_t::on_change(
         const peer_id_t &peer,
         const cluster_directory_metadata_t *dir) {
-    if (dir == nullptr || last_timestamps.count(peer) != 0) {
+    if (dir == nullptr || peers_handled.count(peer) != 0) {
         return;
     }
     if (starting) {
@@ -341,6 +341,7 @@ void logs_artificial_table_backend_t::cfeed_machinery_t::run(
                         &server_datum, nullptr)) {
                     /* The server is disconnected. Don't retrieve log messages until it
                     reconnects. */
+                    peers_handled.erase(peer);
                     return;
                 }
 
@@ -376,12 +377,23 @@ void logs_artificial_table_backend_t::cfeed_machinery_t::run(
 
 bool logs_artificial_table_backend_t::cfeed_machinery_t::check_disconnected(
         const peer_id_t &peer) {
+    /* We have to do this atomically. If we don't, then we would lose the guarantee that
+    there is exactly one instance of `run()` for each connected peer. For example, if we
+    delayed between checking the directory and removing `peer` from `peers_handled`, and
+    the server reconnected in that time, then `on_change()` wouldn't spawn a new instance
+    of `run()`, but we would still end up returning `false`, so there would be no
+    instance of `run()` for that server. */
+    ASSERT_FINITE_CORO_WAITING;
+
     bool connected;
     parent->directory->read_key(
         peer,
         [&](const cluster_directory_metadata_t *metadata) {
             connected = (metadata != nullptr);
         });
+    if (!connected) {
+        peers_handled.erase(peer);
+    }
     return connected;
 }
 

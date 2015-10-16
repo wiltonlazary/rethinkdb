@@ -3,6 +3,7 @@
 #define CLUSTERING_ADMINISTRATION_LOGS_LOGS_BACKEND_HPP_
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -87,6 +88,7 @@ private:
             signal_t *interruptor);
 
         logs_artificial_table_backend_t *parent;
+        std::set<peer_id_t> peers_handled;
         std::map<peer_id_t, timespec> last_timestamps;
 
         /* `all_starters_done` is pulsed when we've fetched logs from every peer that was
