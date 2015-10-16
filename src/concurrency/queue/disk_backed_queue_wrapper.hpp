@@ -26,10 +26,9 @@ we have loaded the data into memory. */
 template<class T>
 class disk_backed_queue_wrapper_t : public passive_producer_t<T> {
 public:
-    static const int memory_queue_capacity = 1000;
-
     disk_backed_queue_wrapper_t(io_backender_t *_io_backender,
-            const serializer_filepath_t &_filename, perfmon_collection_t *_stats_parent) :
+            const serializer_filepath_t &_filename, perfmon_collection_t *_stats_parent,
+            int memory_queue_capacity = 1000) :
         passive_producer_t<T>(&available_control),
         memory_queue(memory_queue_capacity),
         notify_when_room_in_memory_queue(NULL),

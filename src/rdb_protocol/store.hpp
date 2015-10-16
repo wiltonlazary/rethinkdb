@@ -379,8 +379,9 @@ public:
 
     // TODO! document & rename
     struct ranged_sindex_queue_t {
-        store_key_t constructed_up_to;
-        internal_disk_backed_queue_t *queue;
+        // Once the index has been fully constructed, `construction_range` will be empty.
+        key_range_t construction_range;
+        disk_backed_queue_wrapper_t<rdb_modification_report_t> *queue;
     };
     std::vector<ranged_sindex_queue_t> sindex_queues;
     new_mutex_t sindex_queue_mutex;

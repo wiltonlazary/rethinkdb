@@ -474,7 +474,7 @@ rwlock_in_line_t store_t::get_in_line_for_cfeed_stamp(access_t access) {
 
 
 void store_t::register_sindex_queue(
-            internal_disk_backed_queue_t *disk_backed_queue,
+            disk_backed_queue_wrapper_t<rdb_modification_report_t> *disk_backed_queue,
             const store_key_t &constructed_up_to,
             const new_mutex_in_line_t *acq) {
     assert_thread();
@@ -488,7 +488,7 @@ void store_t::register_sindex_queue(
 }
 
 void store_t::deregister_sindex_queue(
-            internal_disk_backed_queue_t *disk_backed_queue,
+            disk_backed_queue_wrapper_t<rdb_modification_report_t> *disk_backed_queue,
             const new_mutex_in_line_t *acq) {
     assert_thread();
     acq->acq_signal()->wait_lazily_unordered();
@@ -503,7 +503,7 @@ void store_t::deregister_sindex_queue(
 }
 
 void store_t::emergency_deregister_sindex_queue(
-    internal_disk_backed_queue_t *disk_backed_queue) {
+    disk_backed_queue_wrapper_t<rdb_modification_report_t> *disk_backed_queue) {
     assert_thread();
     drainer.assert_draining();
     new_mutex_in_line_t acq(&sindex_queue_mutex);
@@ -550,14 +550,8 @@ void store_t::sindex_queue_push(const rdb_modification_report_t &mod_report,
     acq->acq_signal()->wait_lazily_unordered();
 
     if (!sindex_queues.empty()) {
-        // This is for a disk backed queue so there's no versioning issues.
-        // (deserializating_viewer_t in disk_backed_queue.hpp also uses the
-        // LATEST_DISK version, and such queues are ephemeral).
-        write_message_t wm;
-        serialize<cluster_version_t::LATEST_DISK>(&wm, mod_report);
-
         for (auto it = sindex_queues.begin(); it != sindex_queues.end(); ++it) {
-            (*it)->push(wm);
+            (*it)->push(mod_report);
         }
     }
 }
@@ -571,12 +565,9 @@ void store_t::sindex_queue_push(
     if (!sindex_queues.empty()) {
         scoped_array_t<write_message_t> wms(mod_reports.size());
         for (size_t i = 0; i < mod_reports.size(); ++i) {
-            // This is for a disk backed queue so there are no versioning issues.
-            serialize<cluster_version_t::LATEST_DISK>(&wms[i], mod_reports[i]);
-        }
-
-        for (auto it = sindex_queues.begin(); it != sindex_queues.end(); ++it) {
-            (*it)->push(wms);
+            for (auto it = sindex_queues.begin(); it != sindex_queues.end(); ++it) {
+                (*it)->push(mod_reports[i]);
+            }
         }
     }
 }
@@ -665,6 +656,7 @@ void store_t::clear_sindex(
         signal_t *interruptor)
         THROWS_ONLY(interrupted_exc_t) {
 
+    // TODO! Refactor this so we can also use it to clear only a part of an sindex.
     /* Delete one piece of the secondary index at a time */
     for (bool reached_end = false; !reached_end;)
     {
@@ -881,6 +873,7 @@ std::map<sindex_name_t, secondary_index_t> store_t::get_sindexes() const {
     return sindexes;
 }
 
+// TODO! Get rid of this variant (or refactor it)
 bool store_t::mark_index_up_to_date(const sindex_name_t &name,
                                     buf_lock_t *sindex_block)
     THROWS_NOTHING {
@@ -896,6 +889,7 @@ bool store_t::mark_index_up_to_date(const sindex_name_t &name,
     return found;
 }
 
+// TODO! This must take a range.
 bool store_t::mark_index_up_to_date(uuid_u id,
                                     buf_lock_t *sindex_block)
     THROWS_NOTHING {
@@ -1046,6 +1040,8 @@ void store_t::acquire_all_sindex_superblocks_for_write(
             sindex_sbs_out);
 }
 
+// TODO! This function is now pretty useless. Get rid of it and change the places
+// that are using it.
 void store_t::acquire_post_constructed_sindex_superblocks_for_write(
         buf_lock_t *sindex_block,
         sindex_access_vector_t *sindex_sbs_out)

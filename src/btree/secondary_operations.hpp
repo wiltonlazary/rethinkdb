@@ -24,7 +24,6 @@ class buf_lock_t;
 struct secondary_index_t {
     secondary_index_t()
         : superblock(NULL_BLOCK_ID),
-          post_construction_complete(false),
           being_deleted(false),
           /* TODO(2014-08): This generate_uuid() is weird. */
           id(generate_uuid()) { }
@@ -32,14 +31,17 @@ struct secondary_index_t {
     /* A virtual superblock. */
     block_id_t superblock;
 
-    /* Whether the index is has completed post construction, and/or is being deleted.
+    /* Whether the index is still needs to be post constructed, and/or is being deleted.
      * Note that an index can be in any combination of those states. */
-    bool post_construction_complete;
-    // TODO! Comment
-    store_key_t post_constructed_up_to;
+    key_range_t needs_post_construction_range;
     bool being_deleted;
+
+    bool post_construction_complete() const {
+        return needs_post_construction_range.is_empty();
+    }
+    // TODO! Does this need to return an active range instead?
     bool is_ready() const {
-        return post_construction_complete && !being_deleted;
+        return post_construction_complete() && !being_deleted;
     }
 
     /* An opaque blob that describes the index.  See serialize_sindex_info and

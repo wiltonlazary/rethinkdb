@@ -45,7 +45,7 @@ void resume_bring_sindex_up_to_date(
     /* We register our modification queue here.
      * We must register it before calling post_construct_and_drain_queue to
      * make sure that every changes which we don't learn about in
-     * the parallel traversal that's started there, we do learn about from the mod
+     * the concurrent traversal that's started there, we do learn about from the mod
      * queue. Changes that happen between the mod queue registration and
      * the parallel traversal will be accounted for twice. That is ok though,
      * since every modification can be applied repeatedly without causing any
@@ -58,14 +58,15 @@ void resume_bring_sindex_up_to_date(
      * and perfmon_collection, so that is important. */
     auto_drainer_t::lock_t store_drainer_acq(&store->drainer);
 
-    // TODO: This can now be a disk_backed_queue_t<rdb_modification_report_t>.
-    scoped_ptr_t<internal_disk_backed_queue_t> mod_queue(
-            new internal_disk_backed_queue_t(
+    const int num_mods_to_keep_in_memory = 10;
+    scoped_ptr_t<disk_backed_queue_wrapper_t<rdb_modification_report_t> > mod_queue(
+            new disk_backed_queue_wrapper_t<rdb_modification_report_t>(
                 store->io_backender_,
                 serializer_filepath_t(
                     store->base_path_,
                     "post_construction_" + uuid_to_str(post_construct_id)),
-                &store->perfmon_collection));
+                &store->perfmon_collection,
+                num_mods_to_keep_in_memory));
 
     {
         new_mutex_in_line_t acq = store->get_in_line_for_sindex_queue(sindex_block);
@@ -87,6 +88,10 @@ void resume_bring_sindex_up_to_date(
                 mod_queue.release()));
 }
 
+// TODO! Merge this in, and then put a loop around it that keeps constructing until
+// the construction range is empty.
+// TODO! Clear the constructing range of the index before initiating post construction
+
 /* This function is really part of the logic of bring_sindexes_up_to_date
  * however it needs to be in a seperate function so that it can be spawned in a
  * coro.
@@ -94,44 +99,47 @@ void resume_bring_sindex_up_to_date(
 void post_construct_and_drain_queue(
         auto_drainer_t::lock_t lock,
         uuid_u sindex_id_to_bring_up_to_date,
-        const store_key_t &resume_after,
+        key_range_t *construction_range_inout,
         store_t *store,
-        internal_disk_backed_queue_t *mod_queue_ptr)
-    THROWS_NOTHING
-{
+        disk_backed_queue_wrapper_t<rdb_modification_report_t> *mod_queue_ptr)
+    THROWS_NOTHING {
+
+    scoped_ptr_t<disk_backed_queue_wrapper_t<rdb_modification_report_t> >
+        mod_queue(mod_queue_ptr);
+
     // TODO! Fix the progress. Just use a distribution query + key boundary for it.
     // Also move this sentry up!
-    map_insertion_sentry_t<
+    /*map_insertion_sentry_t<
         store_t::sindex_context_map_t::key_type,
         store_t::sindex_context_map_t::mapped_type> > sindex_context_sentry(
             store->get_sindex_context_map(),
             sindex_id_to_bring_up_to_date,
-            std::make_pair(current_microtime(), &progress_tracker));
+            std::make_pair(current_microtime(), &progress_tracker));*/
 
-    scoped_ptr_t<internal_disk_backed_queue_t> mod_queue(mod_queue_ptr);
+    // `post_construct_secondary_index_range` can post-construct multiple secondary
+    // indexes at the same time. We don't currently make use of that functionality
+    // though. (it doesn't make sense to remove it, since it doesn't add anything to
+    // its complexity).
+    std::set<uuid_u> sindexes_to_bring_up_to_date;
+    sindexes_to_bring_up_to_date.insert(sindex_id_to_bring_up_to_date);
 
     rwlock_in_line_t lock_acq(&store->backfill_postcon_lock, access_t::write);
     // Note that we don't actually wait for the lock to be acquired.
     // All we want is to pause backfills by having our write lock acquisition
     // in line.
     // Waiting for the write lock would restrict us to having only one post
-    // construction active at any time (which we might not want, for no specific
-    // reason).
-    // TODO! ^^^^ We definitely don't want that anymore now. Explain why
+    // construction active at any time (which would make constructing multiple indexes
+    // at the same time less efficient).
 
     try {
-        post_construct_secondary_index(
+        post_construct_secondary_index_range(
             store,
-            sindex_id_to_bring_up_to_date,
-            resume_after,
+            sindexes_to_bring_up_to_date,
+            construction_range_inout,
             lock.get_drain_signal());
 
-        /* Drain the queue. */
-
-        while (!lock.get_drain_signal()->is_pulsed()) {
-            // Yield while we are not holding any locks yet.
-            coro_t::yield();
-
+        // Drain the queue.
+        {
             write_token_t token;
             store->new_write_token(&token);
 
@@ -161,13 +169,11 @@ void post_construct_and_drain_queue(
             queue_superblock->release();
 
             store_t::sindex_access_vector_t sindexes;
-            // TODO!
             store->acquire_sindex_superblocks_for_write(
                     sindexes_to_bring_up_to_date,
                     &queue_sindex_block,
                     &sindexes);
 
-            // TODO!
             if (sindexes.empty()) {
                 break;
             }
@@ -176,14 +182,11 @@ void post_construct_and_drain_queue(
                 store->get_in_line_for_sindex_queue(&queue_sindex_block);
             acq.acq_signal()->wait_lazily_unordered();
 
-            const int MAX_CHUNK_SIZE = 10;
-            int current_chunk_size = 0;
-            while (current_chunk_size < MAX_CHUNK_SIZE && mod_queue->size() > 0) {
-                rdb_modification_report_t mod_report;
-                // This involves a disk backed queue so there are no versioning issues.
-                deserializing_viewer_t<rdb_modification_report_t>
-                    viewer(&mod_report);
-                mod_queue->pop(&viewer);
+            while (mod_queue->size() > 0) {
+                if (lock.get_drain_signal()->is_pulsed()) {
+                    throw interrupted_exc_t();
+                }
+                rdb_modification_report_t mod_report = mod_queue->pop();
                 rdb_post_construction_deletion_context_t deletion_context;
                 rdb_update_sindexes(store,
                                     sindexes,
@@ -193,16 +196,13 @@ void post_construct_and_drain_queue(
                                     NULL,
                                     NULL,
                                     NULL);
-                ++current_chunk_size;
             }
 
-            if (mod_queue->size() == 0) {
-                // TODO! Pass in the current key
-                store->mark_index_up_to_date(sindex_id_to_bring_up_to_date,
-                                             &queue_sindex_block);
-                store->deregister_sindex_queue(mod_queue.get(), &acq);
-                return;
-            }
+            // TODO! Change this so it only marks a certain range up to date
+            store->mark_index_up_to_date(sindex_id_to_bring_up_to_date,
+                                         &queue_sindex_block);
+            store->deregister_sindex_queue(mod_queue.get(), &acq);
+            return;
         }
     } catch (const interrupted_exc_t &) {
         // We were interrupted so we just exit. Sindex post construct is in an

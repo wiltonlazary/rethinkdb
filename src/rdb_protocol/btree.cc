@@ -13,7 +13,6 @@
 #include "btree/concurrent_traversal.hpp"
 #include "btree/get_distribution.hpp"
 #include "btree/operations.hpp"
-#include "btree/parallel_traversal.hpp"
 #include "btree/reql_specific.hpp"
 #include "btree/superblock.hpp"
 #include "buffer_cache/serialize_onto_blob.hpp"
@@ -1648,6 +1647,7 @@ void rdb_update_sindexes(
             keys_available_cond->pulse();
         }
         for (const auto &sindex : sindexes) {
+            // TODO! This should check the active index range
             coro_t::spawn_sometime(
                 std::bind(
                     &rdb_update_single_sindex,
@@ -1675,101 +1675,61 @@ void rdb_update_sindexes(
     }
 }
 
-class post_construct_traversal_helper_t : public btree_traversal_helper_t {
+class post_construct_traversal_helper_t : public concurrent_traversal_callback_t {
 public:
     post_construct_traversal_helper_t(
             store_t *store,
             const std::set<uuid_u> &sindexes_to_post_construct,
-            cond_t *interrupt_myself,
-            signal_t *interruptor
-            )
+            cond_t *on_indexes_deleted,
+            signal_t *interruptor)
         : store_(store),
           sindexes_to_post_construct_(sindexes_to_post_construct),
-          interrupt_myself_(interrupt_myself), interruptor_(interruptor)
-    { }
+          on_indexes_deleted_(on_indexes_deleted),
+          interruptor_(interruptor),
+          current_chunk_size(0) {
+        // Start an initial write transaction for the first chunk.
+        // (this acquisition should never block)
+        rwlock_acq_t wtxn_acq(&wtxn_lock_, access_t::write);
+        start_write_transaction(&wtxn_acq);
+    }
 
-    void process_a_leaf(buf_lock_t *leaf_node_buf,
-                        const btree_key_t *, const btree_key_t *,
-                        signal_t *, int *) THROWS_ONLY(interrupted_exc_t) {
+    continue_bool_t handle_pair(
+            scoped_key_value_t &&keyvalue,
+            concurrent_traversal_fifo_enforcer_signal_t waiter)
+            THROWS_ONLY(interrupted_exc_t) {
 
-        scoped_ptr_t<txn_t> wtxn;
-        store_t::sindex_access_vector_t sindexes;
+        if (interruptor_->is_pulsed() || on_indexes_deleted_->is_pulsed()) {
+            throw interrupted_exc_t();
+        }
 
-        buf_read_t leaf_read(leaf_node_buf);
-        const leaf_node_t *leaf_node
-            = static_cast<const leaf_node_t *>(leaf_read.get_data_read());
+        // Number of key/value pairs we process before releasing the write transaction
+        // and waiting for the secondary index data to be flushed to disk.
+        // Also see the comment above `scoped_ptr_t<txn_t> wtxn;` below.
+        const int MAX_CHUNK_SIZE = 32;
 
-        // Number of key/value pairs we process before yielding
-        const int MAX_CHUNK_SIZE = 10;
-        int current_chunk_size = 0;
-        const rdb_post_construction_deletion_context_t deletion_context;
-        for (auto it = leaf::begin(*leaf_node); it != leaf::end(*leaf_node); ++it) {
-            if (current_chunk_size == 0) {
-                // Start a write transaction and acquire the secondary index
-                // at the beginning of each chunk. We reset the transaction
-                // after each chunk because large write transactions can cause
-                // the cache to go into throttling, and that would interfere
-                // with other transactions on this table.
-                try {
-                    write_token_t token;
-                    store_->new_write_token(&token);
+        // Account for the read value in the stats
+        store_->btree->stats.pm_keys_read.record();
+        store_->btree->stats.pm_total_keys_read += 1;
 
-                    scoped_ptr_t<real_superblock_t> superblock;
+        // Grab the key and value and construct a modification report for the key/value
+        // pair.
+        const store_key_t primary_key(keyvalue.key());
+        const rdb_value_t *rdb_value =
+            static_cast<const rdb_value_t *>(keyvalue.value());
+        rdb_modification_report_t mod_report(primary_key);
+        const max_block_size_t block_size =
+            keyvalue.expose_buf().cache()->max_block_size();
+        mod_report.info.added
+            = std::make_pair(
+                get_data(rdb_value, buf_parent_t(leaf_node_buf)),
+                std::vector<char>(rdb_value->value_ref(),
+                    rdb_value->value_ref() + rdb_value->inline_size(block_size)));
 
-                    // We use HARD durability because we want post construction
-                    // to be throttled if we insert data faster than it can
-                    // be written to disk. Otherwise we might exhaust the cache's
-                    // dirty page limit and bring down the whole table.
-                    // Other than that, the hard durability guarantee is not actually
-                    // needed here.
-                    store_->acquire_superblock_for_write(
-                            2 + MAX_CHUNK_SIZE,
-                            write_durability_t::HARD,
-                            &token,
-                            &wtxn,
-                            &superblock,
-                            interruptor_);
-
-                    // Acquire the sindex block.
-                    const block_id_t sindex_block_id = superblock->get_sindex_block_id();
-
-                    buf_lock_t sindex_block(superblock->expose_buf(), sindex_block_id,
-                                            access_t::write);
-
-                    superblock.reset();
-
-                    store_->acquire_sindex_superblocks_for_write(
-                            sindexes_to_post_construct_,
-                            &sindex_block,
-                            &sindexes);
-
-                    if (sindexes.empty()) {
-                        interrupt_myself_->pulse_if_not_already_pulsed();
-                        return;
-                    }
-                } catch (const interrupted_exc_t &e) {
-                    return;
-                }
-            }
-
-            store_->btree->stats.pm_keys_read.record();
-            store_->btree->stats.pm_total_keys_read += 1;
-
-            /* Grab relevant values from the leaf node. */
-            const btree_key_t *key = (*it).first;
-            const void *value = (*it).second;
-            guarantee(key);
-
-            const store_key_t pk(key);
-            rdb_modification_report_t mod_report(pk);
-            const rdb_value_t *rdb_value = static_cast<const rdb_value_t *>(value);
-            const max_block_size_t block_size = leaf_node_buf->cache()->max_block_size();
-            mod_report.info.added
-                = std::make_pair(
-                    get_data(rdb_value, buf_parent_t(leaf_node_buf)),
-                    std::vector<char>(rdb_value->value_ref(),
-                        rdb_value->value_ref() + rdb_value->inline_size(block_size)));
-
+        // Store the value into the secondary indexes
+        {
+            rwlock_acq_t wtxn_acq(&wtxn_lock_, access_t::read, interruptor_);
+            guarantee(wtxn.has());
+            const rdb_post_construction_deletion_context_t deletion_context;
             rdb_update_sindexes(store_,
                                 sindexes,
                                 &mod_report,
@@ -1778,65 +1738,129 @@ public:
                                 NULL,
                                 NULL,
                                 NULL);
-            store_->btree->stats.pm_keys_set.record();
-            store_->btree->stats.pm_total_keys_set += 1;
+        }
 
+        // Account for the sindex writes in the stats
+        store_->btree->stats.pm_keys_set.record(sindexes.size());
+        store_->btree->stats.pm_total_keys_set += sindexes.size();
+
+        // Update the traversed range boundary (everything below here will happen in
+        // key order).
+        waiter.wait_interruptible(interruptor_);
+        traversed_right_bound_ = primary_key;
+
+        // Release the write transaction and secondary index locks once we've reached the
+        // designated chunk size. Then acquire a new transaction once the previous one
+        // has been flushed.
+        {
+            rwlock_acq_t wtxn_acq(&wtxn_lock_, access_t::write, interruptor_);
             ++current_chunk_size;
             if (current_chunk_size >= MAX_CHUNK_SIZE) {
                 current_chunk_size = 0;
-                // Release the write transaction and yield.
-                // We continue later where we have left off.
                 sindexes.clear();
                 wtxn.reset();
-                coro_t::yield();
+                start_write_transaction(&wtxn_acq);
             }
         }
+
+        // TODO! Check limit
+        return continue_bool_t::CONTINUE;
     }
 
-    void postprocess_internal_node(buf_lock_t *) { }
+    store_key_t get_traversed_right_bound() const {
+        return traversed_right_bound_;
+    }
 
-    void filter_interesting_children(buf_parent_t,
-                                     ranged_block_ids_t *ids_source,
-                                     interesting_children_callback_t *cb) {
-        for (int i = 0, e = ids_source->num_block_ids(); i < e; ++i) {
-            cb->receive_interesting_child(i);
+private:
+    void start_write_transaction(rwlock_acq_t *wtxn_acq) {
+        wtxn_acq->guarantee_is_holding(&wtxn_lock_);
+        guarantee(!wtxn_.has());
+
+        // Start a write transaction and acquire the secondary indexes
+        write_token_t token;
+        store_->new_write_token(&token);
+
+        // We use HARD durability because we want post construction
+        // to be throttled if we insert data faster than it can
+        // be written to disk. Otherwise we might exhaust the cache's
+        // dirty page limit and bring down the whole table.
+        // Other than that, the hard durability guarantee is not actually
+        // needed here.
+        scoped_ptr_t<real_superblock_t> superblock;
+        store_->acquire_superblock_for_write(
+                2 + MAX_CHUNK_SIZE,
+                write_durability_t::HARD,
+                &token,
+                &wtxn_,
+                &superblock,
+                interruptor_);
+
+        // Acquire the sindex block and release the superblock.
+        const block_id_t sindex_block_id = superblock->get_sindex_block_id();
+        buf_lock_t sindex_block(superblock->expose_buf(), sindex_block_id,
+                                access_t::write);
+        superblock.reset();
+        store_->acquire_sindex_superblocks_for_write(
+            sindexes_to_post_construct_,
+            &sindex_block,
+            &sindexes_);
+
+        if (sindexes_.empty()) {
+            // All indexes have been deleted. Interrupt the traversal.
+            on_indexes_deleted_->pulse_if_not_already_pulsed();
         }
-        cb->no_more_interesting_children();
     }
-
-    access_t btree_superblock_mode() { return access_t::read; }
-    access_t btree_node_mode() { return access_t::read; }
 
     store_t *store_;
-    const std::set<uuid_u> &sindexes_to_post_construct_;
-    cond_t *interrupt_myself_;
+    const std::set<uuid_u> sindexes_to_post_construct_;
+    cond_t *on_indexes_deleted_;
     signal_t *interruptor_;
+
+    // How far we've come in the traversal
+    store_key_t traversed_right_bound_;
+
+    // We re-use a single write transaction and secondary index acquisition for a chunk
+    // of writes to get better efficiency when flushing the index writes to disk.
+    // We reset the transaction  after each chunk because large write transactions can
+    // cause the cache to go into throttling, and that would interfere with other
+    // transactions on this table.
+    // Another aspect to keep in mind is that if we hold the write lock on the sindexes
+    // for too long, other concurrent writes to parts of the secondary index that
+    // are already live will also be delayed.
+    scoped_ptr_t<txn_t> wtxn_;
+    store_t::sindex_access_vector_t sindexes_;
+    int current_chunk_size_;
+    // To protect race conditions between different `handle_pair`s running at the same
+    // time. They could interfere trying to start / end a `wtxn`.
+    rwlock_t wtxn_lock_;
 };
 
-void post_construct_secondary_indexes(
+void post_construct_secondary_index_range(
         store_t *store,
-        const uuid_u &sindex_id_to_post_construct,
+        const std::set<uuid_u> &sindex_ids_to_post_construct,
+        key_range_t *construction_range_inout,
         signal_t *interruptor)
     THROWS_ONLY(interrupted_exc_t) {
-    cond_t local_interruptor;
 
-    wait_any_t wait_any(&local_interruptor, interruptor);
+    // In case the index gets deleted in the middle of the construction, this gets
+    // triggered.
+    cond_t on_index_deleted_interruptor;
+    wait_any_t wait_any(&on_index_deleted_interruptor, interruptor);
 
-    // TODO! This should be a depth first traversal
-    post_construct_traversal_helper_t helper(store,
-            sindex_id_to_post_construct, &local_interruptor, interruptor);
-
-    read_token_t read_token;
-    store->new_read_token(&read_token);
+    post_construct_traversal_helper_t traversal_cb(
+        store, sindex_ids_to_post_construct, &on_index_deleted_interruptor, interruptor);
 
     // Mind the destructor ordering.
-    // The superblock must be released before txn (`btree_parallel_traversal`
+    // The superblock must be released before txn (`btree_concurrent_traversal`
     // usually already takes care of that).
     // The txn must be destructed before the cache_account.
     cache_account_t cache_account;
     scoped_ptr_t<txn_t> txn;
     scoped_ptr_t<real_superblock_t> superblock;
 
+    // Start a snapshotted read transaction to traverse the primary btree
+    read_token_t read_token;
+    store->new_read_token(&read_token);
     store->acquire_superblock_for_read(
         &read_token,
         &txn,
@@ -1849,7 +1873,23 @@ void post_construct_secondary_indexes(
     txn->set_account(&cache_account);
 
     // TODO! Abort after N keys (say 1000?)
-    btree_parallel_traversal(superblock.get(), &helper, &wait_any);
+    continue_bool_t cont = btree_concurrent_traversal(
+        superblock.get(),
+        *construction_range_inout,
+        &traversal_cb,
+        direction_t::FORWARD,
+        release_superblock_t::RELEASE);
+    if (cont == continue_bool_t::ABORT && interruptor->is_pulsed()) {
+        throw interrupted_exc_t();
+    }
+
+    // Update the left bound of the construction range
+    // (the key_range_t construction below needs to be updated if the right bound can
+    //  be bounded. For now we assume it's unbounded.)
+    guarantee(construction_range_inout->right.unbounded);
+    *construction_range_inout = key_range_t(
+        key_range_t::bound_t::open, traversal_cb.get_traversed_right_bound(),
+        key_range_t::bound_t::none, store_key_t());
 }
 
 void noop_value_deleter_t::delete_value(buf_parent_t, const void *) const { }

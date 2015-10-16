@@ -11,7 +11,7 @@
 // TODO! Backwards compatbility
 RDB_IMPL_SERIALIZABLE_6_SINCE_v1_13(
         secondary_index_t, superblock, opaque_definition,
-        post_construction_complete, post_constructed_up_to, being_deleted, id);
+        needs_post_construction_range, being_deleted, id);
 
 RDB_IMPL_SERIALIZABLE_2_SINCE_v1_13(sindex_name_t, name, being_deleted);
 
