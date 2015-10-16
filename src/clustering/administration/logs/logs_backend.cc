@@ -216,6 +216,7 @@ void logs_artificial_table_backend_t::cfeed_machinery_t::on_change(
     if (dir == nullptr || peers_handled.count(peer) != 0) {
         return;
     }
+    peers_handled.insert(peer);
     if (starting) {
         ++num_starters_left;
     }
