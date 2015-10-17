@@ -628,10 +628,16 @@ sindex_name_t compute_sindex_deletion_name(uuid_u sindex_uuid) {
 class clear_sindex_traversal_cb_t
         : public depth_first_traversal_callback_t {
 public:
-    clear_sindex_traversal_cb_t() {
+    clear_sindex_traversal_cb_t(const key_range_t &pkey_rng)
+        : pkey_range(pkey_rng) {
         collected_keys.reserve(CHUNK_SIZE);
     }
     continue_bool_t handle_pair(scoped_key_value_t &&keyvalue, signal_t *) {
+        // Skip keys that are not in the given primary key range.
+        if (!pkey_range.contains_key(
+                ql::datum_t::extract_primary(store_key_t(keyvalue.key())))) {
+            return continue_bool_t::CONTINUE;
+        }
         collected_keys.push_back(store_key_t(keyvalue.key()));
         if (collected_keys.size() >= CHUNK_SIZE) {
             return continue_bool_t::ABORT;
@@ -644,6 +650,7 @@ public:
     }
     static const size_t CHUNK_SIZE = 32;
 private:
+    key_range_t pkey_range;
     std::vector<store_key_t> collected_keys;
 };
 
@@ -651,11 +658,11 @@ void store_t::clear_sindex_data(
         uuid_u sindex_id,
         value_sizer_t *sizer,
         const deletion_context_t *deletion_context,
-        const key_range_t &range_to_clear,
+        const key_range_t &pkey_range_to_clear,
         signal_t *interruptor)
         THROWS_ONLY(interrupted_exc_t) {
-
     /* Delete one piece of the secondary index at a time */
+    key_range_t remaining_range = key_range_t::universe();
     for (bool reached_end = false; !reached_end;)
     {
         /* Start a transaction. */
@@ -694,15 +701,24 @@ void store_t::clear_sindex_data(
             = make_scoped<sindex_superblock_t>(std::move(sindex_superblock_lock));
 
         /* 1. Collect a bunch of keys to delete */
-        clear_sindex_traversal_cb_t traversal_cb;
+        clear_sindex_traversal_cb_t traversal_cb(pkey_range_to_clear);
         reached_end = (continue_bool_t::CONTINUE == btree_depth_first_traversal(
             sindex_superblock.get(),
-            range_to_clear,
+            remaining_range,
             &traversal_cb,
             access_t::read,
             direction_t::FORWARD,
             release_superblock_t::KEEP,
             interruptor));
+
+        /* Update the traversal range so we don't traverse the same range again */
+        if (!traversal_cb.get_keys().empty()) {
+            remaining_range = key_range_t(
+                key_range_t::open,
+                traversal_cb.get_keys().back(),
+                key_range_t::none,
+                store_key_t());
+        }
 
         /* 2. Actually delete them */
         const std::vector<store_key_t> &keys = traversal_cb.get_keys();

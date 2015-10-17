@@ -325,7 +325,7 @@ public:
             uuid_u sindex_id,
             value_sizer_t *sizer,
             const deletion_context_t *deletion_context,
-            const key_range_t &range_to_clear,
+            const key_range_t &pkey_range_to_clear,
             signal_t *interruptor)
             THROWS_ONLY(interrupted_exc_t);
 
