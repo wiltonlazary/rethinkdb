@@ -123,12 +123,6 @@ void resume_construct_sindex(
                         &store->perfmon_collection,
                         num_mods_to_keep_in_memory));
 
-            {
-                new_mutex_in_line_t acq =
-                    store->get_in_line_for_sindex_queue(&sindex_block);
-                store->register_sindex_queue(mod_queue.get(), remaining_range, &acq);
-            }
-
             secondary_index_t sindex;
             bool found_index =
                 get_secondary_index(&sindex_block, sindex_to_construct, &sindex);
@@ -136,6 +130,10 @@ void resume_construct_sindex(
                 // The index was deleted. Abort construction.
                 return;
             }
+
+            new_mutex_in_line_t acq =
+                store->get_in_line_for_sindex_queue(&sindex_block);
+            store->register_sindex_queue(mod_queue.get(), remaining_range, &acq);
         }
 
         post_construct_and_drain_queue(
@@ -150,7 +148,7 @@ void resume_construct_sindex(
 
 /* This function is used by resume_construct_sindex. It traverses the primary btree
 and creates entries in the given secondary index. It then applies outstanding changes
-from the mod_queue and destroys the queue. */
+from the mod_queue and deregisters it. */
 void post_construct_and_drain_queue(
         auto_drainer_t::lock_t lock,
         uuid_u sindex_id_to_bring_up_to_date,
