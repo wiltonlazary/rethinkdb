@@ -113,7 +113,7 @@ void resume_construct_sindex(
              * damage (if that should ever not true for any of the modifications, that
              * modification must be fixed or this code would have to be changed to
              * account for that). */
-            const int num_mods_to_keep_in_memory = 8;
+            const int num_mods_to_keep_in_memory = 16;
             mod_queue.init(
                     new disk_backed_queue_wrapper_t<rdb_modification_report_t>(
                         store->io_backender_,
