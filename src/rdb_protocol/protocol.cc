@@ -219,6 +219,15 @@ void post_construct_and_drain_queue(
                     &queue_sindex_block,
                     &sindexes);
 
+            // Pretend that the indexes in `sindexes` have been post-constructed up to
+            // the new range. This is important to make the call to
+            // `rdb_update_sindexes()` below actually update the indexes.
+            // We use the same trick in the `post_construct_traversal_helper_t`.
+            // TODO! Avoid this hackery
+            for (auto &&access : sindexes) {
+                access->sindex.needs_post_construction_range = *construction_range_inout;
+            }
+
             if (sindexes.empty()) {
                 // We still need to deregister the queues. This is done further below
                 // after the exception handler.
@@ -235,6 +244,28 @@ void post_construct_and_drain_queue(
             while (mod_queue->size() > 0) {
                 if (lock.get_drain_signal()->is_pulsed()) {
                     throw interrupted_exc_t();
+                }
+                // The `disk_backed_queue_wrapper` can sometimes be non-empty, but not
+                // have a value available because it's still loading from disk.
+                // In that case we must wait until a value becomes available.
+                while (!mod_queue->available->get()) {
+                    // TODO: The availability_callback_t interface on passive producers
+                    //   is difficult to use and should be simplified.
+                    struct on_availability_t : public availability_callback_t {
+                        void on_source_availability_changed() {
+                            cond.pulse_if_not_already_pulsed();
+                        }
+                        cond_t cond;
+                    } on_availability;
+                    mod_queue->available->set_callback(&on_availability);
+                    try {
+                        wait_interruptible(&on_availability.cond,
+                                           lock.get_drain_signal());
+                    } catch (const interrupted_exc_t &) {
+                        mod_queue->available->unset_callback();
+                        throw;
+                    }
+                    mod_queue->available->unset_callback();
                 }
                 rdb_modification_report_t mod_report = mod_queue->pop();
                 // We only need to apply modifications that fall in the range that
