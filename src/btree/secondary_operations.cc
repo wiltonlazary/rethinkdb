@@ -9,7 +9,7 @@
 #include "containers/archive/versioned.hpp"
 
 // TODO! Backwards compatbility
-RDB_IMPL_SERIALIZABLE_6_SINCE_v1_13(
+RDB_IMPL_SERIALIZABLE_5_SINCE_v1_13(
         secondary_index_t, superblock, opaque_definition,
         needs_post_construction_range, being_deleted, id);
 

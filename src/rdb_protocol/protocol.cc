@@ -27,85 +27,135 @@ namespace rdb_protocol {
 
 void post_construct_and_drain_queue(
         auto_drainer_t::lock_t lock,
-        std::map<uuid_u, std::string> const &sindexes_to_bring_up_to_date_uuid_name,
+        uuid_u sindex_id_to_bring_up_to_date,
+        key_range_t *construction_range_inout,
+        int pairs_to_construct,
         store_t *store,
-        internal_disk_backed_queue_t *mod_queue_ptr)
+        scoped_ptr_t<disk_backed_queue_wrapper_t<rdb_modification_report_t> >
+            &&mod_queue)
     THROWS_NOTHING;
 
-// TODO! Double-check and update all the comments
 /* Creates a queue of operations for the sindex, runs a post construction for
  * the data already in the btree and finally drains the queue. */
-void resume_bring_sindex_up_to_date(
-        const sindex_name_t &sindex_to_bring_up_to_date,
-        const store_key_t &resume_after,
+void resume_construct_sindex(
+        const uuid_u &sindex_to_construct,
+        const key_range_t &construct_range,
         store_t *store,
-        buf_lock_t *sindex_block) THROWS_NOTHING {
+        auto_drainer_t::lock_t store_keepalive) THROWS_NOTHING {
     with_priority_t p(CORO_PRIORITY_SINDEX_CONSTRUCTION);
 
-    /* We register our modification queue here.
-     * We must register it before calling post_construct_and_drain_queue to
-     * make sure that every changes which we don't learn about in
-     * the concurrent traversal that's started there, we do learn about from the mod
-     * queue. Changes that happen between the mod queue registration and
-     * the parallel traversal will be accounted for twice. That is ok though,
-     * since every modification can be applied repeatedly without causing any
-     * damage (if that should ever not true for any of the modifications, that
-     * modification must be fixed or this code would have to be changed to account
-     * for that). */
-    uuid_u post_construct_id = generate_uuid();
+    // Block out backfills to improve performance.
+    // A very useful side-effect of this is that if a server is added as a new replica
+    // to a table, its indexes get constructed before the backfill can complete.
+    // This makes sure that the indexes are actually ready by the time the new replica
+    // becomes active.
+    //
+    // Note that we don't actually wait for the lock to be acquired.
+    // All we want is to pause backfills by having our write lock acquisition
+    // in line.
+    // Waiting for the write lock would restrict us to having only one post
+    // construction active at any time (which would make constructing multiple indexes
+    // at the same time less efficient).
+    rwlock_in_line_t backfill_lock_acq(&store->backfill_postcon_lock, access_t::write);
 
-    /* Keep the store alive for as long as mod_queue exists. It uses its io_backender
-     * and perfmon_collection, so that is important. */
-    auto_drainer_t::lock_t store_drainer_acq(&store->drainer);
-
-    const int num_mods_to_keep_in_memory = 10;
-    scoped_ptr_t<disk_backed_queue_wrapper_t<rdb_modification_report_t> > mod_queue(
-            new disk_backed_queue_wrapper_t<rdb_modification_report_t>(
-                store->io_backender_,
-                serializer_filepath_t(
-                    store->base_path_,
-                    "post_construction_" + uuid_to_str(post_construct_id)),
-                &store->perfmon_collection,
-                num_mods_to_keep_in_memory));
-
-    {
-        new_mutex_in_line_t acq = store->get_in_line_for_sindex_queue(sindex_block);
-        store->register_sindex_queue(mod_queue.get(), resume_after, &acq);
+    /* We start by clearing out any residual data in the index left behind by a previous
+    post construction process (if the server got terminated in the middle). */
+    try {
+        /* It's safe to use a noop deletion context because this part of the index has
+        never been live. */
+        rdb_noop_deletion_context_t noop_deletion_context;
+        rdb_value_sizer_t sizer(store->cache->max_block_size());
+        store->clear_sindex_data(
+            sindex_to_construct,
+            &sizer,
+            &noop_deletion_context,
+            construct_range,
+            store_keepalive.get_drain_signal());
+    } catch (const interrupted_exc_t &) {
+        return;
     }
 
-    secondary_index_t sindex;
-    bool found_index = get_secondary_index(sindex_block, index_to_bring_up_to_date, &sindex);
-    guarantee(found_index);
-    guarantee(!sindex->being_deleted, "Trying to bring an index up to date that's "
-                                      "being deleted");
+    uuid_u post_construct_id = generate_uuid();
 
-    coro_t::spawn_sometime(std::bind(
-                &post_construct_and_drain_queue,
-                store_drainer_acq,
-                sindex.id,
-                resume_after,
-                store,
-                mod_queue.release()));
+    // TODO! Comment how we construct the index in ranges
+    const int PAIRS_TO_CONSTRUCT_PER_PASS = 1024;
+    key_range_t remaining_range = construct_range;
+    while (!remaining_range.is_empty()) {
+        scoped_ptr_t<disk_backed_queue_wrapper_t<rdb_modification_report_t> > mod_queue;
+        {
+            /* Start a transaction and acquire the sindex_block */
+            write_token_t token;
+            store->new_write_token(&token);
+            scoped_ptr_t<txn_t> txn;
+            scoped_ptr_t<real_superblock_t> superblock;
+            store->acquire_superblock_for_write(1,
+                                                write_durability_t::SOFT,
+                                                &token,
+                                                &txn,
+                                                &superblock,
+                                                store_keepalive.get_drain_signal());
+            buf_lock_t sindex_block(superblock->expose_buf(),
+                                    superblock->get_sindex_block_id(),
+                                    access_t::write);
+            superblock.reset();
+
+            /* We register our modification queue here.
+             * We must register it before calling post_construct_and_drain_queue to
+             * make sure that every changes which we don't learn about in
+             * the concurrent traversal that's started there, we do learn about from the
+             * mod queue. Changes that happen between the mod queue registration and
+             * the parallel traversal will be accounted for twice. That is ok though,
+             * since every modification can be applied repeatedly without causing any
+             * damage (if that should ever not true for any of the modifications, that
+             * modification must be fixed or this code would have to be changed to
+             * account for that). */
+            const int num_mods_to_keep_in_memory = 8;
+            mod_queue.init(
+                    new disk_backed_queue_wrapper_t<rdb_modification_report_t>(
+                        store->io_backender_,
+                        serializer_filepath_t(
+                            store->base_path_,
+                            "post_construction_" + uuid_to_str(post_construct_id)),
+                        &store->perfmon_collection,
+                        num_mods_to_keep_in_memory));
+
+            {
+                new_mutex_in_line_t acq =
+                    store->get_in_line_for_sindex_queue(&sindex_block);
+                store->register_sindex_queue(mod_queue.get(), remaining_range, &acq);
+            }
+
+            secondary_index_t sindex;
+            bool found_index =
+                get_secondary_index(&sindex_block, sindex_to_construct, &sindex);
+            if (!found_index || sindex.being_deleted) {
+                // The index was deleted. Abort construction.
+                return;
+            }
+        }
+
+        post_construct_and_drain_queue(
+            store_keepalive,
+            sindex_to_construct,
+            &remaining_range,
+            PAIRS_TO_CONSTRUCT_PER_PASS,
+            store,
+            std::move(mod_queue));
+    }
 }
 
-// TODO! Merge this in, and then put a loop around it that keeps constructing until
-// the construction range is empty.
-// TODO! Clear the constructing range of the index before initiating post construction
-
-/* This function is really part of the logic of bring_sindexes_up_to_date
- * however it needs to be in a seperate function so that it can be spawned in a
- * coro.
- */
+/* This function is used by resume_construct_sindex. It traverses the primary btree
+and creates entries in the given secondary index. It then applies outstanding changes
+from the mod_queue and destroys the queue. */
 void post_construct_and_drain_queue(
         auto_drainer_t::lock_t lock,
         uuid_u sindex_id_to_bring_up_to_date,
         key_range_t *construction_range_inout,
+        int pairs_to_construct,
         store_t *store,
-        disk_backed_queue_wrapper_t<rdb_modification_report_t> *mod_queue_ptr)
+        scoped_ptr_t<disk_backed_queue_wrapper_t<rdb_modification_report_t> >
+            &&mod_queue)
     THROWS_NOTHING {
-
-    scoped_ptr_t<disk_backed_queue_wrapper_t<rdb_modification_report_t> >
-        mod_queue(mod_queue_ptr);
 
     // TODO! Fix the progress. Just use a distribution query + key boundary for it.
     // Also move this sentry up!
@@ -123,19 +173,14 @@ void post_construct_and_drain_queue(
     std::set<uuid_u> sindexes_to_bring_up_to_date;
     sindexes_to_bring_up_to_date.insert(sindex_id_to_bring_up_to_date);
 
-    rwlock_in_line_t lock_acq(&store->backfill_postcon_lock, access_t::write);
-    // Note that we don't actually wait for the lock to be acquired.
-    // All we want is to pause backfills by having our write lock acquisition
-    // in line.
-    // Waiting for the write lock would restrict us to having only one post
-    // construction active at any time (which would make constructing multiple indexes
-    // at the same time less efficient).
-
     try {
+        // This constructs a part of the index and updates `construction_range_inout`
+        // to the range that's still remaining.
         post_construct_secondary_index_range(
             store,
             sindexes_to_bring_up_to_date,
             construction_range_inout,
+            pairs_to_construct,
             lock.get_drain_signal());
 
         // Drain the queue.
@@ -175,7 +220,12 @@ void post_construct_and_drain_queue(
                     &sindexes);
 
             if (sindexes.empty()) {
-                break;
+                // We still need to deregister the queues. This is done further below
+                // after the exception handler.
+                // We throw here because that's consistent with how
+                // `post_construct_secondary_index_range` signals the fact that all
+                // indexes have been deleted.
+                throw interrupted_exc_t();
             }
 
             new_mutex_in_line_t acq =
@@ -187,20 +237,27 @@ void post_construct_and_drain_queue(
                     throw interrupted_exc_t();
                 }
                 rdb_modification_report_t mod_report = mod_queue->pop();
-                rdb_post_construction_deletion_context_t deletion_context;
-                rdb_update_sindexes(store,
-                                    sindexes,
-                                    &mod_report,
-                                    queue_txn.get(),
-                                    &deletion_context,
-                                    NULL,
-                                    NULL,
-                                    NULL);
+                // We only need to apply modifications that fall in the range that
+                // has actually been constructed.
+                // If it's in the range that is still to be constructed we ignore it.
+                if (!construction_range_inout->contains_key(mod_report.primary_key)) {
+                    rdb_post_construction_deletion_context_t deletion_context;
+                    rdb_update_sindexes(store,
+                                        sindexes,
+                                        &mod_report,
+                                        queue_txn.get(),
+                                        &deletion_context,
+                                        NULL,
+                                        NULL,
+                                        NULL);
+                }
             }
 
-            // TODO! Change this so it only marks a certain range up to date
+            // Mark parts of the index up to date (except for what remains in
+            // `construction_range_inout`).
             store->mark_index_up_to_date(sindex_id_to_bring_up_to_date,
-                                         &queue_sindex_block);
+                                         &queue_sindex_block,
+                                         *construction_range_inout);
             store->deregister_sindex_queue(mod_queue.get(), &acq);
             return;
         }

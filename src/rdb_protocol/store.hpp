@@ -15,6 +15,7 @@
 #include "btree/secondary_operations.hpp"
 #include "buffer_cache/types.hpp"
 #include "concurrency/auto_drainer.hpp"
+#include "concurrency/queue/disk_backed_queue_wrapper.hpp"
 #include "concurrency/new_mutex.hpp"
 #include "concurrency/new_semaphore.hpp"
 #include "concurrency/rwlock.hpp"
@@ -174,6 +175,8 @@ public:
             signal_t *interruptor)
             THROWS_ONLY(interrupted_exc_t);
 
+    /* Warning: If the index already exists, this function will crash. Make sure that
+    you don't run multiple instances of this for the same index at the same time. */
     void sindex_create(
             const std::string &name,
             const sindex_config_t &config,
@@ -194,16 +197,16 @@ public:
     rwlock_in_line_t get_in_line_for_cfeed_stamp(access_t access);
 
     void register_sindex_queue(
-            internal_disk_backed_queue_t *disk_backed_queue,
-            const store_key_t &constructed_up_to,
+            disk_backed_queue_wrapper_t<rdb_modification_report_t> *disk_backed_queue,
+            const key_range_t &construction_range,
             const new_mutex_in_line_t *acq);
 
     void deregister_sindex_queue(
-            internal_disk_backed_queue_t *disk_backed_queue,
+            disk_backed_queue_wrapper_t<rdb_modification_report_t> *disk_backed_queue,
             const new_mutex_in_line_t *acq);
 
     void emergency_deregister_sindex_queue(
-            internal_disk_backed_queue_t *disk_backed_queue);
+            disk_backed_queue_wrapper_t<rdb_modification_report_t> *disk_backed_queue);
 
     // Updates the live sindexes, and pushes modification reports onto the sindex
     // queues of non-live indexes.
@@ -220,7 +223,9 @@ public:
             const std::vector<rdb_modification_report_t> &mod_reports,
             const new_mutex_in_line_t *acq);
 
-    MUST_USE bool add_sindex_internal(
+    // Returns the UUID of the created index, or boost::none if an index by `name`
+    // already existed.
+    MUST_USE boost::optional<uuid_u> add_sindex_internal(
         const sindex_name_t &name,
         const std::vector<char> &opaque_definition,
         buf_lock_t *sindex_block);
@@ -228,13 +233,9 @@ public:
     std::map<sindex_name_t, secondary_index_t> get_sindexes() const;
 
     bool mark_index_up_to_date(
-        const sindex_name_t &name,
-        buf_lock_t *sindex_block)
-    THROWS_NOTHING;
-
-    bool mark_index_up_to_date(
         uuid_u id,
-        buf_lock_t *sindex_block)
+        buf_lock_t *sindex_block,
+        const key_range_t &except_for_remaining_range)
     THROWS_NOTHING;
 
     MUST_USE bool acquire_sindex_superblock_for_read(
@@ -280,17 +281,6 @@ public:
             sindex_access_vector_t *sindex_sbs_out)
         THROWS_ONLY(sindex_not_ready_exc_t);
 
-    void acquire_post_constructed_sindex_superblocks_for_write(
-            buf_lock_t *sindex_block,
-            sindex_access_vector_t *sindex_sbs_out)
-    THROWS_NOTHING;
-
-    bool acquire_sindex_superblocks_for_write(
-            boost::optional<std::set<sindex_name_t> > sindexes_to_acquire, //none means acquire all sindexes
-            buf_lock_t *sindex_block,
-            sindex_access_vector_t *sindex_sbs_out)
-    THROWS_ONLY(sindex_not_ready_exc_t);
-
     bool acquire_sindex_superblocks_for_write(
             boost::optional<std::set<uuid_u> > sindexes_to_acquire, //none means acquire all sindexes
             buf_lock_t *sindex_block,
@@ -329,20 +319,26 @@ public:
             signal_t *interruptor)
             THROWS_ONLY(interrupted_exc_t);
 
+    // Used by `delayed_clear_and_drop_sindex` and during index post-construction.
+    // Clears out a slice of a secondary index.
+    void clear_sindex_data(
+            uuid_u sindex_id,
+            value_sizer_t *sizer,
+            const deletion_context_t *deletion_context,
+            const key_range_t &range_to_clear,
+            signal_t *interruptor)
+            THROWS_ONLY(interrupted_exc_t);
+
 private:
     // Helper function to clear out a secondary index that has been
-    // marked as deleted. To be run in a coroutine.
-    void delayed_clear_sindex(
+    // marked as deleted and drop it at the end. To be run in a coroutine.
+    void delayed_clear_and_drop_sindex(
             secondary_index_t sindex,
             auto_drainer_t::lock_t store_keepalive)
             THROWS_NOTHING;
-    // Internally called by `delayed_clear_sindex()`
-    void clear_sindex(
-            secondary_index_t sindex,
-            value_sizer_t *sizer,
-            const deletion_context_t *deletion_context,
-            signal_t *interruptor)
-            THROWS_ONLY(interrupted_exc_t);
+    // Drops a secondary index. Assumes that the index has previously been cleared
+    // through `clear_sindex_data()`.
+    void drop_sindex(uuid_u sindex_id) THROWS_NOTHING;
 
     void help_construct_bring_sindexes_up_to_date();
 
@@ -377,7 +373,7 @@ public:
 
     std::map<uuid_u, scoped_ptr_t<btree_slice_t> > secondary_index_slices;
 
-    // TODO! document & rename
+    // TODO! document
     struct ranged_sindex_queue_t {
         // Once the index has been fully constructed, `construction_range` will be empty.
         key_range_t construction_range;

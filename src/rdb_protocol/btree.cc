@@ -1073,8 +1073,7 @@ rdb_modification_report_cb_t::rdb_modification_report_cb_t(
         auto_drainer_t::lock_t lock)
     : lock_(lock), store_(store),
       sindex_block_(sindex_block) {
-    store_->acquire_post_constructed_sindex_superblocks_for_write(
-            sindex_block_, &sindexes_);
+    store_->acquire_all_sindex_superblocks_for_write(sindex_block_, &sindexes_);
 }
 
 rdb_modification_report_cb_t::~rdb_modification_report_cb_t() { }
@@ -1647,23 +1646,27 @@ void rdb_update_sindexes(
             keys_available_cond->pulse();
         }
         for (const auto &sindex : sindexes) {
-            // TODO! This should check the active index range
-            coro_t::spawn_sometime(
-                std::bind(
-                    &rdb_update_single_sindex,
-                    store,
-                    sindex.get(),
-                    deletion_context,
-                    modification,
-                    &counter,
-                    auto_drainer_t::lock_t(&drainer),
-                    keys_available_cond,
-                    old_keys_out == NULL
-                        ? NULL
-                        : &(*old_keys_out)[sindex->name.name],
-                    new_keys_out == NULL
-                        ? NULL
-                        : &(*new_keys_out)[sindex->name.name]));
+            // Update only indexes that have been post-constructed for the relevant
+            // range.
+            if (!sindex->sindex.needs_post_construction_range.contains_key(
+                    modification->primary_key)) {
+                coro_t::spawn_sometime(
+                    std::bind(
+                        &rdb_update_single_sindex,
+                        store,
+                        sindex.get(),
+                        deletion_context,
+                        modification,
+                        &counter,
+                        auto_drainer_t::lock_t(&drainer),
+                        keys_available_cond,
+                        old_keys_out == NULL
+                            ? NULL
+                            : &(*old_keys_out)[sindex->name.name],
+                        new_keys_out == NULL
+                            ? NULL
+                            : &(*new_keys_out)[sindex->name.name]));
+            }
         }
     }
 
@@ -1681,12 +1684,15 @@ public:
             store_t *store,
             const std::set<uuid_u> &sindexes_to_post_construct,
             cond_t *on_indexes_deleted,
+            int pairs_to_construct,
             signal_t *interruptor)
         : store_(store),
           sindexes_to_post_construct_(sindexes_to_post_construct),
           on_indexes_deleted_(on_indexes_deleted),
           interruptor_(interruptor),
-          current_chunk_size(0) {
+          pairs_to_construct_left_(pairs_to_construct),
+          stopped_before_completion_(false),
+          current_chunk_size_(0) {
         // Start an initial write transaction for the first chunk.
         // (this acquisition should never block)
         rwlock_acq_t wtxn_acq(&wtxn_lock_, access_t::write);
@@ -1702,11 +1708,6 @@ public:
             throw interrupted_exc_t();
         }
 
-        // Number of key/value pairs we process before releasing the write transaction
-        // and waiting for the secondary index data to be flushed to disk.
-        // Also see the comment above `scoped_ptr_t<txn_t> wtxn;` below.
-        const int MAX_CHUNK_SIZE = 32;
-
         // Account for the read value in the stats
         store_->btree->stats.pm_keys_read.record();
         store_->btree->stats.pm_total_keys_read += 1;
@@ -1721,19 +1722,19 @@ public:
             keyvalue.expose_buf().cache()->max_block_size();
         mod_report.info.added
             = std::make_pair(
-                get_data(rdb_value, buf_parent_t(leaf_node_buf)),
+                get_data(rdb_value, buf_parent_t(keyvalue.expose_buf())),
                 std::vector<char>(rdb_value->value_ref(),
                     rdb_value->value_ref() + rdb_value->inline_size(block_size)));
 
         // Store the value into the secondary indexes
         {
             rwlock_acq_t wtxn_acq(&wtxn_lock_, access_t::read, interruptor_);
-            guarantee(wtxn.has());
+            guarantee(wtxn_.has());
             const rdb_post_construction_deletion_context_t deletion_context;
             rdb_update_sindexes(store_,
-                                sindexes,
+                                sindexes_,
                                 &mod_report,
-                                wtxn.get(),
+                                wtxn_.get(),
                                 &deletion_context,
                                 NULL,
                                 NULL,
@@ -1741,12 +1742,12 @@ public:
         }
 
         // Account for the sindex writes in the stats
-        store_->btree->stats.pm_keys_set.record(sindexes.size());
-        store_->btree->stats.pm_total_keys_set += sindexes.size();
+        store_->btree->stats.pm_keys_set.record(sindexes_.size());
+        store_->btree->stats.pm_total_keys_set += sindexes_.size();
 
         // Update the traversed range boundary (everything below here will happen in
         // key order).
-        waiter.wait_interruptible(interruptor_);
+        waiter.wait_interruptible();
         traversed_right_bound_ = primary_key;
 
         // Release the write transaction and secondary index locks once we've reached the
@@ -1754,24 +1755,38 @@ public:
         // has been flushed.
         {
             rwlock_acq_t wtxn_acq(&wtxn_lock_, access_t::write, interruptor_);
-            ++current_chunk_size;
-            if (current_chunk_size >= MAX_CHUNK_SIZE) {
-                current_chunk_size = 0;
-                sindexes.clear();
-                wtxn.reset();
+            ++current_chunk_size_;
+            if (current_chunk_size_ >= MAX_CHUNK_SIZE) {
+                current_chunk_size_ = 0;
+                sindexes_.clear();
+                wtxn_.reset();
                 start_write_transaction(&wtxn_acq);
             }
         }
 
-        // TODO! Check limit
-        return continue_bool_t::CONTINUE;
+        --pairs_to_construct_left_;
+        if (pairs_to_construct_left_ <= 0) {
+            stopped_before_completion_ = true;
+            return continue_bool_t::ABORT;
+        } else {
+            return continue_bool_t::CONTINUE;
+        }
     }
 
     store_key_t get_traversed_right_bound() const {
         return traversed_right_bound_;
     }
 
+    bool stopped_before_completion() const {
+        return stopped_before_completion_;
+    }
+
 private:
+    // Number of key/value pairs we process before releasing the write transaction
+    // and waiting for the secondary index data to be flushed to disk.
+    // Also see the comment above `scoped_ptr_t<txn_t> wtxn;` below.
+    static const int MAX_CHUNK_SIZE = 32;
+
     void start_write_transaction(rwlock_acq_t *wtxn_acq) {
         wtxn_acq->guarantee_is_holding(&wtxn_lock_);
         guarantee(!wtxn_.has());
@@ -1805,6 +1820,13 @@ private:
             &sindex_block,
             &sindexes_);
 
+        // We pretend that the indexes have been fully constructed, so that when we call
+        // `rdb_update_sindexes` above, it actually updates the range we're currently
+        // constructing. This is a bit hacky, but works.
+        for (auto &&access : sindexes_) {
+            access->sindex.needs_post_construction_range = key_range_t::empty();
+        }
+
         if (sindexes_.empty()) {
             // All indexes have been deleted. Interrupt the traversal.
             on_indexes_deleted_->pulse_if_not_already_pulsed();
@@ -1817,7 +1839,9 @@ private:
     signal_t *interruptor_;
 
     // How far we've come in the traversal
+    int pairs_to_construct_left_;
     store_key_t traversed_right_bound_;
+    bool stopped_before_completion_;
 
     // We re-use a single write transaction and secondary index acquisition for a chunk
     // of writes to get better efficiency when flushing the index writes to disk.
@@ -1839,6 +1863,7 @@ void post_construct_secondary_index_range(
         store_t *store,
         const std::set<uuid_u> &sindex_ids_to_post_construct,
         key_range_t *construction_range_inout,
+        int pairs_to_construct,
         signal_t *interruptor)
     THROWS_ONLY(interrupted_exc_t) {
 
@@ -1848,7 +1873,11 @@ void post_construct_secondary_index_range(
     wait_any_t wait_any(&on_index_deleted_interruptor, interruptor);
 
     post_construct_traversal_helper_t traversal_cb(
-        store, sindex_ids_to_post_construct, &on_index_deleted_interruptor, interruptor);
+        store,
+        sindex_ids_to_post_construct,
+        &on_index_deleted_interruptor,
+        pairs_to_construct,
+        interruptor);
 
     // Mind the destructor ordering.
     // The superblock must be released before txn (`btree_concurrent_traversal`
@@ -1872,7 +1901,6 @@ void post_construct_secondary_index_range(
         = txn->cache()->create_cache_account(SINDEX_POST_CONSTRUCTION_CACHE_PRIORITY);
     txn->set_account(&cache_account);
 
-    // TODO! Abort after N keys (say 1000?)
     continue_bool_t cont = btree_concurrent_traversal(
         superblock.get(),
         *construction_range_inout,
@@ -1884,12 +1912,17 @@ void post_construct_secondary_index_range(
     }
 
     // Update the left bound of the construction range
-    // (the key_range_t construction below needs to be updated if the right bound can
-    //  be bounded. For now we assume it's unbounded.)
-    guarantee(construction_range_inout->right.unbounded);
-    *construction_range_inout = key_range_t(
-        key_range_t::bound_t::open, traversal_cb.get_traversed_right_bound(),
-        key_range_t::bound_t::none, store_key_t());
+    if (!traversal_cb.stopped_before_completion()) {
+        // The construction is done. Set the remaining range to empty.
+        *construction_range_inout = key_range_t::empty();
+    } else {
+        // (the key_range_t construction below needs to be updated if the right bound can
+        //  be bounded. For now we assume it's unbounded.)
+        guarantee(construction_range_inout->right.unbounded);
+        *construction_range_inout = key_range_t(
+            key_range_t::bound_t::open, traversal_cb.get_traversed_right_bound(),
+            key_range_t::bound_t::none, store_key_t());
+    }
 }
 
 void noop_value_deleter_t::delete_value(buf_parent_t, const void *) const { }

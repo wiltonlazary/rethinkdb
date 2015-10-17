@@ -154,6 +154,7 @@ TPTEST(BTreeSindex, BtreeStoreAPI) {
     for (int i = 0; i < 50; ++i) {
         sindex_name_t name = sindex_name_t(uuid_to_str(generate_uuid()));
         created_sindexs.insert(name);
+        boost::optional<uuid_u> index_id;
         {
             write_token_t token;
             store.new_write_token(&token);
@@ -169,9 +170,9 @@ TPTEST(BTreeSindex, BtreeStoreAPI) {
                                     super_block->get_sindex_block_id(),
                                     access_t::write);
 
-            bool b = store.add_sindex_internal(
+            index_id = store.add_sindex_internal(
                 name, std::vector<char>(), &sindex_block);
-            guarantee(b);
+            guarantee(index_id);
         }
 
         {
@@ -188,7 +189,7 @@ TPTEST(BTreeSindex, BtreeStoreAPI) {
                                     super_block->get_sindex_block_id(),
                                     access_t::write);
 
-            store.mark_index_up_to_date(name, &sindex_block);
+            store.mark_index_up_to_date(*index_id, &sindex_block, key_range_t::empty());
         }
 
         {

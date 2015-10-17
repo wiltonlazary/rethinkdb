@@ -127,6 +127,8 @@ void sindex_manager_t::update_blocking(signal_t *interruptor) {
         }
         store->sindex_rename_multi(to_rename, &ct_interruptor);
         for (const auto &pair : to_create) {
+            // TODO! This crashes if the index already exists. All of this needs to be
+            // protected by a mutex.
             store->sindex_create(pair.first, pair.second, &ct_interruptor);
         }
     }

@@ -1,4 +1,4 @@
-// Copyright 2010-2014 RethinkDB, all rights reserved.
+// Copyright 2010-2015 RethinkDB, all rights reserved.
 #ifndef BTREE_SECONDARY_OPERATIONS_HPP_
 #define BTREE_SECONDARY_OPERATIONS_HPP_
 
@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "btree/keys.hpp"
 #include "buffer_cache/types.hpp"
 #include "containers/archive/archive.hpp"
 #include "containers/uuid.hpp"
@@ -25,7 +26,6 @@ struct secondary_index_t {
     secondary_index_t()
         : superblock(NULL_BLOCK_ID),
           being_deleted(false),
-          /* TODO(2014-08): This generate_uuid() is weird. */
           id(generate_uuid()) { }
 
     /* A virtual superblock. */
@@ -36,10 +36,11 @@ struct secondary_index_t {
     key_range_t needs_post_construction_range;
     bool being_deleted;
 
+    // TODO! Get rid of this.
     bool post_construction_complete() const {
         return needs_post_construction_range.is_empty();
     }
-    // TODO! Does this need to return an active range instead?
+    // TODO! Get rid of this. Instead allow checking if it's ready for a given key.
     bool is_ready() const {
         return post_construction_complete() && !being_deleted;
     }
