@@ -88,12 +88,16 @@ void resume_construct_sindex(
             store->new_write_token(&token);
             scoped_ptr_t<txn_t> txn;
             scoped_ptr_t<real_superblock_t> superblock;
-            store->acquire_superblock_for_write(1,
-                                                write_durability_t::SOFT,
-                                                &token,
-                                                &txn,
-                                                &superblock,
-                                                store_keepalive.get_drain_signal());
+            try {
+                store->acquire_superblock_for_write(1,
+                                                    write_durability_t::SOFT,
+                                                    &token,
+                                                    &txn,
+                                                    &superblock,
+                                                    store_keepalive.get_drain_signal());
+            } catch (const interrupted_exc_t &) {
+                return;
+            }
             buf_lock_t sindex_block(superblock->expose_buf(),
                                     superblock->get_sindex_block_id(),
                                     access_t::write);
@@ -311,13 +315,14 @@ void post_construct_and_drain_queue(
         scoped_ptr_t<txn_t> queue_txn;
         scoped_ptr_t<real_superblock_t> queue_superblock;
 
+        cond_t non_interruptor;
         store->acquire_superblock_for_write(
             2,
             write_durability_t::HARD,
             &token,
             &queue_txn,
             &queue_superblock,
-            lock.get_drain_signal());
+            &non_interruptor);
 
         block_id_t sindex_block_id = queue_superblock->get_sindex_block_id();
 
