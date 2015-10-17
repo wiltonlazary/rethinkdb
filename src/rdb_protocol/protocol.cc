@@ -78,7 +78,7 @@ void resume_construct_sindex(
     uuid_u post_construct_id = generate_uuid();
 
     // TODO! Comment how we construct the index in ranges
-    const int PAIRS_TO_CONSTRUCT_PER_PASS = 1024;
+    const int PAIRS_TO_CONSTRUCT_PER_PASS = 512;
     key_range_t remaining_range = construct_range;
     while (!remaining_range.is_empty()) {
         scoped_ptr_t<disk_backed_queue_wrapper_t<rdb_modification_report_t> > mod_queue;

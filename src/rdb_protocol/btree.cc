@@ -1641,15 +1641,17 @@ void rdb_update_sindexes(
     {
         auto_drainer_t drainer;
 
-        size_t counter = sindexes.size();
-        if (counter == 0 && keys_available_cond != NULL) {
-            keys_available_cond->pulse();
-        }
+        // This assert is here to make sure that we pulse keys_available_cond even if
+        // some indexes aren't done constructing yet.
+        ASSERT_NO_CORO_WAITING;
+
+        size_t counter = 0;
         for (const auto &sindex : sindexes) {
             // Update only indexes that have been post-constructed for the relevant
             // range.
             if (!sindex->sindex.needs_post_construction_range.contains_key(
                     modification->primary_key)) {
+                ++counter;
                 coro_t::spawn_sometime(
                     std::bind(
                         &rdb_update_single_sindex,
@@ -1667,6 +1669,9 @@ void rdb_update_sindexes(
                             ? NULL
                             : &(*new_keys_out)[sindex->name.name]));
             }
+        }
+        if (counter == 0 && keys_available_cond != NULL) {
+            keys_available_cond->pulse();
         }
     }
 
