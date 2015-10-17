@@ -629,17 +629,20 @@ class clear_sindex_traversal_cb_t
         : public depth_first_traversal_callback_t {
 public:
     clear_sindex_traversal_cb_t(const key_range_t &pkey_rng)
-        : pkey_range(pkey_rng) {
+        : pkey_range(pkey_rng), num_traversed(0) {
         collected_keys.reserve(CHUNK_SIZE);
     }
     continue_bool_t handle_pair(scoped_key_value_t &&keyvalue, signal_t *) {
+        store_key_t key(keyvalue.key());
         // Skip keys that are not in the given primary key range.
-        if (!pkey_range.contains_key(
-                ql::datum_t::extract_primary(store_key_t(keyvalue.key())))) {
-            return continue_bool_t::CONTINUE;
+        if (pkey_range.contains_key(
+                ql::datum_t::extract_primary(key))) {
+            collected_keys.push_back(store_key_t(keyvalue.key()));
         }
-        collected_keys.push_back(store_key_t(keyvalue.key()));
-        if (collected_keys.size() >= CHUNK_SIZE) {
+        ++num_traversed;
+        rassert(key > last_traversed_key);
+        last_traversed_key = key;
+        if (num_traversed >= CHUNK_SIZE) {
             return continue_bool_t::ABORT;
         } else {
             return continue_bool_t::CONTINUE;
@@ -648,10 +651,15 @@ public:
     const std::vector<store_key_t> &get_keys() const {
         return collected_keys;
     }
+    store_key_t get_last_traversed_key() const {
+        return last_traversed_key;
+    }
     static const size_t CHUNK_SIZE = 32;
 private:
     key_range_t pkey_range;
     std::vector<store_key_t> collected_keys;
+    size_t num_traversed;
+    store_key_t last_traversed_key;
 };
 
 void store_t::clear_sindex_data(
@@ -665,7 +673,9 @@ void store_t::clear_sindex_data(
     key_range_t remaining_range = key_range_t::universe();
     for (bool reached_end = false; !reached_end;)
     {
-        /* Start a transaction. */
+        coro_t::yield();
+    
+        /* Start a write transaction. */
         write_token_t token;
         new_write_token(&token);
         scoped_ptr_t<txn_t> txn;
@@ -712,13 +722,11 @@ void store_t::clear_sindex_data(
             interruptor));
 
         /* Update the traversal range so we don't traverse the same range again */
-        if (!traversal_cb.get_keys().empty()) {
-            remaining_range = key_range_t(
-                key_range_t::open,
-                traversal_cb.get_keys().back(),
-                key_range_t::none,
-                store_key_t());
-        }
+        remaining_range = key_range_t(
+            key_range_t::open,
+            traversal_cb.get_last_traversed_key(),
+            key_range_t::none,
+            store_key_t());
 
         /* 2. Actually delete them */
         const std::vector<store_key_t> &keys = traversal_cb.get_keys();
