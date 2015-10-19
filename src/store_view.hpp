@@ -119,7 +119,7 @@ public:
         virtual continue_bool_t on_pre_item(
             backfill_pre_item_t &&item) THROWS_NOTHING = 0;
         virtual continue_bool_t on_empty_range(
-            const key_range_t::right_bound_t &threshold) THROWS_NOTHING = 0;
+            const store_key_t &threshold) THROWS_NOTHING = 0;
     protected:
         virtual ~backfill_pre_item_consumer_t() { }
     };
@@ -153,7 +153,7 @@ public:
             backfill_item_t &&item) THROWS_NOTHING = 0;
         virtual void on_empty_range(
             const region_map_t<binary_blob_t> &metainfo,
-            const key_range_t::right_bound_t &threshold) THROWS_NOTHING = 0;
+            const store_key_t &threshold) THROWS_NOTHING = 0;
     protected:
         virtual ~backfill_item_consumer_t() { }
     };
@@ -167,12 +167,12 @@ public:
     class backfill_pre_item_producer_t {
     public:
         virtual continue_bool_t consume_range(
-            key_range_t::right_bound_t *cursor_inout,
-            const key_range_t::right_bound_t &limit,
+            store_key_t *cursor_inout,
+            const store_key_t &limit,
             const std::function<void(const backfill_pre_item_t &)> &callback) = 0;
         virtual bool try_consume_empty_range(
             const key_range_t &range) = 0;
-        virtual void rewind(const key_range_t::right_bound_t &point) = 0;
+        virtual void rewind(const store_key_t &point) = 0;
     protected:
         virtual ~backfill_pre_item_producer_t() { }
     };
@@ -213,7 +213,7 @@ public:
         virtual continue_bool_t next_item(
             bool *is_item_out,
             backfill_item_t *item_out,
-            key_range_t::right_bound_t *empty_range_out) THROWS_NOTHING = 0;
+            store_key_t *empty_range_out) THROWS_NOTHING = 0;
 
         /* Returns the metainfo corresponding to the item stream. The returned pointer
         may be invalidated if the calling coroutine yields, calls `next_item()`, or calls
@@ -222,7 +222,7 @@ public:
         virtual const region_map_t<binary_blob_t> *get_metainfo() THROWS_NOTHING = 0;
 
         virtual void on_commit(
-            const key_range_t::right_bound_t &threshold) THROWS_NOTHING = 0;
+            const store_key_t &threshold) THROWS_NOTHING = 0;
     protected:
         virtual ~backfill_item_producer_t() { }
     };

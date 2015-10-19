@@ -16,8 +16,7 @@ template <class value_t>
 class region_map_t {
 private:
     typedef range_map_t<uint64_t, value_t> hash_range_map_t;
-    typedef key_range_t::right_bound_t key_edge_t;
-    typedef range_map_t<key_edge_t, hash_range_map_t> key_range_map_t;
+    typedef range_map_t<store_key_t, hash_range_map_t> key_range_map_t;
 
 public:
     typedef value_t mapped_type;
@@ -25,10 +24,8 @@ public:
     explicit region_map_t(
             region_t r = region_t::universe(),
             value_t v = value_t()) THROWS_NOTHING :
-        inner(
-            key_edge_t(r.inner.left),
-            r.inner.right,
-            hash_range_map_t(r.beg, r.end, std::move(v))),
+        inner(r.inner.left, r.inner.right,
+              hash_range_map_t(r.beg, r.end, std::move(v))),
         hash_beg(r.beg),
         hash_end(r.end)
         { }
@@ -48,7 +45,7 @@ public:
 
     static region_map_t empty() {
         region_map_t r;
-        r.inner = key_range_map_t(key_edge_t());
+        r.inner = key_range_map_t(store_key_t());
         return r;
     }
 
@@ -64,7 +61,7 @@ public:
             region_t r;
             r.beg = hash_beg;
             r.end = hash_end;
-            r.inner.left = inner.left_edge().key();
+            r.inner.left = inner.left_edge();
             r.inner.right = inner.right_edge();
             return r;
         }
@@ -74,7 +71,7 @@ public:
         uint64_t h = hash_region_hasher(key);
         rassert(h >= hash_beg);
         rassert(h < hash_end);
-        return inner.lookup(key_edge_t(key)).lookup(h);
+        return inner.lookup(key).lookup(h);
     }
 
     /* Calls `cb` for a set of (subregion, value) pairs that cover all of `region`. The
@@ -83,12 +80,14 @@ public:
     */
     template<class callable_t>
     void visit(const region_t &region, const callable_t &cb) const {
-        inner.visit(key_edge_t(region.inner.left), region.inner.right,
-            [&](const key_edge_t &l, const key_edge_t &r, const hash_range_map_t &hrm) {
+        inner.visit(
+            region.inner.left, region.inner.right,
+            [&](const store_key_t &l, const store_key_t &r,
+                const hash_range_map_t &hrm) {
                 hrm.visit(region.beg, region.end,
                     [&](uint64_t b, uint64_t e, const value_t &value) {
                         key_range_t subrange;
-                        subrange.left = l.key();
+                        subrange.left = l;
                         subrange.right = r;
                         region_t subregion(b, e, subrange);
                         cb(subregion, value);
@@ -107,7 +106,7 @@ public:
                 typename std::result_of<decltype(cb)(value_t)>::type>::type> {
         return region_map_t<typename std::decay<
                 typename std::result_of<callable_t(value_t)>::type>::type>(
-            inner.map(key_edge_t(region.inner.left), region.inner.right,
+            inner.map(region.inner.left, region.inner.right,
                 [&](const hash_range_map_t &slice) {
                     return slice.map(region.beg, region.end, cb);
                 }),
@@ -129,12 +128,13 @@ public:
             typename std::result_of<callable_t(region_t, value_t)>::type>
             ::type::mapped_type result_t;
         return region_map_t<result_t>(
-            inner.map_multi(key_edge_t(region.inner.left), region.inner.right,
-            [&](const key_edge_t &l, const key_edge_t &r, const hash_range_map_t &hrm) {
+            inner.map_multi(region.inner.left, region.inner.right,
+            [&](const store_key_t &l, const store_key_t &r,
+                const hash_range_map_t &hrm) {
                 key_range_t sub_reg;
-                sub_reg.left = l.key();
+                sub_reg.left = l;
                 sub_reg.right = r;
-                range_map_t<key_edge_t, range_map_t<uint64_t, result_t> >
+                range_map_t<store_key_t, range_map_t<uint64_t, result_t> >
                     sub_res(l, r, range_map_t<uint64_t, result_t>(region.beg));
                 hrm.visit(region.beg, region.end,
                 [&](uint64_t b, uint64_t e, const value_t &value) {
@@ -142,10 +142,10 @@ public:
                     auto sub_sub_res = cb(sub_sub_reg, value);
                     rassert(sub_sub_res.get_domain() == sub_sub_reg);
                     sub_sub_res.inner.visit(l, r,
-                    [&](const key_edge_t &l2, const key_edge_t &r2,
+                    [&](const store_key_t &l2, const store_key_t &r2,
                             const range_map_t<uint64_t, result_t> &sub_sub_sub_res) {
                         sub_res.visit_mutable(l2, r2,
-                        [&](const key_edge_t &, const key_edge_t &,
+                        [&](const store_key_t &, const store_key_t &,
                                 range_map_t<uint64_t, result_t> *sub_res_hrm) {
                             sub_res_hrm->extend_right(
                                 range_map_t<uint64_t, result_t>(sub_sub_sub_res));
@@ -162,7 +162,7 @@ public:
     MUST_USE region_map_t mask(const region_t &region) const {
         return region_map_t(
             inner.map(
-                key_edge_t(region.inner.left),
+                store_key_t(region.inner.left),
                 region.inner.right,
                 [&](const hash_range_map_t &hm) {
                     return hm.mask(region.beg, region.end);
@@ -185,9 +185,11 @@ public:
         rassert(region_is_superset(get_domain(), new_values.get_domain()));
         new_values.inner.visit(
             new_values.inner.left_edge(), new_values.inner.right_edge(),
-            [&](const key_edge_t &l, const key_edge_t &r, const hash_range_map_t &_new) {
+            [&](const store_key_t &l, const store_key_t &r,
+                const hash_range_map_t &_new) {
                 inner.visit_mutable(l, r,
-                    [&](const key_edge_t &, const key_edge_t &, hash_range_map_t *cur) {
+                    [&](const store_key_t &, const store_key_t &,
+                        hash_range_map_t *cur) {
                         cur->update(hash_range_map_t(_new));
                     });
             });
@@ -196,8 +198,8 @@ public:
     /* `update()` sets the value for `r` to `v`. */
     void update(const region_t &r, const value_t &v) {
         rassert(region_is_superset(get_domain(), r));
-        inner.visit_mutable(key_edge_t(r.inner.left), r.inner.right,
-            [&](const key_edge_t &, const key_edge_t &, hash_range_map_t *cur) {
+        inner.visit_mutable(store_key_t(r.inner.left), r.inner.right,
+            [&](const store_key_t &, const store_key_t &, hash_range_map_t *cur) {
                 cur->update(r.beg, r.end, value_t(v));
             });
     }
@@ -221,12 +223,12 @@ public:
     */
     template<class callable_t>
     void visit_mutable(const region_t &region, const callable_t &cb) {
-        inner.visit_mutable(key_edge_t(region.inner.left), region.inner.right,
-            [&](const key_edge_t &l, const key_edge_t &r, hash_range_map_t *hrm) {
+        inner.visit_mutable(store_key_t(region.inner.left), region.inner.right,
+            [&](const store_key_t &l, const store_key_t &r, hash_range_map_t *hrm) {
                 hrm->visit_mutable(region.beg, region.end,
                     [&](uint64_t b, uint64_t e, value_t *value) {
                         key_range_t subrange;
-                        subrange.left = l.key();
+                        subrange.left = l;
                         subrange.right = r;
                         region_t subregion(b, e, subrange);
                         cb(subregion, value);

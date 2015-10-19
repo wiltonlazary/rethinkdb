@@ -59,61 +59,47 @@ std::string key_to_debug_str(const btree_key_t *key) {
 key_range_t::key_range_t() :
     left(), right(store_key_t()) { }
 
-key_range_t::key_range_t(bound_t lm, const store_key_t& l, bound_t rm, const store_key_t& r) {
+key_range_t::key_range_t(bound_t lm, const store_key_t& l,
+                         bound_t rm, const store_key_t& r) {
     init(lm, l.btree_key(), rm, r.btree_key());
 }
 
-key_range_t::key_range_t(bound_t lm, const btree_key_t *l, bound_t rm, const btree_key_t *r) {
+key_range_t::key_range_t(bound_t lm, const btree_key_t *l,
+                         bound_t rm, const btree_key_t *r) {
     init(lm, l, rm, r);
 }
 
-void key_range_t::init(bound_t lm, const btree_key_t *l, bound_t rm, const btree_key_t *r) {
+void key_range_t::init(bound_t lm, const btree_key_t *l,
+                       bound_t rm, const btree_key_t *r) {
+    left.assign(l);
     switch (lm) {
-        case closed:
-            left.assign(l);
-            break;
-        case open:
-            left.assign(l);
-            if (left.increment()) {
-                break;
-            } else {
-                rassert(rm == none);
-                /* Our left bound is the largest possible key, and we are open
-                on the left-hand side. So we are empty. */
-                *this = key_range_t::empty();
-                return;
-            }
-        case none:
-            left = store_key_t::min();
-            break;
-        default:
-            unreachable();
-    }
-
-    switch (rm) {
-        case closed: {
-            right.unbounded = false;
-            right.key().assign(r);
-            bool ok = right.increment();
-            guarantee(ok);
-            break;
+    case closed: break;
+    case open:
+        if (!left.increment()) {
+            // `l` is the largest key, so make sure that the resulting range
+            // will be empty.
+            rassert(rm == open);
+            rassert(btree_key_cmp(l, r) == 0);
         }
-        case open:
-            right.unbounded = false;
-            right.key().assign(r);
-            break;
-        case none:
-            right.unbounded = true;
-            break;
-        default:
-            unreachable();
+        break;
+    default: unreachable();
     }
 
-    rassert(right.unbounded || left <= right.key(),
+    right.assign(r);
+    switch (rm) {
+    case closed: {
+        bool ok = right.increment();
+        guarantee(ok);
+        break;
+    }
+    case open: break;
+    default: unreachable();
+    }
+
+    rassert(left <= right,
             "left_key(%d)=%.*s, right_key(%d)=%.*s",
             left.size(), left.size(), left.contents(),
-            right.internal_key.size(), right.internal_key.size(),
-            right.internal_key.contents());
+            right.size(), right.size(), right.contents());
 }
 
 bool key_range_t::is_superset(const key_range_t &other) const {
@@ -125,9 +111,8 @@ bool key_range_t::is_superset(const key_range_t &other) const {
 }
 
 bool key_range_t::overlaps(const key_range_t &other) const {
-    return key_range_t::right_bound_t(left) < other.right &&
-        key_range_t::right_bound_t(other.left) < right &&
-        !is_empty() && !other.is_empty();
+    // TODO: do we need the `is_empty` checks?
+    return left < other.right && other.left < right && !is_empty() && !other.is_empty();
 }
 
 key_range_t key_range_t::intersection(const key_range_t &other) const {
@@ -152,14 +137,6 @@ void debug_print(printf_buffer_t *buf, const store_key_t &k) {
     debug_print(buf, k.btree_key());
 }
 
-void debug_print(printf_buffer_t *buf, const key_range_t::right_bound_t &rb) {
-    if (rb.unbounded) {
-        buf->appendf("+inf");
-    } else {
-        debug_print(buf, rb.key());
-    }
-}
-
 void debug_print(printf_buffer_t *buf, const key_range_t &kr) {
     buf->appendf("[");
     debug_print(buf, kr.left);
@@ -173,11 +150,7 @@ std::string key_range_to_string(const key_range_t &kr) {
     res += "[";
     res += key_to_debug_str(kr.left);
     res += ", ";
-    if (kr.right.unbounded) {
-        res += "+inf";
-    } else {
-        res += key_to_debug_str(kr.right.key());
-    }
+    res += key_to_debug_str(kr.right);
     res += ")";
     return res;
 }
@@ -188,29 +161,6 @@ void debug_print(printf_buffer_t *buf, const store_key_t *k) {
     } else {
         buf->appendf("NULL");
     }
-}
-
-
-bool operator==(const key_range_t::right_bound_t &a, const key_range_t::right_bound_t &b) {
-    return (a.unbounded && b.unbounded)
-        || (!a.unbounded && !b.unbounded && a.key() == b.key());
-}
-bool operator!=(const key_range_t::right_bound_t &a, const key_range_t::right_bound_t &b) {
-    return !(a == b);
-}
-bool operator<(const key_range_t::right_bound_t &a, const key_range_t::right_bound_t &b) {
-    if (a.unbounded) return false;
-    if (b.unbounded) return true;
-    return a.key() < b.key();
-}
-bool operator<=(const key_range_t::right_bound_t &a, const key_range_t::right_bound_t &b) {
-    return a == b || a < b;
-}
-bool operator>(const key_range_t::right_bound_t &a, const key_range_t::right_bound_t &b) {
-    return b < a;
-}
-bool operator>=(const key_range_t::right_bound_t &a, const key_range_t::right_bound_t &b) {
-    return b <= a;
 }
 
 bool operator==(key_range_t a, key_range_t b) THROWS_NOTHING {
@@ -225,18 +175,55 @@ bool operator<(const key_range_t &a, const key_range_t &b) THROWS_NOTHING {
     return (a.left < b.left || (a.left == b.left && a.right < b.right));
 }
 
-RDB_IMPL_SERIALIZABLE_2_SINCE_v1_13(key_range_t::right_bound_t, unbounded, internal_key);
-RDB_IMPL_SERIALIZABLE_2_SINCE_v1_13(key_range_t, left, right);
+// It used to be possible for key ranges to have unbounded right bounds.  We now
+// use `store_key_t::max()` for this instead, and forbid it as a legal key
+// value.  This makes a lot of logic simpler.  We continue to use the old
+// serialization format for backward compatibility since it only uses one extra
+// byte.
+template<cluster_version_t W>
+void serialize(write_message_t *wm, const key_range_t &kr) {
+    serialize<W>(wm, kr.left);
+    serialize<W>(wm, false); // This used to be `true` if the right bound was unbounded.
+    serialize<W>(wm, kr.right);
+}
+template<cluster_version_t W>
+archive_result_t deserialize(read_stream_t *s, key_range_t *kr) {
+    archive_result_t res = deserialize<W>(s, &kr->left);
+    if (bad(res)) return res;
+    bool unbounded;
+    res = deserialize<W>(s, &unbounded);
+    if (bad(res)) return res;
+    if (unbounded) {
+        // We only enter this branch if we're deserializing an old key range.
+        // We convert it to the new convention silently.
+        kr->right = store_key_t::max();
+        // We used to serialize and deserialize junk data in the old format for
+        // some reason.
+        store_key_t junk_key;
+        res = deserialize<W>(s, &junk_key);
+    } else {
+        res = deserialize<W>(s, &kr->right);
+    }
+    return res;
+}
 
 void serialize_for_metainfo(write_message_t *wm, const key_range_t &kr) {
     kr.left.serialize_for_metainfo(wm);
-    serialize_universal(wm, kr.right.unbounded);
-    kr.right.internal_key.serialize_for_metainfo(wm);
+    serialize_universal(wm, false);
+    kr.right.serialize_for_metainfo(wm);
 }
+
 archive_result_t deserialize_for_metainfo(read_stream_t *s, key_range_t *out) {
     archive_result_t res = out->left.deserialize_for_metainfo(s);
     if (bad(res)) { return res; }
-    res = deserialize_universal(s, &out->right.unbounded);
+    bool unbounded;
+    res = deserialize_universal(s, &unbounded);
     if (bad(res)) { return res; }
-    return out->right.internal_key.deserialize_for_metainfo(s);
+    if (unbounded) {
+        store_key_t junk_key;
+        res = junk_key.deserialize_for_metainfo(s);
+    } else {
+        res = out->left.deserialize_for_metainfo(s);
+    }
+    return res;
 }

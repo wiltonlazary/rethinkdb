@@ -22,22 +22,21 @@ void backfill_item_t::mask_in_place(const key_range_t &m) {
     range = range.intersection(m);
     std::vector<pair_t> new_pairs;
     for (auto &&pair : pairs) {
-        if (m.contains_key(pair.key)) {
+        if (m.contains(pair.key)) {
             new_pairs.push_back(std::move(pair));
         }
     }
     pairs = std::move(new_pairs);
 }
 
-/* `convert_to_right_bound()` is suitable for converting `btree_key_t *`s in the format
-of `right_incl` or `left_excl_or_null` into a `key_range_t::right_bound_t`. */
-key_range_t::right_bound_t convert_to_right_bound(const btree_key_t *rightmost_before) {
+/* `convert_to_right_bound()` is suitable for converting `btree_key_t *`s in the
+format of `right_incl` or `left_excl_or_null` into a `store_key_t` representing
+a right bound.  */
+store_key_t convert_to_right_bound(const btree_key_t *rightmost_before) {
     if (rightmost_before == nullptr) {
-        return key_range_t::right_bound_t(store_key_t::min());
+        return store_key_t::min();
     } else {
-        key_range_t::right_bound_t rb;
-        rb.unbounded = false;
-        rb.key().assign(rightmost_before);
+        store_key_t rb(rightmost_before);
         bool ok = rb.increment();
         guarantee(ok);
         return rb;
@@ -45,7 +44,8 @@ key_range_t::right_bound_t convert_to_right_bound(const btree_key_t *rightmost_b
 }
 
 key_range_t convert_to_key_range(
-        const btree_key_t *left_excl_or_null, const btree_key_t *right_incl) {
+        const btree_key_t *left_excl_or_null,
+        const btree_key_t *right_incl) {
     return key_range_t(
         left_excl_or_null == nullptr
             ? key_range_t::bound_t::none : key_range_t::bound_t::open,
@@ -198,7 +198,7 @@ public:
     }
 
     void on_empty_range(
-            const key_range_t::right_bound_t &empty_range, signal_t *interruptor) {
+            const store_key_t &empty_range, signal_t *interruptor) {
         new_semaphore_acq_t sem_acq(&semaphore, 1);
         wait_interruptible(sem_acq.acquisition_signal(), interruptor);
         /* Unlike `handle_item()`, `handle_empty_range()` doesn't do any expensive work,
@@ -265,7 +265,7 @@ private:
     }
 
     void handle_empty_range(
-            const key_range_t::right_bound_t &threshold,
+            const store_key_t &threshold,
             const new_semaphore_acq_t &,
             fifo_enforcer_write_token_t token,
             auto_drainer_t::lock_t keepalive) {
@@ -338,8 +338,8 @@ private:
             signal_t *interruptor,
             bool *skip_out) {
         *skip_out = true;
-        key_range_t::right_bound_t cursor = convert_to_right_bound(left_excl_or_null);
-        key_range_t::right_bound_t right_bound = convert_to_right_bound(right_incl);
+        store_key_t cursor = convert_to_right_bound(left_excl_or_null);
+        store_key_t right_bound = convert_to_right_bound(right_incl);
         while (cursor != right_bound) {
             key_range_t subrange;
             subrange.left = cursor.key();
@@ -635,8 +635,8 @@ private:
             const btree_key_t *left_excl_or_null,
             const btree_key_t *right_incl,
             signal_t *interruptor) {
-        key_range_t::right_bound_t cursor = convert_to_right_bound(left_excl_or_null);
-        key_range_t::right_bound_t end = convert_to_right_bound(right_incl);
+        store_key_t cursor = convert_to_right_bound(left_excl_or_null);
+        store_key_t end = convert_to_right_bound(right_incl);
         while (cursor != end) {
             std::vector<backfill_item_t> items;
             continue_bool_t cont = pre_item_producer->consume_range(

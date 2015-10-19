@@ -85,7 +85,7 @@ public:
     and a single `pair_t` for that same key. The backfill receiver logic has a separate
     code path for single-key items in order to improve performance. */
     bool is_single_key() {
-        key_range_t::right_bound_t x(range.left);
+        store_key_t x(range.left);
         x.increment();
         return pairs.size() == 1 && x == range.right;
     }
@@ -126,7 +126,7 @@ public:
     /* These callbacks may block, but `btree_send_backfill_pre()` might hold B-tree locks
     while it calls them, so they shouldn't block for long. */
     virtual continue_bool_t on_pre_item(backfill_pre_item_t &&item) THROWS_NOTHING = 0;
-    virtual continue_bool_t on_empty_range(const key_range_t::right_bound_t &threshold)
+    virtual continue_bool_t on_empty_range(const store_key_t &threshold)
         THROWS_NOTHING = 0;
 protected:
     virtual ~btree_backfill_pre_item_consumer_t() { }
@@ -158,8 +158,8 @@ public:
     are no pre-items available (so that `*cursor_inout` would not be moved) then
     `consume_range()` returns `continue_bool_t::ABORT`. */
     virtual continue_bool_t consume_range(
-        key_range_t::right_bound_t *cursor_inout,
-        const key_range_t::right_bound_t &limit,
+        store_key_t *cursor_inout,
+        const store_key_t &limit,
         const std::function<void(const backfill_pre_item_t &)> &callback) = 0;
 
     /* `try_consume_empty_range()` consumes the range from `left_excl_or_null` to
@@ -198,7 +198,7 @@ public:
     virtual continue_bool_t on_item(
         backfill_item_t &&item) = 0;
     virtual continue_bool_t on_empty_range(
-        const key_range_t::right_bound_t &threshold) = 0;
+        const store_key_t &threshold) = 0;
 
     /* `copy_value()` is responsible for reading a value out of the leaf node, finding
     the corresponding blob pages (if it's a large value), and putting the contents into
