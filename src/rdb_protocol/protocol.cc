@@ -4,6 +4,9 @@
 #include <algorithm>
 #include <functional>
 
+#include "stl_utils.hpp"
+#include "boost_utils.hpp"
+
 #include "btree/operations.hpp"
 #include "btree/reql_specific.hpp"
 #include "concurrency/cross_thread_signal.hpp"
@@ -457,6 +460,9 @@ struct rdb_r_shard_visitor_t : public boost::static_visitor<bool> {
                 rg_out->stamp->region = rg_out->region;
             }
         }
+        debugf("region: %s\n", debug_str(rg.region).c_str());
+        debugf("hints: %s\n", debug_str(rg.hints).c_str());
+        debugf("do_read: %d (%s)\n", do_read, debug_str(*region).c_str());
         return do_read;
     }
 
@@ -492,7 +498,8 @@ bool read_t::shard(const hash_region_t<key_range_t> &region,
 
 class distribution_read_response_less_t {
 public:
-    bool operator()(const distribution_read_response_t& x, const distribution_read_response_t& y) {
+    bool operator()(const distribution_read_response_t& x,
+                    const distribution_read_response_t& y) {
         if (x.region.inner == y.region.inner) {
             return x.region < y.region;
         } else {
