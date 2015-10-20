@@ -737,10 +737,11 @@ void store_t::clear_sindex_data(
                         &kv_location, NULL /* trace */,
                         &superblock_promise);
 
-                deletion_context->in_tree_deleter()->delete_value(
-                    buf_parent_t(&kv_location.buf), kv_location.value.get());
-                kv_location.value.reset();
                 if (kv_location.there_originally_was_value) {
+                    deletion_context->in_tree_deleter()->delete_value(
+                        buf_parent_t(&kv_location.buf), kv_location.value.get());
+                    kv_location.value.reset();
+
                     buf_write_t write(&kv_location.buf);
                     auto leaf_node = static_cast<leaf_node_t *>(write.get_data_write());
                     leaf::remove(sizer,
