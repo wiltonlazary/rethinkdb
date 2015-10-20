@@ -1890,13 +1890,6 @@ void post_construct_secondary_index_range(
     cond_t on_index_deleted_interruptor;
     wait_any_t wait_any(&on_index_deleted_interruptor, interruptor);
 
-    post_construct_traversal_helper_t traversal_cb(
-        store,
-        sindex_ids_to_post_construct,
-        &on_index_deleted_interruptor,
-        pairs_to_construct,
-        interruptor);
-
     // Mind the destructor ordering.
     // The superblock must be released before txn (`btree_concurrent_traversal`
     // usually already takes care of that).
@@ -1914,6 +1907,17 @@ void post_construct_secondary_index_range(
         &superblock,
         interruptor,
         true /* USE_SNAPSHOT */);
+
+    // Note: This starts a write transaction, which might get throttled.
+    // It is important that we construct the `traversal_cb` *after* we've started
+    // the snapshotted read transaction, or otherwise we might deadlock in the presence
+    // of additional (unrelated) write transactions..
+    post_construct_traversal_helper_t traversal_cb(
+        store,
+        sindex_ids_to_post_construct,
+        &on_index_deleted_interruptor,
+        pairs_to_construct,
+        interruptor);
 
     cache_account
         = txn->cache()->create_cache_account(SINDEX_POST_CONSTRUCTION_CACHE_PRIORITY);
