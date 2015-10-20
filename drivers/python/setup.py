@@ -1,21 +1,24 @@
-# Copyright 2010-2013 RethinkDB, all rights reserved.
+# Copyright 2010-2015 RethinkDB, all rights reserved.
 
-from setuptools import setup
+import setuptools
+import rethinkdb
 
-version_path = 'rethinkdb/version.py'
+conditionalPackages = []
+try:
+    import asyncio
+    conditionalPackages = ['rethinkdb.asyncio']
+except ImportError: pass
 
-exec(open(version_path).read())
-
-setup(
+setuptools.setup(
     name="rethinkdb",
     zip_safe=True,
-    version=version,
-    description="This package provides the Python driver library for the RethinkDB database server.",
+    version=rethinkdb.__version__,
+    description="Python driver library for the RethinkDB database server.",
     url="http://rethinkdb.com",
     maintainer="RethinkDB Inc.",
     maintainer_email="bugs@rethinkdb.com",
-    packages=['rethinkdb', 'rethinkdb.backports', 'rethinkdb.backports.ssl_match_hostname'],
-    package_dir={'rethinkdb': 'rethinkdb'},
+    packages=['rethinkdb', 'rethinkdb.tornado', 'rethinkdb.twisted', 'rethinkdb.backports.ssl_match_hostname'] + conditionalPackages,
+    package_dir={'rethinkdb':'rethinkdb'},
     package_data={ 'rethinkdb':['backports/ssl_match_hostname/*.txt'] },
     entry_points={
         'console_scripts':[
