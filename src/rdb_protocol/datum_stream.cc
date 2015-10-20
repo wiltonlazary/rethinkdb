@@ -147,15 +147,22 @@ boost::optional<std::map<region_t, store_key_t> > active_ranges_to_hints(
         switch (pair.second.state()) {
         case range_state_t::ACTIVE:
             for (auto &&hash_pair : pair.second.hash_ranges) {
+                // If any of the hash shards in a range are active, we send
+                // reads for all of them, because the assumption is that data is
+                // randomly distributed across hash shards, which means the only
+                // case where some are active and some are saturated is when
+                // we're reading really small batches for some reason
+                // (e.g. because of a sparse filter), in which case we still
+                // want to read from all the hash shards at once.
                 switch (hash_pair.second.state) {
-                case range_state_t::ACTIVE:
+                case range_state_t::ACTIVE: // fallthru
+                case range_state_t::SATURATED:
                     hints[region_t(hash_pair.first.beg,
                                    hash_pair.first.end,
                                    pair.first)] = !reversed(sorting)
                         ? hash_pair.second.key_range.left
                         : hash_pair.second.key_range.right.key_or_max();
                     break;
-                case range_state_t::SATURATED: break;
                 case range_state_t::EXHAUSTED: break;
                 default: unreachable();
                 }
@@ -225,13 +232,8 @@ public:
             }
             break;
         case range_state_t::SATURATED:
-            // Otherwise a saturated range should never have been made into a
-            // pseudoshard.
+            // A shard should never be saturated unless it has cached values.
             r_sanity_check(cached->cache.size() != 0);
-            // We should never have fresh data for a saturated range (since
-            // we're the only ones who mark a range saturated, so it can't
-            // happen earlier).
-            r_sanity_check(!fresh);
             if (cached_index != 0) {
                 debugf("-> ACT (cached value read)\n");
                 cached->state = range_state_t::ACTIVE;
@@ -439,7 +441,6 @@ raw_stream_t unshard(
         *shards_exhausted_out = true;
     }
 
-    BREAKPOINT;
     return items;
 }
 
