@@ -17,6 +17,7 @@
 #include "btree/superblock.hpp"
 #include "buffer_cache/serialize_onto_blob.hpp"
 #include "concurrency/coro_pool.hpp"
+#include "concurrency/new_mutex.hpp"
 #include "concurrency/queue/unlimited_fifo.hpp"
 #include "containers/archive/boost_types.hpp"
 #include "containers/archive/buffer_group_stream.hpp"
@@ -1713,7 +1714,7 @@ public:
           current_chunk_size_(0) {
         // Start an initial write transaction for the first chunk.
         // (this acquisition should never block)
-        rwlock_acq_t wtxn_acq(&wtxn_lock_, access_t::write);
+        new_mutex_acq_t wtxn_acq(&wtxn_lock_);
         start_write_transaction(&wtxn_acq);
     }
 
@@ -1746,7 +1747,11 @@ public:
 
         // Store the value into the secondary indexes
         {
-            rwlock_acq_t wtxn_acq(&wtxn_lock_, access_t::read, interruptor_);
+            // We need this mutex because we don't want `wtxn` to be destructed,
+            // but also because only one coroutine can be traversing the indexes
+            // through `rdb_update_sindexes` at a time (or else the btree will get
+            // corrupted!).
+            new_mutex_acq_t wtxn_acq(&wtxn_lock_, interruptor_);
             guarantee(wtxn_.has());
             const rdb_post_construction_deletion_context_t deletion_context;
             rdb_update_sindexes(store_,
@@ -1772,7 +1777,7 @@ public:
         // designated chunk size. Then acquire a new transaction once the previous one
         // has been flushed.
         {
-            rwlock_acq_t wtxn_acq(&wtxn_lock_, access_t::write, interruptor_);
+            new_mutex_acq_t wtxn_acq(&wtxn_lock_, interruptor_);
             ++current_chunk_size_;
             if (current_chunk_size_ >= MAX_CHUNK_SIZE) {
                 current_chunk_size_ = 0;
@@ -1805,7 +1810,7 @@ private:
     // Also see the comment above `scoped_ptr_t<txn_t> wtxn;` below.
     static const int MAX_CHUNK_SIZE = 32;
 
-    void start_write_transaction(rwlock_acq_t *wtxn_acq) {
+    void start_write_transaction(new_mutex_acq_t *wtxn_acq) {
         wtxn_acq->guarantee_is_holding(&wtxn_lock_);
         guarantee(!wtxn_.has());
 
@@ -1872,9 +1877,8 @@ private:
     scoped_ptr_t<txn_t> wtxn_;
     store_t::sindex_access_vector_t sindexes_;
     int current_chunk_size_;
-    // To protect race conditions between different `handle_pair`s running at the same
-    // time. They could interfere trying to start / end a `wtxn`.
-    rwlock_t wtxn_lock_;
+    // Controls access to `sindexes_` and `wtxn_`.
+    new_mutex_t wtxn_lock_;
 };
 
 void post_construct_secondary_index_range(

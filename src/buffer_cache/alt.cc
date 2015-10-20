@@ -776,6 +776,12 @@ const void *buf_read_t::get_data_read(uint32_t *block_size_out) {
                        lock_->txn()->account());
     }
     page_acq_.buf_ready_signal()->wait();
+#ifndef NDEBUG
+    // Occasionally block, as if the block had to be fetched from disk
+    if (randint(10) == 0) {
+        coro_t::yield();
+    }
+#endif
     *block_size_out = page_acq_.get_buf_size().value();
     return page_acq_.get_buf_read();
 }
@@ -798,6 +804,12 @@ void *buf_write_t::get_data_write(uint32_t block_size) {
                        lock_->txn()->account());
     }
     page_acq_.buf_ready_signal()->wait();
+#ifndef NDEBUG
+    // Occasionally block, as if the block had to be fetched from disk
+    if (randint(10) == 0) {
+        coro_t::yield();
+    }
+#endif
     return page_acq_.get_buf_write(block_size_t::make_from_cache(block_size));
 }
 
