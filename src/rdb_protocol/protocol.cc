@@ -374,12 +374,18 @@ region_t read_t::get_region() const THROWS_NOTHING {
 struct rdb_r_shard_visitor_t : public boost::static_visitor<bool> {
     explicit rdb_r_shard_visitor_t(const hash_region_t<key_range_t> *_region,
                                    read_t::variant_t *_payload_out)
-        : region(_region), payload_out(_payload_out) { }
+        : region(*_region), payload_out(_payload_out) {
+        // One day we'll get rid of unbounded right bounds, but until then
+        // we canonicalize them here because otherwise life sucks.
+        if (region.inner.right.unbounded) {
+            region.inner.right = key_range_t::right_bound_t(store_key_t::max());
+        }
+    }
 
     // The key was somehow already extracted from the arg.
     template <class T>
     bool keyed_read(const T &arg, const store_key_t &key) const {
-        if (region_contains_key(*region, key)) {
+        if (region_contains_key(region, key)) {
             *payload_out = arg;
             return true;
         } else {
@@ -394,7 +400,7 @@ struct rdb_r_shard_visitor_t : public boost::static_visitor<bool> {
     template <class T>
     bool rangey_read(const T &arg) const {
         const hash_region_t<key_range_t> intersection
-            = region_intersection(*region, arg.region);
+            = region_intersection(region, arg.region);
         if (!region_is_empty(intersection)) {
             T tmp = arg;
             tmp.region = intersection;
@@ -424,7 +430,7 @@ struct rdb_r_shard_visitor_t : public boost::static_visitor<bool> {
     bool operator()(const rget_read_t &rg) const {
         bool do_read;
         if (rg.hints) {
-            auto it = rg.hints->find(*region);
+            auto it = rg.hints->find(region);
             if (it != rg.hints->end()) {
                 do_read = rangey_read(rg);
                 auto *rr = boost::get<rget_read_t>(payload_out);
@@ -433,12 +439,25 @@ struct rdb_r_shard_visitor_t : public boost::static_visitor<bool> {
                     // TODO: We could avoid an `std::map` copy by making
                     // `rangey_read` smarter.
                     rr->hints = boost::none;
-                    if (!reversed(rg.sorting)) {
-                        rr->region.inner.left = it->second;
+                    if (!rg.sindex) {
+                        if (!reversed(rg.sorting)) {
+                            rr->region.inner.left = it->second;
+                        } else {
+                            rr->region.inner.right =
+                                key_range_t::right_bound_t(it->second);
+                        }
+                        r_sanity_check(!rr->region.inner.is_empty());
                     } else {
-                        rr->region.inner.right = key_range_t::right_bound_t(it->second);
+                        guarantee(rr->sindex);
+                        guarantee(rr->sindex->region);
+                        if (!reversed(rg.sorting)) {
+                            rr->sindex->region->inner.left = it->second;
+                        } else {
+                            rr->sindex->region->inner.right =
+                                key_range_t::right_bound_t(it->second);
+                        }
+                        r_sanity_check(!rr->sindex->region->inner.is_empty());
                     }
-                    r_sanity_check(!rr->region.inner.is_empty());
                 }
             } else {
                 do_read = false;
@@ -448,21 +467,16 @@ struct rdb_r_shard_visitor_t : public boost::static_visitor<bool> {
         }
         if (do_read) {
             auto rg_out = boost::get<rget_read_t>(payload_out);
-            rg_out->current_shard = *region;
-            // One day we'll get rid of unbounded right bounds, but until then
-            // we canonicalize them here because otherwise life sucks.
-            if (rg_out->current_shard->inner.right.unbounded) {
-                rg_out->current_shard->inner.right
-                    = key_range_t::right_bound_t(store_key_t::max());
-            }
+            guarantee(!region.inner.right.unbounded);
+            rg_out->current_shard = region;
             rg_out->batchspec = rg_out->batchspec.scale_down(CPU_SHARDING_FACTOR);
             if (rg_out->stamp) {
                 rg_out->stamp->region = rg_out->region;
             }
         }
-        debugf("region: %s\n", debug_str(rg.region).c_str());
-        debugf("hints: %s\n", debug_str(rg.hints).c_str());
-        debugf("do_read: %d (%s)\n", do_read, debug_str(*region).c_str());
+        // debugf("region: %s\n", debug_str(rg.region).c_str());
+        // debugf("hints: %s\n", debug_str(rg.hints).c_str());
+        // debugf("do_read: %d (%s)\n", do_read, debug_str(region).c_str());
         return do_read;
     }
 
@@ -482,7 +496,7 @@ struct rdb_r_shard_visitor_t : public boost::static_visitor<bool> {
         return rangey_read(d);
     }
 
-    const hash_region_t<key_range_t> *region;
+    region_t region;
     read_t::variant_t *payload_out;
 };
 

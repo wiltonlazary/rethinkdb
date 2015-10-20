@@ -205,6 +205,7 @@ protected:
     virtual void unshard_impl(env_t *,
                               stream_t *out,
                               const std::vector<stream_t *> &streams) {
+        // RSI: we probably have to detect resharding here.
         debugf("streams size: %zu\n", streams.size());
         r_sanity_check(streams.size() > 0);
         for (auto &&stream : streams) {

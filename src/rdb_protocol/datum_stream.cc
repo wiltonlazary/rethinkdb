@@ -232,7 +232,7 @@ public:
     const store_key_t *best_unpopped_key() const {
         if (cached && cached_index < cached->cache.size()) {
             return &cached->cache[cached_index].key;
-        } else if (fresh_index < fresh->stream.size()) {
+        } else if (fresh && fresh_index < fresh->stream.size()) {
             return &fresh->stream[fresh_index].key;
         } else {
             if (!reversed(sorting)) {
@@ -281,43 +281,6 @@ raw_stream_t unshard(
     // debugf("%s\n", debug_str(*active_ranges).c_str());
 
     raw_stream_t items;
-    // While updating the `last_key`s we check that we're only getting results
-    // for shards we actually have.  This also guarantees that we won't silently
-    // discard data in the logic below.
-    for (auto &&pair : stream.substreams) {
-        auto it = active_ranges->ranges.find(pair.first.inner);
-        if (it != active_ranges->ranges.end()) {
-            auto ft = it->second.hash_ranges.find(hash_range_t{
-                    pair.first.beg, pair.first.end});
-            if (ft != it->second.hash_ranges.end()) {
-                // We should never get a result for an inactive region.
-                r_sanity_check(ft->second.state == range_state_t::ACTIVE);
-                // debugf("LAST_KEY: %s\n", debug_str(pair.second.last_key).c_str());
-                if (!reversed(sorting)) {
-                    ft->second.key_range.left = pair.second.last_key;
-                    if (ft->second.key_range.left != store_key_max) {
-                        ft->second.key_range.left.increment();
-                    } else {
-                        // Just to make sure the range is considered empty.  In
-                        // the future we'll probably get rid of unbounded right
-                        // bounds and this logic can go away.
-                        ft->second.key_range.right =
-                            key_range_t::right_bound_t(store_key_t::max());
-                    }
-                } else {
-                    ft->second.key_range.right =
-                        key_range_t::right_bound_t(pair.second.last_key);
-                }
-                // If there's nothing left to read, it's exhausted.
-                if (ft->second.key_range.is_empty()) {
-                    ft->second.state = range_state_t::EXHAUSTED;
-                }
-                continue;
-            }
-        }
-        rfail_datum(base_exc_t::OP_FAILED, "%s", "Stream aborted by reshard operation.");
-    }
-
     // Create the pseudoshards, which represent the cached, fresh, and
     // hypothetical `rget_item_t`s from the shards.
     std::vector<pseudoshard_t> pseudoshards;
@@ -328,30 +291,45 @@ raw_stream_t unshard(
             keyed_stream_t *fresh = nullptr;
             auto it = stream.substreams.find(
                 region_t(hash_pair.first.beg, hash_pair.first.end, pair.first));
-            if (it != stream.substreams.end()) {
-                fresh = &it->second;
-            } else {
+            // Active shards need their bounds updated.
+            if (hash_pair.second.state == range_state_t::ACTIVE) {
+                store_key_t *new_bound = nullptr;
+                if (it != stream.substreams.end()) {
+                    fresh = &it->second;
+                    new_bound = &it->second.last_key;
+                }
                 // If we enter this branch we got no data back from this shard
                 // despite issuing a read to it, which means it's exhausted.
                 if (!reversed(sorting)) {
-                    hash_pair.second.key_range.left =
-                        hash_pair.second.key_range.right.internal_key;
-                    if (hash_pair.second.key_range.left != store_key_max) {
-                        hash_pair.second.key_range.left.increment();
+                    if (new_bound && *new_bound != store_key_max) {
+                        hash_pair.second.key_range.left = *new_bound;
+                        bool incremented = hash_pair.second.key_range.left.increment();
+                        r_sanity_check(incremented); // not max key
                     } else {
-                        // Just to make sure the range is considered empty.  In
-                        // the future we'll probably get rid of unbounded right
-                        // bounds and this logic can go away.
-                        hash_pair.second.key_range.right =
-                            key_range_t::right_bound_t(store_key_t::max());
+                        hash_pair.second.key_range.left =
+                            hash_pair.second.key_range.right_or_max();
                     }
                 } else {
                     // The right bound is open so we don't need to decrement.
-                    hash_pair.second.key_range.right = key_range_t::right_bound_t(
-                        hash_pair.second.key_range.left);
+                    if (new_bound && *new_bound != store_key_min) {
+                        hash_pair.second.key_range.right =
+                            key_range_t::right_bound_t(*new_bound);
+                    } else {
+                        hash_pair.second.key_range.right =
+                            key_range_t::right_bound_t(hash_pair.second.key_range.left);
+                    }
                 }
-                r_sanity_check(hash_pair.second.key_range.is_empty());
-                hash_pair.second.state = range_state_t::EXHAUSTED;
+                if (new_bound) {
+                    // If there's nothing left to read, it's exhausted.
+                    if (hash_pair.second.key_range.is_empty()) {
+                        hash_pair.second.state = range_state_t::EXHAUSTED;
+                    }
+                } else {
+                    // If we got no data back, the logic above should have set
+                    // the range to something empty.
+                    r_sanity_check(hash_pair.second.key_range.is_empty());
+                    hash_pair.second.state = range_state_t::EXHAUSTED;
+                }
             }
             // If there's any data for a hash shard, we need to consider it
             // while unsharding.  Note that the shard may have *already been
@@ -361,6 +339,7 @@ raw_stream_t unshard(
             }
         }
     }
+    debugf("%zu\n", pseudoshards.size());
     if (pseudoshards.size() == 0) {
         *shards_exhausted_out = true;
         return items;
