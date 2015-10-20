@@ -207,8 +207,12 @@ public:
           finished(false) {
         r_sanity_check(_cached != nullptr);
     }
+    pseudoshard_t(pseudoshard_t &&) noexcept = default;
+    pseudoshard_t &operator=(pseudoshard_t &&) = default;
 
     ~pseudoshard_t() {
+        // RSI: what if an exception is thrown?
+        // RSI: does this make the move constructor wrong?
         r_sanity_check(finished);
     }
 
@@ -285,6 +289,8 @@ public:
         }
     }
 private:
+    // We move out of `cached` and `fresh`, so we need to act like we have ownership.
+    DISABLE_COPYING(pseudoshard_t);
     sorting_t sorting;
     hash_range_with_cache_t *cached;
     size_t cached_index;
@@ -293,6 +299,10 @@ private:
     bool finished;
 };
 
+// RSI: Try to make `update` faster by doing interleaved unsharding.
+
+// RSI: `.between(0, '2').update` has gotten a lot slower, we're probably doing
+// something dumb.
 raw_stream_t unshard(
     sorting_t sorting,
     boost::optional<active_ranges_t> *maybe_active_ranges,
@@ -407,11 +417,23 @@ raw_stream_t unshard(
             }
         }
     } else {
-        for (auto &&ps : pseudoshards) {
-            // TODO: this could probably be made faster since we do some work on
-            // every pop that only needs to be done on the last pop.
-            while (auto maybe_item = ps.pop()) {
-                items.push_back(std::move(*maybe_item));
+        // RSI: doing this the smart way where we swap things around inside
+        // pseudoshards causes a crash.  WTF?
+        std::vector<size_t> active;
+        active.reserve(pseudoshards.size());
+        for (size_t i = 0; i < pseudoshards.size(); ++i) {
+            active.push_back(i);
+        }
+        while (active.size() > 0) {
+            // We try to interleave data from different shards so that batched
+            // updates distribute load over all servers.
+            for (size_t i = 0; i < active.size(); ++i) {
+                if (auto maybe_item = pseudoshards[active[i]].pop()) {
+                    items.push_back(std::move(*maybe_item));
+                } else {
+                    std::swap(active[i], active[active.size() - 1]);
+                    active.pop_back();
+                }
             }
         }
     }
