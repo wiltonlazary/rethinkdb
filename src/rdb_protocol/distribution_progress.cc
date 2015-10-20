@@ -29,6 +29,7 @@ distribution_progress_estimator_t::distribution_progress_estimator_t(
 
     /* For the progress calculation we need partial sums for each key thus we
     calculate those from the results that the distribution query returns. */
+    distribution_counts_sum = 0;
     for (auto &&distribution_count : distribution_counts) {
         distribution_count.second =
             (distribution_counts_sum += distribution_count.second);
