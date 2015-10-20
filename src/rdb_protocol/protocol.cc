@@ -469,7 +469,8 @@ struct rdb_r_shard_visitor_t : public boost::static_visitor<bool> {
             auto rg_out = boost::get<rget_read_t>(payload_out);
             guarantee(!region.inner.right.unbounded);
             rg_out->current_shard = region;
-            rg_out->batchspec = rg_out->batchspec.scale_down(CPU_SHARDING_FACTOR);
+            rg_out->batchspec = rg_out->batchspec.scale_down(
+                rg.hints ? rg.hints->size() : CPU_SHARDING_FACTOR);
             if (rg_out->stamp) {
                 rg_out->stamp->region = rg_out->region;
             }
@@ -730,7 +731,6 @@ void rdb_r_unshard_visitor_t::operator()(const rget_read_t &rg) {
 
 template<class query_response_t, class query_t>
 void rdb_r_unshard_visitor_t::unshard_range_batch(const query_t &q, sorting_t sorting) {
-    debugf("unshard_range_batch\n");
     if (q.transforms.size() != 0 || q.terminal) {
         // This asserts that the optargs have been initialized.  (There is always a
         // 'db' optarg.)  We have the same assertion in rdb_read_visitor_t.
@@ -791,9 +791,7 @@ void rdb_r_unshard_visitor_t::unshard_range_batch(const query_t &q, sorting_t so
         scoped_ptr_t<ql::accumulator_t> acc(q.terminal
             ? ql::make_terminal(*q.terminal)
             : ql::make_unsharding_append());
-        debugf("unshard_range_batch pre_unshard\n");
         acc->unshard(&env, results);
-        debugf("unshard_range_batch post_unshard\n");
         acc->finish(&out->result);
     } catch (const ql::exc_t &ex) {
         *out = query_response_t(ex);

@@ -15,6 +15,11 @@
 
 namespace ql {
 
+key_range_t safe_universe() {
+    return key_range_t(key_range_t::closed, store_key_t::min(),
+                       key_range_t::open, store_key_t::max());
+}
+
 void debug_print(printf_buffer_t *buf, const range_state_t &rs) {
     const char *s;
     switch (rs) {
@@ -33,7 +38,7 @@ void debug_print(printf_buffer_t *buf, const hash_range_with_cache_t &hrwc) {
     debug_print(buf, hrwc.cache);
     buf->appendf(", ");
     debug_print(buf, hrwc.state);
-    buf->appendf(")");
+    buf->appendf(")\n");
 }
 
 void debug_print(printf_buffer_t *buf, const hash_ranges_t &hr) {
@@ -144,11 +149,6 @@ boost::optional<std::map<region_t, store_key_t> > active_ranges_to_hints(
             for (auto &&hash_pair : pair.second.hash_ranges) {
                 switch (hash_pair.second.state) {
                 case range_state_t::ACTIVE:
-                    r_sanity_check(
-                        pair.first.contains_key(
-                            !reversed(sorting)
-                            ? hash_pair.second.key_range.left
-                            : hash_pair.second.key_range.right.key_or_max()));
                     hints[region_t(hash_pair.first.beg,
                                    hash_pair.first.end,
                                    pair.first)] = !reversed(sorting)
@@ -170,14 +170,19 @@ boost::optional<std::map<region_t, store_key_t> > active_ranges_to_hints(
     return std::move(hints);
 }
 
-active_ranges_t new_active_ranges(const stream_t &stream) {
+enum class is_secondary_t { NO, YES };
+active_ranges_t new_active_ranges(const stream_t &stream, is_secondary_t is_secondary) {
     active_ranges_t ret;
     for (auto &&pair : stream.substreams) {
         std::map<hash_range_t, hash_range_with_cache_t> hash_ranges;
         ret.ranges[pair.first.inner]
            .hash_ranges[hash_range_t{pair.first.beg, pair.first.end}]
             = hash_range_with_cache_t{
-                pair.first.inner, raw_stream_t(), range_state_t::ACTIVE};
+                is_secondary == is_secondary_t::YES
+                    ? safe_universe()
+                    : pair.first.inner,
+                raw_stream_t(),
+                range_state_t::ACTIVE};
     }
     return ret;
 }
@@ -200,20 +205,40 @@ public:
         r_sanity_check(finished);
     }
 
-    void mark_active_if_saturated() {
+    void finish() {
+        debugf("%p: %s\n", cached, debug_str(cached->state).c_str());
         switch (cached->state) {
-        case range_state_t::ACTIVE: break;
-        case range_state_t::SATURATED: cached->state = range_state_t::ACTIVE; break;
+        case range_state_t::ACTIVE:
+            if (cached->cache.size() != 0) {
+                if (cached_index == 0) {
+                    debugf("-> SAT (no cached values read)\n");
+                    cached->state = range_state_t::SATURATED;
+                }
+            } else if (fresh && fresh->stream.size() != 0) {
+                if (fresh_index == 0) {
+                    debugf("-> SAT (no fresh values read)\n");
+                    cached->state = range_state_t::SATURATED;
+                }
+            } else {
+                // No fresh values and no cached values means we should be exhausted.
+                r_sanity_check(false);
+            }
+            break;
+        case range_state_t::SATURATED:
+            // Otherwise a saturated range should never have been made into a
+            // pseudoshard.
+            r_sanity_check(cached->cache.size() != 0);
+            // We should never have fresh data for a saturated range (since
+            // we're the only ones who mark a range saturated, so it can't
+            // happen earlier).
+            r_sanity_check(!fresh);
+            if (cached_index != 0) {
+                debugf("-> ACT (cached value read)\n");
+                cached->state = range_state_t::ACTIVE;
+            }
+            break;
         case range_state_t::EXHAUSTED: break;
         default: unreachable();
-        }
-    }
-
-    void finish() {
-        if (cached->state == range_state_t::ACTIVE) {
-            if (cached_index == 0 && cached->cache.size() != 0) {
-                cached->state = range_state_t::SATURATED;
-            }
         }
         raw_stream_t new_cache;
         new_cache.reserve((cached->cache.size() - cached_index)
@@ -221,7 +246,7 @@ public:
         std::move(cached->cache.begin() + cached_index,
                   cached->cache.end(),
                   std::back_inserter(new_cache));
-        if (fresh != nullptr) {
+        if (fresh) {
             std::move(fresh->stream.begin() + fresh_index,
                       fresh->stream.end(),
                       std::back_inserter(new_cache));
@@ -229,8 +254,9 @@ public:
         cached->cache = std::move(new_cache);
         finished = true;
     }
+
     const store_key_t *best_unpopped_key() const {
-        if (cached && cached_index < cached->cache.size()) {
+        if (cached_index < cached->cache.size()) {
             return &cached->cache[cached_index].key;
         } else if (fresh && fresh_index < fresh->stream.size()) {
             return &fresh->stream[fresh_index].key;
@@ -246,6 +272,7 @@ public:
             }
         }
     }
+
     boost::optional<rget_item_t> pop() {
         if (cached && cached_index < cached->cache.size()) {
             return std::move(cached->cache[cached_index++]);
@@ -268,35 +295,46 @@ raw_stream_t unshard(
     sorting_t sorting,
     boost::optional<active_ranges_t> *maybe_active_ranges,
     rget_read_response_t &&res,
+    is_secondary_t is_secondary,
     bool *shards_exhausted_out) {
     debugf("UNSHARDING\n");
 
     grouped_t<stream_t> *gs = boost::get<grouped_t<stream_t> >(&res.result);
     r_sanity_check(gs != nullptr);
     auto stream = groups_to_batch(gs->get_underlying_map());
+    debugf("stream: %s\n", debug_str(stream).c_str());
+    debugf("!!! 1 active_ranges: %s\n", debug_str(*maybe_active_ranges).c_str());
     if (!*maybe_active_ranges) {
-        *maybe_active_ranges = new_active_ranges(stream);
+        *maybe_active_ranges = new_active_ranges(stream, is_secondary);
     }
+    debugf("!!! 2 active_ranges: %s\n", debug_str(*maybe_active_ranges).c_str());
     active_ranges_t *active_ranges = &**maybe_active_ranges;
     // debugf("%s\n", debug_str(*active_ranges).c_str());
 
     raw_stream_t items;
     // Create the pseudoshards, which represent the cached, fresh, and
-    // hypothetical `rget_item_t`s from the shards.
+    // hypothetical `rget_item_t`s from the shards.  We also mark shards
+    // exhausted in this step.
     std::vector<pseudoshard_t> pseudoshards;
     pseudoshards.reserve(active_ranges->ranges.size() * CPU_SHARDING_FACTOR);
+    size_t n_active = 0, n_fresh = 0;
     for (auto &&pair : active_ranges->ranges) {
         for (auto &&hash_pair : pair.second.hash_ranges) {
             if (hash_pair.second.totally_exhausted()) continue;
             keyed_stream_t *fresh = nullptr;
-            auto it = stream.substreams.find(
-                region_t(hash_pair.first.beg, hash_pair.first.end, pair.first));
             // Active shards need their bounds updated.
             if (hash_pair.second.state == range_state_t::ACTIVE) {
+                n_active += 1;
                 store_key_t *new_bound = nullptr;
+                auto it = stream.substreams.find(
+                    region_t(hash_pair.first.beg, hash_pair.first.end, pair.first));
                 if (it != stream.substreams.end()) {
+                    n_fresh += 1;
                     fresh = &it->second;
                     new_bound = &it->second.last_key;
+                    debugf("new_bound: %s\n", debug_str(*new_bound).c_str());
+                } else {
+                    debugf("no new bound\n");
                 }
                 // If we enter this branch we got no data back from this shard
                 // despite issuing a read to it, which means it's exhausted.
@@ -339,7 +377,9 @@ raw_stream_t unshard(
             }
         }
     }
-    debugf("%zu\n", pseudoshards.size());
+    debugf("pseudoshards: %zu (active/%zu fresh/%zu)\n",
+           pseudoshards.size(), n_active, n_fresh);
+    debugf("!!! 3 active_ranges: %s\n", debug_str(*maybe_active_ranges).c_str());
     if (pseudoshards.size() == 0) {
         *shards_exhausted_out = true;
         return items;
@@ -359,7 +399,6 @@ raw_stream_t unshard(
                 }
             }
             if (auto maybe_item = best_shard->pop()) {
-                best_shard->mark_active_if_saturated();
                 items.push_back(*maybe_item);
             } else {
                 break;
@@ -374,6 +413,7 @@ raw_stream_t unshard(
             }
         }
     }
+    debugf("!!! 4 active_ranges: %s\n", debug_str(*maybe_active_ranges).c_str());
     // We should have aborted earlier if there was no data.  If this assert ever
     // becomes false, make sure that we can't get into a state where all shards
     // are marked saturated.
@@ -381,6 +421,7 @@ raw_stream_t unshard(
 
     // Make sure `active_ranges` is in a clean state.
     for (auto &&ps : pseudoshards) ps.finish();
+    debugf("!!! 5 active_ranges: %s\n", debug_str(*maybe_active_ranges).c_str());
     bool seen_active = false;
     bool seen_saturated = false;
     for (auto &&pair : active_ranges->ranges) {
@@ -398,6 +439,7 @@ raw_stream_t unshard(
         *shards_exhausted_out = true;
     }
 
+    BREAKPOINT;
     return items;
 }
 
@@ -606,7 +648,10 @@ rget_reader_t::do_range_read(env_t *env, const read_t &read) {
 
     bool shards_should_be_exhausted;
     return unshard(readgen->get_sorting(),
-                   &active_ranges, std::move(res), &shards_should_be_exhausted);
+                   &active_ranges,
+                   std::move(res),
+                   rr->sindex ? is_secondary_t::YES : is_secondary_t::NO,
+                   &shards_should_be_exhausted);
     r_sanity_check(shards_exhausted() == shards_should_be_exhausted);
 }
 
@@ -690,7 +735,10 @@ std::vector<rget_item_t> intersecting_reader_t::do_intersecting_read(
 
     bool shards_should_be_exhausted;
     return unshard(readgen->get_sorting(),
-                   &active_ranges, std::move(res), &shards_should_be_exhausted);
+                   &active_ranges,
+                   std::move(res),
+                   is_secondary_t::YES,
+                   &shards_should_be_exhausted);
     r_sanity_check(shards_exhausted() == shards_should_be_exhausted);
 }
 
