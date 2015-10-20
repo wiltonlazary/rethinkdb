@@ -37,9 +37,13 @@ distribution_progress_estimator_t::distribution_progress_estimator_t(
 
 double distribution_progress_estimator_t::estimate_progress(
         const store_key_t &bound) const {
+    if (distribution_counts_sum == 0) {
+        return 0.0;
+    }
     auto lower_bound = distribution_counts.lower_bound(bound);
     if (lower_bound != distribution_counts.end()) {
-        return lower_bound->second / distribution_counts_sum;
+        return static_cast<double>(lower_bound->second) /
+            static_cast<double>(distribution_counts_sum);
     } else {
         return 1.0;
     }

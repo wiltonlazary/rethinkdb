@@ -624,7 +624,9 @@ class clear_sindex_traversal_cb_t
         : public depth_first_traversal_callback_t {
 public:
     clear_sindex_traversal_cb_t(const key_range_t &pkey_rng)
-        : pkey_range(pkey_rng), num_traversed(0) {
+        : pkey_range(pkey_rng),
+          num_traversed(0),
+          last_traversed_key(store_key_t::min()) {
         collected_keys.reserve(CHUNK_SIZE);
     }
     continue_bool_t handle_pair(scoped_key_value_t &&keyvalue, signal_t *) {
