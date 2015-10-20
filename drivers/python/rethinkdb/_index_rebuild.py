@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 from __future__ import print_function
 
-import sys, os, datetime, time, shutil, tempfile, subprocess, random
-from optparse import OptionParser
-from ._backup import *
+import optparse, sys, time, random
+
+from . import _backup
+import rethinkdb as r
 
 info = "'rethinkdb index-rebuild' recreates outdated secondary indexes in a cluster.\n" + \
        "  This should be used after upgrading to a newer version of rethinkdb.  There\n" + \
@@ -37,7 +38,7 @@ def print_restore_help():
     print("  'test' database as well as the 'production.users' table, five at a time")
 
 def parse_options():
-    parser = OptionParser(add_help_option=False, usage=usage)
+    parser = optparse.OptionParser(add_help_option=False, usage=usage)
     parser.add_option("-c", "--connect", dest="host", metavar="HOST:PORT", default="localhost:28015", type="string")
     parser.add_option("-a", "--auth", dest="auth_key", metavar="KEY", default="", type="string")
     parser.add_option("-r", "--rebuild", dest="tables", metavar="DB | DB.TABLE", default=[], action="append", type="string")
@@ -54,27 +55,18 @@ def parse_options():
     if len(args) != 0:
         raise RuntimeError("Error: No positional arguments supported")
 
-    res = { }
+    res = {}
 
     # Verify valid host:port --connect option
-    (res["host"], res["port"]) = parse_connect_option(options.host)
+    (res["host"], res["port"]) = _backup.parse_connect_option(options.host)
 
     # Verify valid --import options
-    res["tables"] = parse_db_table_options(options.tables)
+    res["tables"] = _backup.parse_db_table_options(options.tables)
 
     res["auth_key"] = options.auth_key
     res["concurrent"] = options.concurrent
     res["debug"] = options.debug
     return res
-
-def print_progress(ratio):
-    total_width = 40
-    done_width = int(ratio * total_width)
-    equals = "=" * done_width
-    spaces = " " * (total_width - done_width)
-    percent = int(100 * ratio)
-    print("\r[%s%s] %3d%%" % (equals, spaces, percent), end='')
-    sys.stdout.flush()
 
 def do_connect(options):
     try:
@@ -94,7 +86,7 @@ def get_table_outdated_indexes(conn, db, table):
     return r.db(db).table(table).index_status().filter(lambda i: i['outdated'])['index'].run(conn)
 
 def get_outdated_indexes(progress, conn, db_tables):
-    res = [ ]
+    res = []
     if len(db_tables) == 0:
         dbs = r.db_list().run(conn)
         db_tables = [(db, None) for db in dbs]
@@ -150,11 +142,11 @@ def rebuild_indexes(options):
     conn_store = [do_connect(options)]
     conn_fn = lambda: new_connection(conn_store, options)
 
-    indexes_to_build = rdb_call_wrapper(conn_fn, "get outdated indexes", get_outdated_indexes, options["tables"])
-    indexes_in_progress = [ ]
+    indexes_to_build = _backup.rdb_call_wrapper(conn_fn, "get outdated indexes", get_outdated_indexes, options["tables"])
+    indexes_in_progress = []
 
     # Drop any outdated indexes with the temp_index_prefix
-    rdb_call_wrapper(conn_fn, "drop temporary outdated indexes", drop_outdated_temp_indexes, indexes_to_build)
+    _backup.rdb_call_wrapper(conn_fn, "drop temporary outdated indexes", drop_outdated_temp_indexes, indexes_to_build)
 
     random.shuffle(indexes_to_build)
     total_indexes = len(indexes_to_build)
@@ -176,7 +168,7 @@ def rebuild_indexes(options):
             index['ready'] = False
 
             try:
-                rdb_call_wrapper(conn_fn, "create `%s.%s` index `%s`" % (index['db'], index['table'], index['name']),
+                _backup.rdb_call_wrapper(conn_fn, "create `%s.%s` index `%s`" % (index['db'], index['table'], index['name']),
                                  create_temp_index, index)
             except RuntimeError as ex:
                 # This may be caused by a suprious failure (see github issue #2904), ignore if so
@@ -186,24 +178,24 @@ def rebuild_indexes(options):
 
         # Report progress
         highest_progress = max(highest_progress, progress_ratio)
-        print_progress(highest_progress)
+        _backup.print_progress(highest_progress)
 
         # Check the status of indexes in progress
         progress_ratio = 0.0
         for index in indexes_in_progress:
-            index_progress = rdb_call_wrapper(conn_fn, "progress `%s.%s` index `%s`" % (index['db'], index['table'], index['name']),
+            index_progress = _backup.rdb_call_wrapper(conn_fn, "progress `%s.%s` index `%s`" % (index['db'], index['table'], index['name']),
                                               get_index_progress, index)
             if index_progress is None:
                 index['ready'] = True
                 try:
-                    rdb_call_wrapper(conn_fn, "rename `%s.%s` index `%s`" % (index['db'], index['table'], index['name']),
+                    _backup.rdb_call_wrapper(conn_fn, "rename `%s.%s` index `%s`" % (index['db'], index['table'], index['name']),
                                      rename_index, index)
                 except r.ReqlRuntimeError as ex:
                     # This may be caused by a spurious failure (see github issue #2904), check if it actually succeeded
                     if ex.message != "ReQL error during 'rename `%s.%s` index `%s`': Index `%s` does not exist on table `%s.%s`." % \
                                      (index['db'], index['table'], index['name'], index['temp_name'], index['db'], index['table']):
                         raise
-                    rdb_call_wrapper(conn_fn, "check rename `%s.%s` index `%s`" % (index['db'], index['table'], index['name']),
+                    _backup.rdb_call_wrapper(conn_fn, "check rename `%s.%s` index `%s`" % (index['db'], index['table'], index['name']),
                                      check_index_renamed, index)
             else:
                 progress_ratio += index_progress / total_indexes
@@ -218,7 +210,7 @@ def rebuild_indexes(options):
             time.sleep(0.1)
 
     # Make sure the progress bar says we're done and get past the progress bar line
-    print_progress(1.0)
+    _backup.print_progress(1.0)
     print("")
 
 def main():

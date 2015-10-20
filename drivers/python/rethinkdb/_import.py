@@ -1,12 +1,10 @@
 #!/usr/bin/env python
 from __future__ import print_function
 
-import signal
+import codecs, csv, ctypes, json, optparse, multiprocessing, os
+import time, traceback, signal, sys
 
-import sys, os, datetime, time, json, traceback, csv
-import multiprocessing, multiprocessing.queues, subprocess, re, ctypes, codecs
-from optparse import OptionParser
-from ._backup import *
+from . import _backup
 import rethinkdb as r
 
 # Used because of API differences in the csv module, taken from
@@ -21,16 +19,13 @@ try:
 except ImportError:
     import pickle
 try:
-    from itertools import imap
-except ImportError:
-    imap = map
-try:
     xrange
 except NameError:
     xrange = range
 try:
     from multiprocessing import SimpleQueue
 except ImportError:
+    import multiprocessing.queues
     from multiprocessing.queues import SimpleQueue
 
 info = "'rethinkdb import` loads data into a RethinkDB cluster"
@@ -103,7 +98,7 @@ def print_import_help():
     print("  a comma).")
 
 def parse_options():
-    parser = OptionParser(add_help_option=False, usage=usage)
+    parser = optparse.OptionParser(add_help_option=False, usage=usage)
     parser.add_option("-c", "--connect", dest="host", metavar="HOST:PORT", default="localhost:28015", type="string")
     parser.add_option("-a", "--auth", dest="auth_key", metavar="AUTHKEY", default="", type="string")
     parser.add_option("--fields", dest="fields", metavar="FIELD,FIELD...", default=None, type="string")
@@ -111,7 +106,7 @@ def parse_options():
     parser.add_option("--hard-durability", dest="hard", action="store_true", default=False)
     parser.add_option("--force", dest="force", action="store_true", default=False)
     parser.add_option("--debug", dest="debug", action="store_true", default=False)
-    parser.add_option("--max-document-size", dest="max_document_size",  default=0,type="int")
+    parser.add_option("--max-document-size", dest="max_document_size", default=0, type="int")
 
     # Directory import options
     parser.add_option("-d", "--directory", dest="directory", metavar="DIRECTORY", default=None, type="string")
@@ -140,7 +135,7 @@ def parse_options():
     res = {}
 
     # Verify valid host:port --connect option
-    (res["host"], res["port"]) = parse_connect_option(options.host)
+    (res["host"], res["port"]) = _backup.parse_connect_option(options.host)
 
     if options.clients < 1:
         raise RuntimeError("Error: --client option too low, must have at least one client connection")
@@ -160,7 +155,7 @@ def parse_options():
     # buffer size
     if options.max_document_size > 0:
         global json_max_buffer_size
-        json_max_buffer_size=options.max_document_size
+        json_max_buffer_size = options.max_document_size
     if options.directory is not None:
         # Directory mode, verify directory import options
         if options.import_file is not None:
@@ -186,7 +181,7 @@ def parse_options():
             raise RuntimeError("Error: Directory to import does not exist: %d" % res["directory"])
 
         # Verify valid --import options
-        res["db_tables"] = parse_db_table_options(options.tables)
+        res["db_tables"] = _backup.parse_db_table_options(options.tables)
 
         # Parse fields
         if options.fields is None:
@@ -224,7 +219,7 @@ def parse_options():
         # Verify valid --table option
         if options.import_table is None:
             raise RuntimeError("Error: Must specify a destination table to import into using the --table option")
-        res["import_db_table"] = parse_db_table(options.import_table)
+        res["import_db_table"] = _backup.parse_db_table(options.import_table)
         if res["import_db_table"][1] is None:
             raise RuntimeError("Error: Invalid 'db.table' format: %s" % options.import_table)
 
@@ -311,8 +306,8 @@ def client_process(host, port, auth_key, task_queue, error_queue, rows_written, 
     try:
         conn_fn = lambda: r.connect(host, port, auth_key=auth_key)
         write_count = [0]
-        rdb_call_wrapper(conn_fn, "import", import_from_queue, task_queue, error_queue, replace_conflicts, durability, write_count)
-    except:
+        _backup.rdb_call_wrapper(conn_fn, "import", import_from_queue, task_queue, error_queue, replace_conflicts, durability, write_count)
+    except Exception:
         ex_type, ex_class, tb = sys.exc_info()
         error_queue.put((ex_type, ex_class, traceback.extract_tb(tb)))
 
@@ -390,7 +385,7 @@ def read_json_array(json_data, file_in, callback, progress_info,
                 offset = json.decoder.WHITESPACE.match(json_data, offset + 1).end()
             elif (not json_array) and before_len == len(json_data):
                 break  # End of JSON
-            elif before_len == len(json_data) :
+            elif before_len == len(json_data):
                 raise
             elif len(json_data) >= json_max_buffer_size:
                 raise ValueError("Error: JSON max buffer size exceeded. Use '--max-document-size' to extend your buffer.")
@@ -474,9 +469,8 @@ def csv_reader(task_queue, filename, db, table, options, progress_info, exit_eve
     # TODO: this requires us to make two passes on csv files
     line_count = 0
     with open_csv_file(filename) as file_in:
-        for i, l in enumerate(file_in):
-            pass
-        line_count = i + 1
+        for _ in file_in:
+            line_count += 1
 
     progress_info[1].value = line_count
 
@@ -541,7 +535,7 @@ def table_reader(options, file_info, task_queue, error_queue, progress_info, exi
         primary_key = file_info["info"]["primary_key"]
 
         conn_fn = lambda: r.connect(options["host"], options["port"], auth_key=options["auth_key"])
-        rdb_call_wrapper(conn_fn, "create table", create_table, db, table, primary_key,
+        _backup.rdb_call_wrapper(conn_fn, "create table", create_table, db, table, primary_key,
                          file_info["info"]["indexes"] if options["create_sindexes"] else [])
 
         if file_info["format"] == "json":
@@ -572,13 +566,6 @@ def abort_import(signum, frame, parent_pid, exit_event, task_queue, clients, int
         interrupt_event.set()
         exit_event.set()
 
-def print_progress(ratio):
-    total_width = 40
-    done_width = int(ratio * total_width)
-    undone_width = total_width - done_width
-    print("\r[%s%s] %3d%%" % ("=" * done_width, " " * undone_width, int(100 * ratio)), end=' ')
-    sys.stdout.flush()
-
 def update_progress(progress_info):
     lowest_completion = 1.0
     for current, max_count in progress_info:
@@ -591,7 +578,7 @@ def update_progress(progress_info):
         else:
             lowest_completion = min(lowest_completion, float(curr_val) / max_val)
 
-    print_progress(lowest_completion)
+    _backup.print_progress(lowest_completion)
 
 def spawn_import_clients(options, files_info):
     # Spawn one reader process for each db.table, as well as many client processes
@@ -610,7 +597,7 @@ def spawn_import_clients(options, files_info):
         progress_info = []
         rows_written = multiprocessing.Value(ctypes.c_longlong, 0)
 
-        for i in xrange(options["clients"]):
+        for _ in xrange(options["clients"]):
             client_procs.append(multiprocessing.Process(target=client_process,
                                                         args=(options["host"],
                                                               options["port"],
@@ -646,7 +633,7 @@ def spawn_import_clients(options, files_info):
 
         # Wait for all clients to finish
         alive_clients = sum([client.is_alive() for client in client_procs])
-        for i in xrange(alive_clients):
+        for _ in xrange(alive_clients):
             task_queue.put(StopIteration())
 
         while len(client_procs) > 0:
@@ -655,7 +642,7 @@ def spawn_import_clients(options, files_info):
 
         # If we were successful, make sure 100% progress is reported
         if len(errors) == 0 and not interrupt_event.is_set():
-            print_progress(1.0)
+            _backup.print_progress(1.0)
 
         def plural(num, text):
             return "%d %s%s" % (num, text, "" if num == 1 else "s")
@@ -772,8 +759,8 @@ def import_directory(options):
     conn_fn = lambda: r.connect(options["host"], options["port"], auth_key=options["auth_key"])
     # Make sure this isn't a pre-`reql_admin` cluster - which could result in data loss
     # if the user has a database named 'rethinkdb'
-    rdb_call_wrapper(conn_fn, "version check", check_minimum_version, (1, 16, 0))
-    already_exist = rdb_call_wrapper(conn_fn, "tables check", tables_check, files_info, options["force"])
+    _backup.rdb_call_wrapper(conn_fn, "version check", check_minimum_version, (1, 16, 0))
+    already_exist = _backup.rdb_call_wrapper(conn_fn, "tables check", tables_check, files_info, options["force"])
 
     if len(already_exist) == 1:
         raise RuntimeError("Error: Table '%s' already exists, run with --force to import into the existing table" % already_exist[0])
@@ -824,8 +811,8 @@ def import_file(options):
     conn_fn = lambda: r.connect(options["host"], options["port"], auth_key=options["auth_key"])
     # Make sure this isn't a pre-`reql_admin` cluster - which could result in data loss
     # if the user has a database named 'rethinkdb'
-    rdb_call_wrapper(conn_fn, "version check", check_minimum_version, (1, 16, 0))
-    pkey = rdb_call_wrapper(conn_fn, "table check", table_check, db, table, pkey, options["force"])
+    _backup.rdb_call_wrapper(conn_fn, "version check", check_minimum_version, (1, 16, 0))
+    pkey = _backup.rdb_call_wrapper(conn_fn, "table check", table_check, db, table, pkey, options["force"])
 
     # Make this up so we can use the same interface as with an import directory
     file_info = {}

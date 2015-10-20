@@ -1,7 +1,6 @@
 from __future__ import print_function
 
-from copy import deepcopy
-import socket, sys, string, re
+import copy, re, socket, string, sys
 
 try:
     import rethinkdb as r
@@ -12,9 +11,9 @@ except ImportError:
 
 # This file contains common functions used by the import/export/dump/restore scripts
 
-def os_call_wrapper(fn, filename, error_str):
+def os_call_wrapper(fnct, filename, error_str):
     try:
-        fn(filename)
+        fnct(filename)
     except OSError as ex:
         raise RuntimeError(error_str % (filename, ex.strerror))
 
@@ -51,19 +50,19 @@ def parse_db_table_options(db_table_options):
 # Using this wrapper, the given function will be called until 5 connection errors
 # occur in a row with no progress being made.  Care should be taken that the given
 # function will terminate as long as the progress parameter is changed.
-def rdb_call_wrapper(conn_fn, context, fn, *args, **kwargs):
+def rdb_call_wrapper(conn_fn, context, fnct, *args, **kwargs):
     i = 0
     max_attempts = 5
     progress = [None]
     while True:
-        last_progress = deepcopy(progress[0])
+        last_progress = copy.deepcopy(progress[0])
         try:
             conn = conn_fn()
-            return fn(progress, conn, *args, **kwargs)
+            return fnct(progress, conn, *args, **kwargs)
         except socket.error as ex:
             i = i + 1 if progress[0] == last_progress else 0
             if i == max_attempts:
-                raise RuntimeError("Connection error during '%s': %s" % (context, ex.message))
+                raise RuntimeError("Connection error during '%s': %s" % (context, str(ex)))
         except (r.ReqlError, r.ReqlDriverError) as ex:
             raise RuntimeError("ReQL error during '%s': %s" % (context, ex.message))
 

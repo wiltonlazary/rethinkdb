@@ -1,15 +1,13 @@
 #!/usr/bin/env python
 from __future__ import print_function
 
-import signal
+import csv, ctypes, os, datetime, json, multiprocessing, numbers, optparse
+import signal, sys, time, traceback
 
 # When running a subprocess, we may inherit the signal handler - remove it
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 
-import sys, os, datetime, time, json, traceback, csv
-import multiprocessing, subprocess, re, ctypes, numbers
-from optparse import OptionParser
-from ._backup import *
+from . import _backup
 import rethinkdb as r
 
 try:
@@ -24,7 +22,7 @@ try:
     from multiprocessing import SimpleQueue
 except ImportError:
     from multiprocessing.queues import SimpleQueue
-	
+
 
 info = "'rethinkdb export` exports data from a RethinkDB cluster into a directory"
 usage = "\
@@ -71,7 +69,7 @@ def print_export_help():
     print("  Export a specific table from a local cluster in JSON format with only the fields 'id' and 'value'.")
 
 def parse_options():
-    parser = OptionParser(add_help_option=False, usage=usage)
+    parser = optparse.OptionParser(add_help_option=False, usage=usage)
     parser.add_option("-c", "--connect", dest="host", metavar="HOST:PORT", default="localhost:28015", type="string")
     parser.add_option("-a", "--auth", dest="auth_key", metavar="AUTHKEY", default="", type="string")
     parser.add_option("--format", dest="format", metavar="json | csv", default="json", type="string")
@@ -95,7 +93,7 @@ def parse_options():
     res = {}
 
     # Verify valid host:port --connect option
-    (res["host"], res["port"]) = parse_connect_option(options.host)
+    (res["host"], res["port"]) = _backup.parse_connect_option(options.host)
 
     # Verify valid --format option
     if options.format not in ["csv", "json"]:
@@ -116,7 +114,7 @@ def parse_options():
         raise RuntimeError("Error: Partial output directory already exists: %s" % res["directory_partial"])
 
     # Verify valid --export options
-    res["db_tables"] = parse_db_table_options(options.tables)
+    res["db_tables"] = _backup.parse_db_table_options(options.tables)
 
     # Parse fields
     if options.fields is None:
@@ -182,16 +180,16 @@ def get_tables(progress, conn, tables):
 
 # Make sure the output directory doesn't exist and create the temporary directory structure
 def prepare_directories(base_path, base_path_partial, db_table_set):
-    os_call_wrapper(lambda x: os.makedirs(x), base_path_partial, "Failed to create temporary directory (%s): %s")
+    _backup.os_call_wrapper(os.makedirs, base_path_partial, "Failed to create temporary directory (%s): %s")
 
     db_set = set([db for db, table in db_table_set])
     for db in db_set:
         db_dir = base_path_partial + "/%s" % db
-        os_call_wrapper(lambda x: os.makedirs(x), db_dir, "Failed to create temporary directory (%s): %s")
+        _backup.os_call_wrapper(os.makedirs, db_dir, "Failed to create temporary directory (%s): %s")
 
 # Move the temporary directory structure over to the original output directory
 def finalize_directory(base_path, base_path_partial):
-    os_call_wrapper(lambda x: os.rename(base_path_partial, x), base_path,
+    _backup.os_call_wrapper(lambda x: os.rename(base_path_partial, x), base_path,
                     "Failed to move temporary directory to output directory (%s): %s")
 
 # This is called through rdb_call_wrapper and may be called multiple times if
@@ -257,7 +255,7 @@ def json_writer(filename, fields, task_queue, error_queue):
 
                 item = task_queue.get()
             out.write("\n]\n")
-    except:
+    except Exception:
         ex_type, ex_class, tb = sys.exc_info()
         error_queue.put((ex_type, ex_class, traceback.extract_tb(tb)))
 
@@ -289,7 +287,7 @@ def csv_writer(filename, fields, delimiter, task_queue, error_queue):
                         info.append(json.dumps(row[field]))
                 out_writer.writerow(info)
                 item = task_queue.get()
-    except:
+    except Exception:
         ex_type, ex_class, tb = sys.exc_info()
         error_queue.put((ex_type, ex_class, traceback.extract_tb(tb)))
 
@@ -322,8 +320,8 @@ def export_table(host, port, auth_key, db, table, directory, fields, delimiter, 
         # This will open at least one connection for each rdb_call_wrapper, which is
         # a little wasteful, but shouldn't be a big performance hit
         conn_fn = lambda: r.connect(host, port, auth_key=auth_key)
-        rdb_call_wrapper(conn_fn, "count", get_table_size, db, table, progress_info)
-        table_info = rdb_call_wrapper(conn_fn, "info", write_table_metadata, db, table, directory)
+        _backup.rdb_call_wrapper(conn_fn, "count", get_table_size, db, table, progress_info)
+        table_info = _backup.rdb_call_wrapper(conn_fn, "info", write_table_metadata, db, table, directory)
         sindex_counter.value += len(table_info["indexes"])
 
         with stream_semaphore:
@@ -331,7 +329,7 @@ def export_table(host, port, auth_key, db, table, directory, fields, delimiter, 
             writer = launch_writer(format, directory, db, table, fields, delimiter, task_queue, error_queue)
             writer.start()
 
-            rdb_call_wrapper(conn_fn, "table scan", read_table_into_queue, db, table,
+            _backup.rdb_call_wrapper(conn_fn, "table scan", read_table_into_queue, db, table,
                              table_info["primary_key"], task_queue, progress_info, exit_event)
     except (r.ReqlError, r.ReqlDriverError) as ex:
         error_queue.put((RuntimeError, RuntimeError(ex.message), traceback.extract_tb(sys.exc_info()[2])))
@@ -377,7 +375,7 @@ def run_clients(options, db_table_set):
     sindex_counter = multiprocessing.Value(ctypes.c_longlong, 0)
 
     signal.signal(signal.SIGINT, lambda a, b: abort_export(a, b, exit_event, interrupt_event))
-    errors = [ ]
+    errors = []
 
     try:
         progress_info = []
@@ -413,7 +411,7 @@ def run_clients(options, db_table_set):
         # If we were successful, make sure 100% progress is reported
         # (rows could have been deleted which would result in being done at less than 100%)
         if len(errors) == 0 and not interrupt_event.is_set():
-            print_progress(1.0)
+            _backup.print_progress(1.0)
 
         # Continue past the progress output line and print total rows processed
         def plural(num, text, plural_text):
@@ -450,8 +448,8 @@ def main():
         conn_fn = lambda: r.connect(options["host"], options["port"], auth_key=options["auth_key"])
         # Make sure this isn't a pre-`reql_admin` cluster - which could result in data loss
         # if the user has a database named 'rethinkdb'
-        rdb_call_wrapper(conn_fn, "version check", check_minimum_version, (1, 16, 0))
-        db_table_set = rdb_call_wrapper(conn_fn, "table list", get_tables, options["db_tables"])
+        _backup.rdb_call_wrapper(conn_fn, "version check", _backup.check_minimum_version, (1, 16, 0))
+        db_table_set = _backup.rdb_call_wrapper(conn_fn, "table list", get_tables, options["db_tables"])
         del options["db_tables"] # This is not needed anymore, db_table_set is more useful
 
         # Determine the actual number of client processes we'll have

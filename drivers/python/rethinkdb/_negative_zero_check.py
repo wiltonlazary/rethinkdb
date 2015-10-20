@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 from __future__ import print_function
 
-import json, math, numbers, os, socket, time
+import json, math, numbers, optparse, os, socket, sys, time
+
 import rethinkdb as r
-from optparse import OptionParser
-from ._backup import *
+from . import _backup
 
 info = "'_negative_zero_check` finds and lists inaccessible rows with negative zero in their ID"
 usage = "  _negative_zero_check [-c HOST:PORT] [-a AUTH_KEY] [-d DIR]"
@@ -30,7 +30,7 @@ def print_negative_zero_check_help():
     print("  List all matching rows from a cluster running on host 'hades' which requires authorization.")
 
 def parse_options():
-    parser = OptionParser(add_help_option=False, usage=usage)
+    parser = optparse.OptionParser(add_help_option=False, usage=usage)
     parser.add_option("-c", "--connect", dest="host", metavar="HOST:PORT", default="localhost:28015", type="string")
     parser.add_option("-a", "--auth", dest="auth_key", metavar="AUTH_KEY", default="", type="string")
     parser.add_option("-f", "--file", dest="out_file", metavar="FILE", default=None, type="string")
@@ -48,7 +48,7 @@ def parse_options():
     res = {"auth_key": options.auth_key}
 
     # Verify valid host:port --connect option
-    (res["host"], res["port"]) = parse_connect_option(options.host)
+    (res["host"], res["port"]) = _backup.parse_connect_option(options.host)
 
     # Verify valid directory option
     if options.out_file is None:
@@ -84,11 +84,12 @@ def key_compare(left, right):
 
 def handle_row(db, table, key, is_duplicate, opts, stats):
     stats[(db, table)] += 1
-    write_key(opts['out_file'],
-              '  ' + json.dumps({ 'db': db,
-                                  'table': table,
-                                  'key': key,
-                                  'is_duplicate': is_duplicate }))
+    write_key(
+        opts['out_file'],
+        '  ' + json.dumps({'db':db,
+                          'table': table,
+                          'key': key,
+                          'is_duplicate': is_duplicate}))
 
 def write_key(out_file, json):
     if not write_key.first_row:
@@ -151,7 +152,7 @@ def main():
         c = r.connect(opts["host"], opts["port"], auth_key=opts["auth_key"])
 
         # Make sure the cluster isn't pre-2.0, where positive and negative zero are stored uniquely
-        check_minimum_version(None, c, (2, 0, 0))
+        _backup.check_minimum_version(None, c, (2, 0, 0))
 
         for db in r.db_list().set_difference(['rethinkdb']).run(c):
             for table in r.db(db).table_list().run(c):
@@ -175,7 +176,7 @@ def main():
 
     except Exception as ex:
         print(ex, file=sys.stderr)
-        return 1;
+        return 1
 
     print_summary(opts, stats)
 

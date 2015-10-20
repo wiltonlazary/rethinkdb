@@ -79,10 +79,6 @@ def db_list(*args):
     return ast.DbList(*args)
 
 
-def db_config(*args):
-    return ast.DbConfig(*args)
-
-
 def table_create(*args, **kwargs):
     return ast.TableCreateTL(*args, **kwargs)
 

@@ -1814,7 +1814,7 @@ class Func(RqlQuery):
         self.optargs = {}
 
     def compose(self, args, optargs):
-            return T('lambda ', T(*[v.compose([v.args[0].compose(None, None)],
+        return T('lambda ', T(*[v.compose([v.args[0].compose(None, None)],
                                               []) for v in self.vrs],
                                   intsp=', '), ': ', args[1])
 

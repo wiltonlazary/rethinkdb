@@ -1,7 +1,6 @@
 # Copyright 2010-2015 RethinkDB, all rights reserved.
 
 import errno
-import json
 import numbers
 import socket
 import struct
@@ -24,13 +23,13 @@ pErrorType = p.Response.ErrorType
 pResponse = p.Response.ResponseType
 pQuery = p.Query.QueryType
 
-from .errors import *
+from . import errors
 from .ast import RqlQuery, RqlTopLevelQuery, DB, Repl, ReQLDecoder, ReQLEncoder
 
 try:
     from ssl import match_hostname, CertificateError
 except ImportError:
-    from backports.ssl_match_hostname import match_hostname, CertificateError
+    from .backports.ssl_match_hostname import match_hostname, CertificateError
 
 try:
     xrange
@@ -92,21 +91,21 @@ class Response(object):
 
     def make_error(self, query):
         if self.type == pResponse.CLIENT_ERROR:
-            return ReqlDriverError(self.data[0], query.term, self.backtrace)
+            return errors.ReqlDriverError(self.data[0], query.term, self.backtrace)
         elif self.type == pResponse.COMPILE_ERROR:
-            return ReqlServerCompileError(self.data[0], query.term, self.backtrace)
+            return errors.ReqlServerCompileError(self.data[0], query.term, self.backtrace)
         elif self.type == pResponse.RUNTIME_ERROR:
             return {
-                pErrorType.INTERNAL: ReqlInternalError,
-                pErrorType.RESOURCE_LIMIT: ReqlResourceLimitError,
-                pErrorType.QUERY_LOGIC: ReqlQueryLogicError,
-                pErrorType.NON_EXISTENCE: ReqlNonExistenceError,
-                pErrorType.OP_FAILED: ReqlOpFailedError,
-                pErrorType.OP_INDETERMINATE: ReqlOpIndeterminateError,
-                pErrorType.USER: ReqlUserError
-            }.get(self.error_type, ReqlRuntimeError)(
+                pErrorType.INTERNAL:         errors.ReqlInternalError,
+                pErrorType.RESOURCE_LIMIT:   errors.ReqlResourceLimitError,
+                pErrorType.QUERY_LOGIC:      errors.ReqlQueryLogicError,
+                pErrorType.NON_EXISTENCE:    errors.ReqlNonExistenceError,
+                pErrorType.OP_FAILED:        errors.ReqlOpFailedError,
+                pErrorType.OP_INDETERMINATE: errors.ReqlOpIndeterminateError,
+                pErrorType.USER:             errors.ReqlUserError
+            }.get(self.error_type, errors.ReqlRuntimeError)(
                 self.data[0], query.term, self.backtrace)
-        return ReqlDriverError("Unknown Response type %d encountered" +
+        return errors.ReqlDriverError("Unknown Response type %d encountered" +
                                " in a response." % self.type)
 
 
@@ -140,7 +139,7 @@ class Response(object):
 #     def _empty_error(self):
 #         which returns the appropriate error to be raised when the cursor is empty
 class Cursor(object):
-    def __init__(self, conn_instance, query, first_response, items_type = collections.deque):
+    def __init__(self, conn_instance, query, first_response, items_type=collections.deque):
         self.conn = conn_instance
         self.query = query
         self.items = items_type()
@@ -167,7 +166,7 @@ class Cursor(object):
         elif isinstance(wait, numbers.Real) and wait >= 0:
             return wait
         else:
-            raise ReqlDriverError("Invalid wait timeout '%s'" % str(wait))
+            raise errors.ReqlDriverError("Invalid wait timeout '%s'" % str(wait))
 
     def next(self, wait=True):
         return self._get_next(Cursor._wait_to_timeout(wait))
@@ -201,7 +200,7 @@ class Cursor(object):
 
         if self.error is None:
             err_str = 'streaming'
-        elif isinstance(self.error, ReqlCursorEmpty):
+        elif isinstance(self.error, errors.ReqlCursorEmpty):
             err_str = 'done streaming'
         else:
             err_str = 'error: %s' % repr(self.error)
@@ -211,7 +210,7 @@ class Cursor(object):
     def _error(self, message):
         # Set an error and extend with a dummy response to trigger any waiters
         if self.error is None:
-            self.error = ReqlRuntimeError(message, self.query.term, [])
+            self.error = errors.ReqlRuntimeError(message, self.query.term, [])
             dummy_response = '{"t":%d,"r":[]}' % pResponse.SUCCESS_SEQUENCE
             self._extend(dummy_response)
 
@@ -223,7 +222,7 @@ class Cursor(object):
             self.conn._parent._continue(self)
 
 
-class DefaultCursorEmpty(ReqlCursorEmpty, StopIteration):
+class DefaultCursorEmpty(errors.ReqlCursorEmpty, StopIteration):
     def __init__(self):
         super(DefaultCursorEmpty, self).__init__()
 
@@ -234,8 +233,9 @@ class DefaultCursor(Cursor):
 
     def __next__(self):
         return self._get_next(None)
-
-    def _empty_error(self):
+    
+    @staticmethod
+    def _empty_error():
         return DefaultCursorEmpty()
 
     def _get_next(self, timeout):
@@ -271,7 +271,7 @@ class SocketWrapper(object):
                                                            server_hostname=self.host)
                 except IOError as exc:
                     self._socket.close()
-                    raise ReqlDriverError("SSL handshake failed: %s" % (str(exc),))
+                    raise errors.ReqlDriverError("SSL handshake failed: %s" % (str(exc),))
                 try:
                     match_hostname(self._socket.getpeercert(), hostname=self.host)
                 except CertificateError:
@@ -287,32 +287,32 @@ class SocketWrapper(object):
                 if char == b'\0':
                     break
                 response += char
-        except ReqlAuthError:
+        except errors.ReqlAuthError:
             raise
-        except ReqlTimeoutError:
+        except errors.ReqlTimeoutError:
             raise
-        except ReqlDriverError as ex:
+        except errors.ReqlDriverError as ex:
             self.close()
             error = str(ex)\
                 .replace('receiving from', 'during handshake with')\
                 .replace('sending to', 'during handshake with')
-            raise ReqlDriverError(error)
+            raise errors.ReqlDriverError(error)
         except socket.timeout as ex:
             self.close()
-            raise ReqlTimeoutError(self.host, self.port)
+            raise errors.ReqlTimeoutError(self.host, self.port)
         except Exception as ex:
             self.close()
-            raise ReqlDriverError("Could not connect to %s:%s. Error: %s" %
+            raise errors.ReqlDriverError("Could not connect to %s:%s. Error: %s" %
                                   (self.host, self.port, ex))
 
         if response != b"SUCCESS":
             self.close()
             message = decodeUTF(response).strip()
             if message == "ERROR: Incorrect authorization key.":
-                raise ReqlAuthError(self.host, self.port)
+                raise errors.ReqlAuthError(self.host, self.port)
             else:
-                raise ReqlDriverError("Server dropped connection with message: \"%s\"" %
-                                      (message, ))
+                raise errors.ReqlDriverError("Server dropped connection with message: \"%s\"" %
+                                      message)
 
     def is_open(self):
         return self._socket is not None
@@ -340,29 +340,29 @@ class SocketWrapper(object):
                 except socket.timeout:
                     self._read_buffer = res
                     self._socket.settimeout(None)
-                    raise ReqlTimeoutError(self.host, self.port)
+                    raise errors.ReqlTimeoutError(self.host, self.port)
                 except IOError as ex:
                     if ex.errno == errno.ECONNRESET:
                         self.close()
-                        raise ReqlDriverError("Connection is closed.")
+                        raise errors.ReqlDriverError("Connection is closed.")
                     elif ex.errno == errno.EWOULDBLOCK:
                         # This should only happen with a timeout of 0
-                        raise ReqlTimeoutError(self.host, self.port)
+                        raise errors.ReqlTimeoutError(self.host, self.port)
                     elif ex.errno != errno.EINTR:
                         self.close()
-                        raise ReqlDriverError(('Connection interrupted ' +
+                        raise errors.ReqlDriverError(('Connection interrupted ' +
                                               'receiving from %s:%s - %s') %
                                              (self.host, self.port, str(ex)))
                 except Exception as ex:
                     self.close()
-                    raise ReqlDriverError('Error receiving from %s:%s - %s' %
+                    raise errors.ReqlDriverError('Error receiving from %s:%s - %s' %
                                          (self.host, self.port, str(ex)))
                 except:
                     self.close()
                     raise
             if len(chunk) == 0:
                 self.close()
-                raise ReqlDriverError("Connection is closed.")
+                raise errors.ReqlDriverError("Connection is closed.")
             res += chunk
         return res
 
@@ -374,21 +374,22 @@ class SocketWrapper(object):
             except IOError as ex:
                 if ex.errno == errno.ECONNRESET:
                     self.close()
-                    raise ReqlDriverError("Connection is closed.")
+                    raise errors.ReqlDriverError("Connection is closed.")
                 elif ex.errno != errno.EINTR:
                     self.close()
-                    raise ReqlDriverError(('Connection interrupted ' +
+                    raise errors.ReqlDriverError(('Connection interrupted ' +
                                           'sending to %s:%s - %s') %
                                          (self.host, self.port, str(ex)))
             except Exception as ex:
                 self.close()
-                raise ReqlDriverError('Error sending to %s:%s - %s' %
+                raise errors.ReqlDriverError('Error sending to %s:%s - %s' %
                                      (self.host, self.port, str(ex)))
             except:
                 self.close()
                 raise
-
-    def _get_ssl_context(self, ca_certs):
+    
+    @staticmethod
+    def _get_ssl_context(ca_certs):
         ctx = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
         if hasattr(ctx, "options"):
             ctx.options |= getattr(ssl, "OP_NO_SSLv2", 0)
@@ -487,7 +488,7 @@ class ConnectionInstance(object):
             elif not self._closing:
                 # This response is corrupted or not intended for us
                 self.close(False, None)
-                raise ReqlDriverError("Unexpected response received.")
+                raise errors.ReqlDriverError("Unexpected response received.")
 
 
 class Connection(object):
@@ -523,7 +524,7 @@ class Connection(object):
         try:
             self.port = int(self.port)
         except ValueError:
-            raise ReqlDriverError("Could not convert port %s to an integer." % self.port)
+            raise errors.ReqlDriverError("Could not convert port %s to an integer." % self.port)
 
         self._instance = self._conn_type(self, **self._child_kwargs)
         return self._instance.connect(timeout)
@@ -549,7 +550,7 @@ class Connection(object):
 
     def check_open(self):
         if self._instance is None or not self._instance.is_open():
-            raise ReqlDriverError('Connection is closed.')
+            raise errors.ReqlDriverError('Connection is closed.')
 
     def close(self, noreply_wait=True):
         if self._instance is not None:
