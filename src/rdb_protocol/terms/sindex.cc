@@ -87,10 +87,9 @@ ql::datum_t sindex_status_to_datum(
     ql::datum_object_builder_t stat;
     stat.overwrite("index", ql::datum_t(datum_string_t(name)));
     if (!status.ready) {
-        stat.overwrite("blocks_processed",
-            ql::datum_t(safe_to_double(status.blocks_processed)));
-        stat.overwrite("blocks_total",
-            ql::datum_t(safe_to_double(std::max<size_t>(status.blocks_total, 1))));
+        stat.overwrite("progress",
+            ql::datum_t(status.progress_numerator /
+                        std::max<double>(status.progress_denominator, 1.0)));
     }
     stat.overwrite("ready", ql::datum_t::boolean(status.ready));
     stat.overwrite("outdated", ql::datum_t::boolean(status.outdated));
@@ -145,7 +144,7 @@ public:
         } else {
             minidriver_t r(backtrace());
             auto x = minidriver_t::dummy_var_t::SINDEXCREATE_X;
-            
+
             compile_env_t empty_compile_env((var_visibility_t()));
             counted_t<func_term_t> func_term_term =
                 make_counted<func_term_t>(&empty_compile_env,

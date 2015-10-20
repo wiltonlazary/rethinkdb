@@ -1639,7 +1639,7 @@ void rdb_update_sindexes(
     index_vals_t *old_keys_out,
     index_vals_t *new_keys_out) {
 
-    noop_deletion_context_t noop_deletion_context;
+    rdb_noop_deletion_context_t noop_deletion_context;
     {
         auto_drainer_t drainer;
 

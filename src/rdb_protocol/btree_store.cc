@@ -314,18 +314,13 @@ std::map<std::string, std::pair<sindex_config_t, sindex_status_t> > store_t::sin
                 reql_version_t::LATEST;
         if (pair.second.is_ready()) {
             res->second.ready = true;
-            res->second.blocks_processed = res->second.blocks_total = 0;
+            res->second.progress_numerator = 0.0;
+            res->second.progress_denominator = 0.0;
             res->second.start_time = -1;
         } else {
             res->second.ready = false;
-            progress_completion_fraction_t frac = get_sindex_progress(pair.second.id);
-            if (frac.estimate_of_total_nodes == -1) {
-                res->second.blocks_processed = 0;
-                res->second.blocks_total = 1;
-            } else {
-                res->second.blocks_processed = frac.estimate_of_released_nodes;
-                res->second.blocks_total = frac.estimate_of_total_nodes;
-            }
+            res->second.progress_numerator = get_sindex_progress(pair.second.id);
+            res->second.progress_denominator = 1.0;
             res->second.start_time = get_sindex_start_time(pair.second.id);
         }
     }
@@ -570,12 +565,12 @@ void store_t::sindex_queue_push(
     }
 }
 
-progress_completion_fraction_t store_t::get_sindex_progress(uuid_u const &id) {
+double store_t::get_sindex_progress(uuid_u const &id) {
     auto iterator = sindex_context.find(id);
     if (iterator == sindex_context.end()) {
-        return progress_completion_fraction_t();
+        return 0.0;
     } else {
-        return iterator->second.second->guess_completion();
+        return *iterator->second.second;
     }
 }
 
@@ -674,7 +669,7 @@ void store_t::clear_sindex_data(
     for (bool reached_end = false; !reached_end;)
     {
         coro_t::yield();
-    
+
         /* Start a write transaction. */
         write_token_t token;
         new_write_token(&token);

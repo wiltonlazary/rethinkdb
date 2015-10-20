@@ -12,6 +12,7 @@
 #include "containers/disk_backed_queue.hpp"
 #include "rdb_protocol/btree.hpp"
 #include "rdb_protocol/changefeed.hpp"
+#include "rdb_protocol/distribution_progress.hpp"
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/ql2.pb.h"
@@ -57,6 +58,19 @@ void resume_construct_sindex(
     // construction active at any time (which would make constructing multiple indexes
     // at the same time less efficient).
     rwlock_in_line_t backfill_lock_acq(&store->backfill_postcon_lock, access_t::write);
+
+    // Used by the `jobs` table and `indexStatus` to track the progress of the
+    // construction.
+    distribution_progress_estimator_t progress_estimator(
+        store, store_keepalive.get_drain_signal());
+    double current_progress =
+        progress_estimator.estimate_progress(construct_range.left);
+    map_insertion_sentry_t<
+        store_t::sindex_context_map_t::key_type,
+        store_t::sindex_context_map_t::mapped_type> sindex_context_sentry(
+            store->get_sindex_context_map(),
+            sindex_to_construct,
+            std::make_pair(current_microtime(), &current_progress));
 
     /* We start by clearing out any residual data in the index left behind by a previous
     post construction process (if the server got terminated in the middle). */
@@ -136,6 +150,7 @@ void resume_construct_sindex(
             store->register_sindex_queue(mod_queue.get(), remaining_range, &acq);
         }
 
+        // This updates `remaining_range`.
         post_construct_and_drain_queue(
             store_keepalive,
             sindex_to_construct,
@@ -143,6 +158,9 @@ void resume_construct_sindex(
             PAIRS_TO_CONSTRUCT_PER_PASS,
             store,
             std::move(mod_queue));
+
+        // Update the progress value
+        current_progress = progress_estimator.estimate_progress(remaining_range.left);
     }
 }
 
@@ -158,15 +176,6 @@ void post_construct_and_drain_queue(
         scoped_ptr_t<disk_backed_queue_wrapper_t<rdb_modification_report_t> >
             &&mod_queue)
     THROWS_NOTHING {
-
-    // TODO! Fix the progress. Just use a distribution query + key boundary for it.
-    // Also move this sentry up!
-    /*map_insertion_sentry_t<
-        store_t::sindex_context_map_t::key_type,
-        store_t::sindex_context_map_t::mapped_type> > sindex_context_sentry(
-            store->get_sindex_context_map(),
-            sindex_id_to_bring_up_to_date,
-            std::make_pair(current_microtime(), &progress_tracker));*/
 
     // `post_construct_secondary_index_range` can post-construct multiple secondary
     // indexes at the same time. We don't currently make use of that functionality
