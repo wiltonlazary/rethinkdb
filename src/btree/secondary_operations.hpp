@@ -32,15 +32,23 @@ struct secondary_index_t {
     block_id_t superblock;
 
     /* Whether the index is still needs to be post constructed, and/or is being deleted.
-     * Note that an index can be in any combination of those states. */
+     Note that an index can be in any combination of those states. */
     key_range_t needs_post_construction_range;
     bool being_deleted;
 
-    // TODO! Get rid of this.
+    /* Note that this is even still relevant if the index is being deleted. In that case
+     it tells us whether the index had completed post constructing before it got deleted
+     or not. That is relevant because once an index got post-constructed, there can be
+     snapshotted read queries that are still accessing it, and we must detach any
+     values that we are deleting from the index.
+     If on the other hand the index never finished post-construction, we must not detach
+     values because they might be pointing to blocks that no longer exist (in general a
+     not fully constructed index can be in an inconsistent state). */
     bool post_construction_complete() const {
         return needs_post_construction_range.is_empty();
     }
-    // TODO! Get rid of this. Instead allow checking if it's ready for a given key.
+
+    /* Determines whether it's ok to query the index. */
     bool is_ready() const {
         return post_construction_complete() && !being_deleted;
     }

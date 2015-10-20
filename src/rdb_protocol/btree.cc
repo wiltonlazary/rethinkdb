@@ -1638,6 +1638,8 @@ void rdb_update_sindexes(
     cond_t *keys_available_cond,
     index_vals_t *old_keys_out,
     index_vals_t *new_keys_out) {
+
+    noop_deletion_context_t noop_deletion_context;
     {
         auto_drainer_t drainer;
 
@@ -1652,12 +1654,23 @@ void rdb_update_sindexes(
             if (!sindex->sindex.needs_post_construction_range.contains_key(
                     modification->primary_key)) {
                 ++counter;
+                // If the index isn't done constructing yet, we must use a noop deletion
+                // context. The reason is that such an index might have pointers to
+                // blocks that have already been deleted, and trying to detach them
+                // through a regular deleter would be illegal.
+                // Also (luckily) we don't need to detach the values, because there's
+                // no way that any snapshotted read transaction can be active in a
+                // non-post-constructed index.
+                const deletion_context_t *actual_deletion_context =
+                    sindex->sindex.post_construction_complete()
+                    ? deletion_context
+                    : &noop_deletion_context;
                 coro_t::spawn_sometime(
                     std::bind(
                         &rdb_update_single_sindex,
                         store,
                         sindex.get(),
-                        deletion_context,
+                        actual_deletion_context,
                         modification,
                         &counter,
                         auto_drainer_t::lock_t(&drainer),

@@ -125,7 +125,7 @@ void store_t::help_construct_bring_sindexes_up_to_date() {
             if (it->second.being_deleted) {
                 coro_t::spawn_sometime(std::bind(clear_sindex,
                                                  it->second.id, drainer.lock()));
-            } else if (!it->second.needs_post_construction_range.is_empty()) {
+            } else if (!it->second.post_construction_complete()) {
                 coro_t::spawn_sometime(std::bind(&rdb_protocol::resume_construct_sindex,
                                                  it->second.id,
                                                  it->second.needs_post_construction_range,
@@ -813,37 +813,25 @@ void store_t::delayed_clear_and_drop_sindex(
         THROWS_NOTHING {
     try {
         rdb_value_sizer_t sizer(cache->max_block_size());
-
-        /* In the part of the index that has been constructed, we must
+        /* If the index had been completely constructed, we must
          * detach its values since snapshots might be accessing it.
-         * For the part that has not been constructed yet on the other hand,
-         * it would be incorrect to do so.
+         * If on the other hand the index had not finished post
+         * construction, it would be incorrect to do so.
          * The reason being that some of the values that the sindex
          * points to might have been deleted in the meantime
          * (the deletion would be on the sindex queue, but might
-         * not have found its way into the index tree yet).
-         *
-         * As a consequence, we use two different deletion contexts to clear out the
-         * live and non-live ranges of the secondary index. */
-
-        const key_range_t &post_con_range = sindex.needs_post_construction_range;
-        if (!post_con_range.is_empty()) {
-            /* Clear the non-live part of the sindex. */
-            rdb_post_construction_deletion_context_t post_con_deletion_context;
-            clear_sindex_data(sindex.id,
-                              &sizer,
-                              &post_con_deletion_context,
-                              post_con_range,
-                              store_keepalive.get_drain_signal());
-        }
-
-        /* Clear the live part of the sindex.
-         * We assume that all non-live keys have been cleared above, so anything that
-         * remains in the index now is going to be in the live range. */
+         * not have found its way into the index tree yet). */
         rdb_live_deletion_context_t live_deletion_context;
+        rdb_post_construction_deletion_context_t post_con_deletion_context;
+        deletion_context_t *actual_deletion_context =
+            sindex.post_construction_complete()
+            ? static_cast<deletion_context_t *>(&live_deletion_context)
+            : static_cast<deletion_context_t *>(&post_con_deletion_context);
+
+        /* Clear the sindex */
         clear_sindex_data(sindex.id,
                           &sizer,
-                          &live_deletion_context,
+                          actual_deletion_context,
                           key_range_t::universe(),
                           store_keepalive.get_drain_signal());
 
