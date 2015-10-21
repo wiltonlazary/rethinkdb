@@ -27,6 +27,7 @@ opts['duration'] = vcoptparse.IntFlag('--duration', 900) # Time to perform fuzzi
 opts['progress'] = vcoptparse.BoolFlag('--progress', False) # Write messages every 10 seconds with the time remaining
 opts['threads'] = vcoptparse.IntFlag('--threads', 16) # Number of client threads to run (not counting changefeeds)
 opts['changefeeds'] = vcoptparse.BoolFlag('--changefeeds', False) # Whether or not to use changefeeds
+opts['kill'] = vcoptparse.BoolFlag('--kill', False) # Randomly kill and revive servers during fuzzing - will produce a lot of noise
 parsed_opts = opts.parse(sys.argv)
 _, command_prefix, serve_options = scenario_common.parse_mode_flags(parsed_opts)
 
@@ -364,7 +365,7 @@ class system_changefeed(Query):
                        self.conn.host, self.conn.port)
         return r.expr(0) # dummy query for silly reasons
 
-def do_fuzz(cluster, stop_event, random_seed):
+def do_fuzz(cluster, cluster_lock, stop_event, random_seed):
     random.seed(random_seed)
     weighted_ops = [(db_create, 4),
                     # (db_rename, 3), # Renames are racy and so currently omitted
@@ -387,12 +388,39 @@ def do_fuzz(cluster, stop_event, random_seed):
         weighted_ops.append((system_changefeed, 10))
 
     try:
-        server = random.choice(list(cluster.processes))
-        conn = r.connect(server.host, server.driver_port)
-
         while not stop_event.is_set():
-            run_random_query(conn, weighted_ops)
+            time.sleep(1)
+            cluster_lock.acquire()
+            try:
+                server = random.choice([p for p in cluster if p.ready])
+                conn = r.connect(server.host, server.driver_port)
+            except IndexError:
+                continue # No ready servers - try again later
+            finally:
+                cluster_lock.release()
 
+            while conn.is_open() and not stop_event.is_set():
+                run_random_query(conn, weighted_ops)
+    finally:
+        stop_event.set()
+
+def server_kill_thread(cluster, cluster_lock, stop_event):
+    try:
+        while not stop_event.is_set():
+            # Every time period, kill or revive a random set of servers
+            time.sleep(random.random() * 1)
+            cluster_lock.acquire()
+            try:
+                do_kill = random.choice([True, False])
+                valid_procs = [p for p in cluster if p.running == do_kill]
+                if len(valid_procs) == 0:
+                    continue
+
+                chosen_procs = random.sample(valid_procs, random.randint(1, len(valid_procs)))
+                print("%s %d servers (%.2fs)" % ("Killing" if do_kill else "Reviving", len(chosen_procs), time.time() - startTime))
+                [p.kill() if do_kill else p.start() for p in chosen_procs]
+            finally:
+                cluster_lock.release()
     finally:
         stop_event.set()
 
@@ -406,9 +434,14 @@ with driver.Cluster(initial_servers=server_names, output_folder='.', command_pre
     print("Fuzzing for %ds, random seed: %s (%.2fs)" %
           (parsed_opts['duration'], repr(parsed_opts['random-seed']), time.time() - startTime))
     stop_event = threading.Event()
+    cluster_lock = threading.Lock()
     fuzz_threads = []
     for i in xrange(parsed_opts['threads']):
-        fuzz_threads.append(threading.Thread(target=do_fuzz, args=(cluster, stop_event, random.random())))
+        fuzz_threads.append(threading.Thread(target=do_fuzz, args=(cluster, cluster_lock, stop_event, random.random())))
+        fuzz_threads[-1].start()
+
+    if parsed_opts['kill']:
+        fuzz_threads.append(threading.Thread(target=server_kill_thread, args=(cluster, cluster_lock, stop_event)))
         fuzz_threads[-1].start()
 
     last_time = time.time()
