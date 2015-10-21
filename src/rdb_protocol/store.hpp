@@ -373,7 +373,11 @@ public:
 
     std::map<uuid_u, scoped_ptr_t<btree_slice_t> > secondary_index_slices;
 
-    // TODO! document
+    // We construct secondary indexes by starting with a `universe()` construction_range,
+    // and then making the range increasingly smaller until it is `empty()`.
+    // While we are in that process, we must put any write for a primary key that is in
+    // `construction_range` into the associated secondary index queue. Any other write
+    // must be applied directly to the secondary index.
     struct ranged_sindex_queue_t {
         // Once the index has been fully constructed, `construction_range` will be empty.
         key_range_t construction_range;

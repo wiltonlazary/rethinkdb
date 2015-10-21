@@ -91,7 +91,12 @@ void resume_construct_sindex(
 
     uuid_u post_construct_id = generate_uuid();
 
-    // TODO! Comment how we construct the index in ranges
+    /* Secondary indexes are constructed in multiple passes, moving through the primary
+    key range from the smallest key to the largest one. In each pass, we handle a
+    certain number of primary keys and put the corresponding entries into the secondary
+    index. While this happens, we use a queue to keep track of any writes to the range
+    we're constructing. We then drain the queue and atomically delete it, before we
+    start the next pass. */
     const int PAIRS_TO_CONSTRUCT_PER_PASS = 512;
     key_range_t remaining_range = construct_range;
     while (!remaining_range.is_empty()) {
@@ -234,7 +239,7 @@ void post_construct_and_drain_queue(
             // the new range. This is important to make the call to
             // `rdb_update_sindexes()` below actually update the indexes.
             // We use the same trick in the `post_construct_traversal_helper_t`.
-            // TODO! Avoid this hackery
+            // TODO: Avoid this hackery (here and in `post_construct_traversal_helper_t`)
             for (auto &&access : sindexes) {
                 access->sindex.needs_post_construction_range = *construction_range_inout;
             }
