@@ -273,7 +273,7 @@ std::string reql_func_t::print_source() const {
         if (i != 0) {
             ret += ", ";
         }
-        ret += strprintf("var%" PRIi64, arg_names[i].value);
+        ret += pprint::print_var(arg_names[i].value);
     }
     ret += "]) ";
     ret += pprint::pretty_print(80, pprint::render_as_javascript(body->get_src()));
@@ -290,7 +290,6 @@ std::string reql_func_t::print_js_function() const {
         if (i != 0) {
             ret += ", ";
         }
-        // `pretty_print` prints variables as "var" + number
         ret += pprint::print_var(arg_names[i].value);
     }
     ret += ") { return ";
