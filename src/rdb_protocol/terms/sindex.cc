@@ -113,6 +113,8 @@ ql::datum_t sindex_status_to_datum(
         ql::datum_t::boolean(config.geo == sindex_geo_bool_t::GEO));
     stat.overwrite("function",
         ql::datum_t::binary(sindex_config_to_string(config)));
+    stat.overwrite("source",
+        ql::datum_t(datum_string_t(config.func.compile_wire_func()->print_source())));
     return std::move(stat).to_datum();
 }
 
