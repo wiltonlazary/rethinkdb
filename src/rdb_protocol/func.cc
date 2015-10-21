@@ -285,7 +285,7 @@ std::string reql_func_t::print_js_function() const {
         return "non-printable function (captured scope not empty)";
     }
 
-    std::string ret = "function (";
+    std::string ret = "function(";
     for (size_t i = 0; i < arg_names.size(); ++i) {
         if (i != 0) {
             ret += ", ";
