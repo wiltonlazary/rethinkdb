@@ -157,7 +157,7 @@ public:
     void set_key(const key1_t &key1, const key2_t &key2, const value_t &value) {
         auto key1_iter = entries.find(key1);
 
-        bool key2_exists;
+        bool key2_exists = false;
         values.read_key(key2, [&](const value_t *v) {
             key2_exists = (v != nullptr);
         });
@@ -172,18 +172,14 @@ public:
                 });
                 return;
             } else {
-                // .. but does not have the right `key2`, delete it such that we can
-                // insert the new entry.
-                if (key2_exists) {
-                    // A `key2` entry already exists as well, find the matching `key1`
-                    // and delete that as well.
-                    delete_secondary_key(key2);
-                }
+                // .. but does not have the right key, remove it.
                 entries.erase(key1_iter);
             }
-        } else if (key2_exists) {
-            // A `key1` entry does not exist but a `key2` entry does, find the matching
-            // `key1` entry and delete that.
+        }
+
+        if (key2_exists) {
+            // A `key2` entry already exists, find the matching `key1` which we know
+            // isn't the one given, and delete it.
             delete_secondary_key(key2);
         }
 
