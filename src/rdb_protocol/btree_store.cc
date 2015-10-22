@@ -623,7 +623,7 @@ sindex_name_t compute_sindex_deletion_name(uuid_u sindex_uuid) {
 class clear_sindex_traversal_cb_t
         : public depth_first_traversal_callback_t {
 public:
-    clear_sindex_traversal_cb_t(const key_range_t &pkey_rng)
+    explicit clear_sindex_traversal_cb_t(const key_range_t &pkey_rng)
         : pkey_range(pkey_rng),
           num_traversed(0),
           last_traversed_key(store_key_t::min()) {
