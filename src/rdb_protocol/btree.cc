@@ -2002,21 +2002,30 @@ private:
         buf_lock_t sindex_block(superblock->expose_buf(), sindex_block_id,
                                 access_t::write);
         superblock.reset();
+        store_t::sindex_access_vector_t all_sindexes;
         store_->acquire_sindex_superblocks_for_write(
             sindexes_to_post_construct_,
             &sindex_block,
-            &sindexes_);
+            &all_sindexes);
+
+        // Filter out indexes that are being deleted. No need to keep post-constructing
+        // those.
+        guarantee(sindexes_.empty());
+        for (auto &&access : all_sindexes) {
+            if (!access->sindex.being_deleted) {
+                sindexes_.emplace_back(std::move(access));
+            }
+        }
+        if (sindexes_.empty()) {
+            // All indexes have been deleted. Interrupt the traversal.
+            on_indexes_deleted_->pulse_if_not_already_pulsed();
+        }
 
         // We pretend that the indexes have been fully constructed, so that when we call
         // `rdb_update_sindexes` above, it actually updates the range we're currently
         // constructing. This is a bit hacky, but works.
         for (auto &&access : sindexes_) {
             access->sindex.needs_post_construction_range = key_range_t::empty();
-        }
-
-        if (sindexes_.empty()) {
-            // All indexes have been deleted. Interrupt the traversal.
-            on_indexes_deleted_->pulse_if_not_already_pulsed();
         }
     }
 
@@ -2056,7 +2065,6 @@ void post_construct_secondary_index_range(
     // In case the index gets deleted in the middle of the construction, this gets
     // triggered.
     cond_t on_index_deleted_interruptor;
-    wait_any_t wait_any(&on_index_deleted_interruptor, interruptor);
 
     // Mind the destructor ordering.
     // The superblock must be released before txn (`btree_concurrent_traversal`
@@ -2097,7 +2105,8 @@ void post_construct_secondary_index_range(
         &traversal_cb,
         direction_t::FORWARD,
         release_superblock_t::RELEASE);
-    if (cont == continue_bool_t::ABORT && interruptor->is_pulsed()) {
+    if (cont == continue_bool_t::ABORT
+        && (interruptor->is_pulsed() || on_index_deleted_interruptor.is_pulsed())) {
         throw interrupted_exc_t();
     }
 
