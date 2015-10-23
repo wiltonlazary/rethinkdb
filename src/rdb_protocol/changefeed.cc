@@ -2882,7 +2882,7 @@ void feed_t::del_sub_with_lock(
     rwlock_t *rwlock, const std::function<size_t()> &f) THROWS_NOTHING {
     on_thread_t th(home_thread());
     {
-        // We need to check this because when our caller check that their
+        // We need to check this because when our caller checked that their
         // `feed_t` pointer was non-NULL, they were doing that on a different
         // thread.
         if (detached) return;
