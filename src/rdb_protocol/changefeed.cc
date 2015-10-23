@@ -1528,6 +1528,7 @@ real_feed_t::real_feed_t(auto_drainer_t::lock_t _client_lock,
 // because otherwise there could be a race condition where a new sub is added in
 // the middle.
 void feed_t::stop_subs(const auto_drainer_t::lock_t &lock) {
+    assert_thread();
     const char *msg = "Changefeed aborted (unavailable).";
     each_sub(lock,
              std::bind(&subscription_t::stop,
@@ -1535,6 +1536,18 @@ void feed_t::stop_subs(const auto_drainer_t::lock_t &lock) {
                        std::make_exception_ptr(
                            datum_exc_t(base_exc_t::OP_FAILED, msg)),
                        detach_t::YES));
+    {
+        rwlock_acq_t acq(&range_subs_lock, access_t::write);
+        for (auto &&set : range_subs) set.clear();
+    }
+    {
+        rwlock_acq_t acq(&point_subs_lock, access_t::write);
+        point_subs.clear();
+    }
+    {
+        rwlock_acq_t acq(&limit_subs_lock, access_t::write);
+        limit_subs.clear();
+    }
     num_subs = 0;
 }
 
@@ -2433,6 +2446,7 @@ void real_feed_t::mailbox_cb(signal_t *, stamped_msg_t msg) {
         // We wait for the write to complete and the queues to be ready.
         wait_any_t wait_any(&queues_ready, lock.get_drain_signal());
         wait_any.wait_lazily_unordered();
+        if (detached) return;
         if (!lock.get_drain_signal()->is_pulsed()) {
             // We don't need a lock for this because the set of `uuid_u`s never
             // changes after it's initialized.
@@ -2443,6 +2457,7 @@ void real_feed_t::mailbox_cb(signal_t *, stamped_msg_t msg) {
 
             rwlock_in_line_t spot(&queue->lock, access_t::write);
             spot.write_signal()->wait_lazily_unordered();
+            if (detached) return;
 
             // Add us to the queue.
             guarantee(msg.stamp >= queue->next);
@@ -2450,6 +2465,7 @@ void real_feed_t::mailbox_cb(signal_t *, stamped_msg_t msg) {
 
             // Read as much as we can from the queue (this enforces ordering.)
             while (queue->map.size() != 0 && queue->map.top().stamp == queue->next) {
+                if (detached) return;
                 const stamped_msg_t &curmsg = queue->map.top();
                 msg_visitor_t visitor(this, &lock, curmsg.server_uuid, curmsg.stamp);
                 boost::apply_visitor(visitor, curmsg.submsg.op);
