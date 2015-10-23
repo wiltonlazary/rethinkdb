@@ -328,7 +328,7 @@ void post_construct_secondary_index_range(
         store_t *store,
         const std::set<uuid_u> &sindexes_to_post_construct,
         key_range_t *construction_range_inout,
-        int pairs_to_construct,
+        const std::function<bool(int64_t)> &check_should_abort,
         signal_t *interruptor)
     THROWS_ONLY(interrupted_exc_t);
 

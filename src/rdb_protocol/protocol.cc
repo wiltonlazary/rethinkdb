@@ -30,7 +30,7 @@ void post_construct_and_drain_queue(
         auto_drainer_t::lock_t lock,
         uuid_u sindex_id_to_bring_up_to_date,
         key_range_t *construction_range_inout,
-        int pairs_to_construct,
+        int64_t max_pairs_to_construct,
         store_t *store,
         scoped_ptr_t<disk_backed_queue_wrapper_t<rdb_modification_report_t> >
             &&mod_queue)
@@ -97,7 +97,7 @@ void resume_construct_sindex(
     index. While this happens, we use a queue to keep track of any writes to the range
     we're constructing. We then drain the queue and atomically delete it, before we
     start the next pass. */
-    const int PAIRS_TO_CONSTRUCT_PER_PASS = 512;
+    const int64_t PAIRS_TO_CONSTRUCT_PER_PASS = 512;
     key_range_t remaining_range = construct_range;
     while (!remaining_range.is_empty()) {
         scoped_ptr_t<disk_backed_queue_wrapper_t<rdb_modification_report_t> > mod_queue;
@@ -132,7 +132,7 @@ void resume_construct_sindex(
              * damage (if that should ever not true for any of the modifications, that
              * modification must be fixed or this code would have to be changed to
              * account for that). */
-            const int num_mods_to_keep_in_memory = 16;
+            const int64_t MAX_MOD_QUEUE_MEMORY_BYTES = 8 * MEGABYTE;
             mod_queue.init(
                     new disk_backed_queue_wrapper_t<rdb_modification_report_t>(
                         store->io_backender_,
@@ -140,7 +140,7 @@ void resume_construct_sindex(
                             store->base_path_,
                             "post_construction_" + uuid_to_str(post_construct_id)),
                         &store->perfmon_collection,
-                        num_mods_to_keep_in_memory));
+                        MAX_MOD_QUEUE_MEMORY_BYTES));
 
             secondary_index_t sindex;
             bool found_index =
@@ -176,7 +176,7 @@ void post_construct_and_drain_queue(
         auto_drainer_t::lock_t lock,
         uuid_u sindex_id_to_bring_up_to_date,
         key_range_t *construction_range_inout,
-        int pairs_to_construct,
+        int64_t max_pairs_to_construct,
         store_t *store,
         scoped_ptr_t<disk_backed_queue_wrapper_t<rdb_modification_report_t> >
             &&mod_queue)
@@ -190,13 +190,19 @@ void post_construct_and_drain_queue(
     sindexes_to_bring_up_to_date.insert(sindex_id_to_bring_up_to_date);
 
     try {
+        const size_t MOD_QUEUE_SIZE_LIMIT = 16;
         // This constructs a part of the index and updates `construction_range_inout`
         // to the range that's still remaining.
         post_construct_secondary_index_range(
             store,
             sindexes_to_bring_up_to_date,
             construction_range_inout,
-            pairs_to_construct,
+            // Abort if the mod_queue gets larger than the `MOD_QUEUE_SIZE_LIMIT`, or
+            // we've constructed `max_pairs_to_construct` pairs.
+            [&](int64_t pairs_constructed) {
+                return pairs_constructed >= max_pairs_to_construct
+                    || mod_queue->size() > MOD_QUEUE_SIZE_LIMIT;
+            },
             lock.get_drain_signal());
 
         // Drain the queue.
@@ -214,7 +220,7 @@ void post_construct_and_drain_queue(
             // Other than that, the hard durability guarantee is not actually
             // needed here.
             store->acquire_superblock_for_write(
-                2,
+                2 + mod_queue->size(),
                 write_durability_t::HARD,
                 &token,
                 &queue_txn,

@@ -1867,13 +1867,14 @@ public:
             store_t *store,
             const std::set<uuid_u> &sindexes_to_post_construct,
             cond_t *on_indexes_deleted,
-            int pairs_to_construct,
+            const std::function<bool(int64_t)> &check_should_abort,
             signal_t *interruptor)
         : store_(store),
           sindexes_to_post_construct_(sindexes_to_post_construct),
           on_indexes_deleted_(on_indexes_deleted),
           interruptor_(interruptor),
-          pairs_to_construct_left_(pairs_to_construct),
+          check_should_abort_(check_should_abort),
+          pairs_constructed_(0),
           stopped_before_completion_(false),
           current_chunk_size_(0) {
         // Start an initial write transaction for the first chunk.
@@ -1951,8 +1952,8 @@ public:
             }
         }
 
-        --pairs_to_construct_left_;
-        if (pairs_to_construct_left_ <= 0) {
+        ++pairs_constructed_;
+        if (check_should_abort_(pairs_constructed_)) {
             stopped_before_completion_ = true;
             return continue_bool_t::ABORT;
         } else {
@@ -2034,8 +2035,10 @@ private:
     cond_t *on_indexes_deleted_;
     signal_t *interruptor_;
 
+    std::function<bool(int64_t)> check_should_abort_;
+
     // How far we've come in the traversal
-    int pairs_to_construct_left_;
+    int64_t pairs_constructed_;
     store_key_t traversed_right_bound_;
     bool stopped_before_completion_;
 
@@ -2058,7 +2061,7 @@ void post_construct_secondary_index_range(
         store_t *store,
         const std::set<uuid_u> &sindex_ids_to_post_construct,
         key_range_t *construction_range_inout,
-        int pairs_to_construct,
+        const std::function<bool(int64_t)> &check_should_abort,
         signal_t *interruptor)
     THROWS_ONLY(interrupted_exc_t) {
 
@@ -2092,7 +2095,7 @@ void post_construct_secondary_index_range(
         store,
         sindex_ids_to_post_construct,
         &on_index_deleted_interruptor,
-        pairs_to_construct,
+        check_should_abort,
         interruptor);
 
     cache_account
