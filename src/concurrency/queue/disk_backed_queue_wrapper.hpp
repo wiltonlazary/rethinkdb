@@ -101,7 +101,9 @@ private:
         stream.swap(&data);
         vector_read_stream_t rstream(std::move(data));
         T value;
-        deserialize<cluster_version_t::LATEST_OVERALL>(&rstream, &value);
+        archive_result_t dres =
+            deserialize<cluster_version_t::LATEST_OVERALL>(&rstream, &value);
+        guarantee_deserialization(dres, "disk backed queue wrapper");
         return value;
     }
 
