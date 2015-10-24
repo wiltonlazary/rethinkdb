@@ -2859,7 +2859,7 @@ void feed_t::add_sub_with_lock(
     // the `X_sub_t` constructors, which should only be called by `new_sub`,
     // which is called while holding `feeds_lock`, which prevents the feed from
     // being detached.
-    r_sanity_check(!detached);
+    guarantee(!detached);
     num_subs += 1;
     auto_drainer_t::lock_t lock = get_drainer_lock();
     rwlock_in_line_t spot(rwlock, access_t::write);
