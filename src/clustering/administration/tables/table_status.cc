@@ -91,10 +91,14 @@ ql::datum_t convert_shard_status_to_datum(
 ql::datum_t convert_raft_leader_to_datum(
         const table_status_t &status,
         admin_identifier_format_t identifier_format) {
-    if (static_cast<bool>(status.raft_leader)) {
+    /* If the server name of the Raft leader is not in server names it means it wasn't
+    in the server config, thus it can't be the leader. */
+    if (static_cast<bool>(status.raft_leader) &&
+            status.server_names.names.count(*status.raft_leader) == 1) {
       return convert_name_or_uuid_to_datum(
           status.server_names.get(*status.raft_leader),
-          *status.raft_leader, identifier_format);
+          *status.raft_leader,
+          identifier_format);
     }
 
     return ql::datum_t::null();
