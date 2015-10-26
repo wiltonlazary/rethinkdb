@@ -1150,6 +1150,10 @@ void raft_member_t<state_t>::update_commit_index(
             new_commit_index,
             ps().log.get_entry_term(new_commit_index),
             new_commit_index);
+
+        /* Because we modified `ps().log`, we need to update `latest_state` */
+        /* latest_state.set_value_no_equals(state_and_config_t(
+            ps().log.prev_index, ps().snapshot_state, ps().snapshot_config)); */
     }
 
     /* If we just committed the second step of a config change, then we might need to
