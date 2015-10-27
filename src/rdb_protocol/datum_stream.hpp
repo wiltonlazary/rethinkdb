@@ -444,7 +444,7 @@ public:
         std::vector<transform_variant_t> transform,
         const batchspec_t &batchspec) const = 0;
 
-    virtual boost::optional<key_range_t> original_keyrange() const = 0;
+    virtual key_range_t original_keyrange(skey_version_t ver) const = 0;
     virtual key_range_t sindex_keyrange(skey_version_t skey_version) const = 0;
     virtual boost::optional<std::string> sindex_name() const = 0;
 
@@ -520,7 +520,8 @@ private:
         std::vector<transform_variant_t> transform,
         const batchspec_t &batchspec) const;
     virtual void sindex_sort(std::vector<rget_item_t> *vec) const;
-    virtual boost::optional<key_range_t> original_keyrange() const;
+    virtual key_range_t original_keyrange(skey_version_t ver) const;
+    // RSI: can this be removed? vvv
     virtual key_range_t sindex_keyrange(skey_version_t skey_version) const;
     virtual boost::optional<std::string> sindex_name() const;
 };
@@ -536,7 +537,7 @@ public:
         sorting_t sorting = sorting_t::UNORDERED);
 
     virtual void sindex_sort(std::vector<rget_item_t> *vec) const;
-    virtual boost::optional<key_range_t> original_keyrange() const;
+    virtual key_range_t original_keyrange(skey_version_t ver) const;
     virtual key_range_t sindex_keyrange(skey_version_t skey_version) const;
     virtual boost::optional<std::string> sindex_name() const;
 private:
@@ -580,7 +581,7 @@ public:
         const batchspec_t &batchspec) const;
 
     virtual void sindex_sort(std::vector<rget_item_t> *vec) const;
-    virtual boost::optional<key_range_t> original_keyrange() const;
+    virtual key_range_t original_keyrange(skey_version_t ver) const;
     virtual key_range_t sindex_keyrange(skey_version_t skey_version) const;
     virtual boost::optional<std::string> sindex_name() const;
 
@@ -649,6 +650,7 @@ public:
     }
 
 protected:
+    raw_stream_t unshard(rget_read_response_t &&res);
     bool shards_exhausted() const {
         return active_ranges ? active_ranges->totally_exhausted() : false;
     }
@@ -674,6 +676,7 @@ protected:
     std::map<uuid_u, uint64_t> shard_stamps;
 
     // We need this to handle the SINDEX_CONSTANT case.
+    // RSI: can this go away?
     std::vector<rget_item_t> items;
     size_t items_index;
 };

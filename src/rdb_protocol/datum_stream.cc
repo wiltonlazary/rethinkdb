@@ -178,7 +178,10 @@ boost::optional<std::map<region_t, store_key_t> > active_ranges_to_hints(
 }
 
 enum class is_secondary_t { NO, YES };
-active_ranges_t new_active_ranges(const stream_t &stream, is_secondary_t is_secondary) {
+active_ranges_t new_active_ranges(
+    const stream_t &stream,
+    key_range_t &&original_range,
+    is_secondary_t is_secondary) {
     active_ranges_t ret;
     for (auto &&pair : stream.substreams) {
         std::map<hash_range_t, hash_range_with_cache_t> hash_ranges;
@@ -186,8 +189,8 @@ active_ranges_t new_active_ranges(const stream_t &stream, is_secondary_t is_seco
            .hash_ranges[hash_range_t{pair.first.beg, pair.first.end}]
             = hash_range_with_cache_t{
                 is_secondary == is_secondary_t::YES
-                    ? safe_universe()
-                    : pair.first.inner,
+                    ? std::move(original_range)
+                    : pair.first.inner.intersection(original_range),
                 raw_stream_t(),
                 range_state_t::ACTIVE};
     }
@@ -299,31 +302,24 @@ private:
     bool finished;
 };
 
-// RSI: Try to make `update` faster by doing interleaved unsharding.
-
-// RSI: `.between(0, '2').update` has gotten a lot slower, we're probably doing
-// something dumb.
-raw_stream_t unshard(
-    sorting_t sorting,
-    boost::optional<active_ranges_t> *maybe_active_ranges,
-    rget_read_response_t &&res,
-    is_secondary_t is_secondary,
-    bool *shards_exhausted_out) {
+raw_stream_t rget_response_reader_t::unshard(rget_read_response_t &&res) {
     debugf("UNSHARDING\n");
+    sorting_t sorting = readgen->get_sorting();
 
     grouped_t<stream_t> *gs = boost::get<grouped_t<stream_t> >(&res.result);
     r_sanity_check(gs != nullptr);
     auto stream = groups_to_batch(gs->get_underlying_map());
     debugf("stream: %s\n", debug_str(stream).c_str());
-    debugf("!!! 1 active_ranges: %s\n", debug_str(*maybe_active_ranges).c_str());
-    if (!*maybe_active_ranges) {
-        *maybe_active_ranges = new_active_ranges(stream, is_secondary);
+    debugf("!!! 1 active_ranges: %s\n", debug_str(active_ranges).c_str());
+    if (!active_ranges) {
+        active_ranges = new_active_ranges(
+            stream, readgen->original_keyrange(res.skey_version),
+            readgen->sindex_name() ? is_secondary_t::YES : is_secondary_t::NO);
     }
-    debugf("!!! 2 active_ranges: %s\n", debug_str(*maybe_active_ranges).c_str());
-    active_ranges_t *active_ranges = &**maybe_active_ranges;
+    debugf("!!! 2 active_ranges: %s\n", debug_str(active_ranges).c_str());
     // debugf("%s\n", debug_str(*active_ranges).c_str());
 
-    raw_stream_t items;
+    raw_stream_t ret;
     // Create the pseudoshards, which represent the cached, fresh, and
     // hypothetical `rget_item_t`s from the shards.  We also mark shards
     // exhausted in this step.
@@ -391,10 +387,10 @@ raw_stream_t unshard(
     }
     debugf("pseudoshards: %zu (active/%zu fresh/%zu)\n",
            pseudoshards.size(), n_active, n_fresh);
-    debugf("!!! 3 active_ranges: %s\n", debug_str(*maybe_active_ranges).c_str());
+    debugf("!!! 3 active_ranges: %s\n", debug_str(active_ranges).c_str());
     if (pseudoshards.size() == 0) {
-        *shards_exhausted_out = true;
-        return items;
+        r_sanity_check(shards_exhausted());
+        return ret;
     }
 
     // Do the unsharding.
@@ -411,7 +407,7 @@ raw_stream_t unshard(
                 }
             }
             if (auto maybe_item = best_shard->pop()) {
-                items.push_back(*maybe_item);
+                ret.push_back(*maybe_item);
             } else {
                 break;
             }
@@ -429,7 +425,7 @@ raw_stream_t unshard(
             // updates distribute load over all servers.
             for (size_t i = 0; i < active.size(); ++i) {
                 if (auto maybe_item = pseudoshards[active[i]].pop()) {
-                    items.push_back(std::move(*maybe_item));
+                    ret.push_back(std::move(*maybe_item));
                 } else {
                     std::swap(active[i], active[active.size() - 1]);
                     active.pop_back();
@@ -437,15 +433,15 @@ raw_stream_t unshard(
             }
         }
     }
-    debugf("!!! 4 active_ranges: %s\n", debug_str(*maybe_active_ranges).c_str());
+    debugf("!!! 4 active_ranges: %s\n", debug_str(active_ranges).c_str());
     // We should have aborted earlier if there was no data.  If this assert ever
     // becomes false, make sure that we can't get into a state where all shards
     // are marked saturated.
-    r_sanity_check(items.size() != 0);
+    r_sanity_check(ret.size() != 0);
 
     // Make sure `active_ranges` is in a clean state.
     for (auto &&ps : pseudoshards) ps.finish();
-    debugf("!!! 5 active_ranges: %s\n", debug_str(*maybe_active_ranges).c_str());
+    debugf("!!! 5 active_ranges: %s\n", debug_str(active_ranges).c_str());
     bool seen_active = false;
     bool seen_saturated = false;
     for (auto &&pair : active_ranges->ranges) {
@@ -460,10 +456,10 @@ raw_stream_t unshard(
         // We should always have marked a saturated shard as active if the last
         // active shard was exhausted.
         r_sanity_check(!seen_saturated);
-        *shards_exhausted_out = true;
+        r_sanity_check(shards_exhausted());
     }
 
-    return items;
+    return ret;
 }
 
 bool changespec_t::include_initial_vals() {
@@ -669,13 +665,7 @@ rget_reader_t::do_range_read(env_t *env, const read_t &read) {
         }
     }
 
-    bool shards_should_be_exhausted;
-    return unshard(readgen->get_sorting(),
-                   &active_ranges,
-                   std::move(res),
-                   rr->sindex ? is_secondary_t::YES : is_secondary_t::NO,
-                   &shards_should_be_exhausted);
-    r_sanity_check(shards_exhausted() == shards_should_be_exhausted);
+    return unshard(std::move(res));
 }
 
 bool rget_reader_t::load_items(env_t *env, const batchspec_t &batchspec) {
@@ -756,13 +746,7 @@ std::vector<rget_item_t> intersecting_reader_t::do_intersecting_read(
     r_sanity_check(active_ranges);
     r_sanity_check(gr->sindex.region);
 
-    bool shards_should_be_exhausted;
-    return unshard(readgen->get_sorting(),
-                   &active_ranges,
-                   std::move(res),
-                   is_secondary_t::YES,
-                   &shards_should_be_exhausted);
-    r_sanity_check(shards_exhausted() == shards_should_be_exhausted);
+    return unshard(std::move(res));
 }
 
 readgen_t::readgen_t(
@@ -867,7 +851,7 @@ void primary_readgen_t::sindex_sort(UNUSED std::vector<rget_item_t> *vec) const 
     return;
 }
 
-boost::optional<key_range_t> primary_readgen_t::original_keyrange() const {
+key_range_t primary_readgen_t::original_keyrange(skey_version_t) const {
     return original_datum_range.to_primary_keyrange();
 }
 
@@ -976,8 +960,8 @@ rget_read_t sindex_readgen_t::next_read_impl(
         sorting);
 }
 
-boost::optional<key_range_t> sindex_readgen_t::original_keyrange() const {
-    return boost::none;
+key_range_t sindex_readgen_t::original_keyrange(skey_version_t ver) const {
+    return original_datum_range.to_sindex_keyrange(ver);
 }
 
 key_range_t sindex_readgen_t::sindex_keyrange(skey_version_t skey_version) const {
@@ -1070,13 +1054,10 @@ void intersecting_readgen_t::sindex_sort(UNUSED std::vector<rget_item_t> *vec) c
     // support any specific ordering.
 }
 
-boost::optional<key_range_t> intersecting_readgen_t::original_keyrange() const {
+key_range_t intersecting_readgen_t::original_keyrange(skey_version_t ver) const {
     // This is always universe for intersection reads.
     // The real query is in the query geometry.
-
-    // We can use whatever skey_version we want here because `universe`
-    // becomes the same key range anyway.
-    return datum_range_t::universe().to_sindex_keyrange(skey_version_t::post_1_16);
+    return datum_range_t::universe().to_sindex_keyrange(ver);
 }
 
 key_range_t intersecting_readgen_t::sindex_keyrange(
