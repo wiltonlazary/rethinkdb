@@ -26,9 +26,8 @@ void in_memory_branch_history_manager_t::create_branch(
         const branch_birth_certificate_t &bc)
         THROWS_NOTHING {
     assert_thread();
-    cond_t non_interruptor;
     if (bh.branches.find(branch_id) == bh.branches.end()) {
-        nap(10, &non_interruptor);
+        nap(10);
         bh.branches[branch_id] = bc;
     }
 }
@@ -37,8 +36,7 @@ void in_memory_branch_history_manager_t::import_branch_history(
         const branch_history_t &new_records)
         THROWS_NOTHING {
     assert_thread();
-    cond_t non_interruptor;
-    nap(10, &non_interruptor);
+    nap(10);
     for (const auto &pair : new_records.branches) {
         bh.branches.insert(std::make_pair(pair.first, pair.second));
     }
@@ -57,8 +55,7 @@ void in_memory_branch_history_manager_t::perform_gc(
         const std::set<branch_id_t> &remove_branches)
         THROWS_NOTHING {
     assert_thread();
-    cond_t non_interruptor;
-    nap(10, &non_interruptor);
+    nap(10);
     for (const branch_id_t &bid : remove_branches) {
         bh.branches.erase(bid);
     }
