@@ -323,8 +323,12 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
                 return;
             }
             ql::stream_t read_stream = groups_to_batch(gs->get_underlying_map());
-            guarantee(read_stream.substreams.size() == 1);
-            stream = std::move(read_stream.substreams.begin()->second.stream);
+            guarantee(read_stream.substreams.size() <= 1);
+            if (read_stream.substreams.size() == 1) {
+                stream = std::move(read_stream.substreams.begin()->second.stream);
+            } else {
+                guarantee(stream.size() == 0);
+            }
         }
         auto lvec = ql::changefeed::mangle_sort_truncate_stream(
             std::move(stream),
