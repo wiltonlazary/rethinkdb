@@ -425,7 +425,9 @@ void check_for_obsolete_sindexes(io_backender_t *io_backender,
                                       nullptr,
                                       io_backender,
                                       base_path,
-                                      info.first);
+                                      info.first,
+                                      /* Important: Don't update indexes yet. */
+                                      update_sindexes_t::LEAVE_ALONE);
 
                         store.sindex_list(interruptor);
                     });
@@ -472,7 +474,8 @@ void migrate_tables(io_backender_t *io_backender,
                                       nullptr,
                                       io_backender,
                                       base_path,
-                                      info.first);
+                                      info.first,
+                                      update_sindexes_t::UPDATE);
 
                         if (index == 0) {
                             sindex_list = store.sindex_list(interruptor);

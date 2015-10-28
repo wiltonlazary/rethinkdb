@@ -563,7 +563,11 @@ void log_serializer_t::index_write_finish(new_mutex_in_line_t *mutex_acq,
     /* End the extent manager transaction so the extents can actually get reused. */
     extent_manager->commit_transaction(txn);
 
-    //TODO I'm kind of unhappy that we're calling this from in here we should figure out better where to trigger gc
+    /* Note that it's important that we don't start GCing before we finish the first
+    index write, because of how we migrate the static header of the serializer file
+    (see the call to `migrate_static_header` above). We don't want to migrate it before
+    we get an *explicit* index write. Specifically we don't want to migrate the static
+    header due to garbage collection. */
     consider_start_gc();
 
     // If we were in the process of shutting down and this is the

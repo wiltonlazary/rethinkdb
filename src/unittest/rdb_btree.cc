@@ -260,7 +260,8 @@ TPTEST(RDBBtree, SindexPostConstruct) {
             NULL,
             &io_backender,
             base_path_t("."),
-            generate_uuid());
+            generate_uuid(),
+            update_sindexes_t::UPDATE);
 
     cond_t dummy_interruptor;
 
@@ -302,7 +303,8 @@ TPTEST(RDBBtree, SindexEraseRange) {
             NULL,
             &io_backender,
             base_path_t("."),
-            generate_uuid());
+            generate_uuid(),
+            update_sindexes_t::UPDATE);
 
     cond_t dummy_interruptor;
 
@@ -382,7 +384,8 @@ TPTEST(RDBBtree, SindexInterruptionViaDrop) {
             NULL,
             &io_backender,
             base_path_t("."),
-            generate_uuid());
+            generate_uuid(),
+            update_sindexes_t::UPDATE);
 
     cond_t dummy_interruptor;
 
@@ -424,7 +427,8 @@ TPTEST(RDBBtree, SindexInterruptionViaStoreDelete) {
             NULL,
             &io_backender,
             base_path_t("."),
-            generate_uuid()));
+            generate_uuid(),
+            update_sindexes_t::UPDATE));
 
     insert_rows(0, (TOTAL_KEYS_TO_INSERT * 9) / 10, store.get());
 

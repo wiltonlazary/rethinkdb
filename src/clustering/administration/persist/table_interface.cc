@@ -91,7 +91,8 @@ public:
                 rdb_context,
                 io_backender,
                 base_path,
-                table_id));
+                table_id,
+                update_sindexes_t::UPDATE));
 
             /* Initialize the metainfo if necessary */
             if (create) {

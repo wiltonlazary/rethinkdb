@@ -90,6 +90,9 @@ void store_t::help_construct_bring_sindexes_up_to_date() {
 
     superblock.reset();
 
+    // Migrate the secondary index block
+    migrate_secondary_index_block(&sindex_block);
+
     struct sindex_clearer_t {
         static void clear(store_t *store,
                           secondary_index_t sindex,
