@@ -84,7 +84,7 @@ public:
         : current_page_acq_t(txn, block_id, access, create) { }
     current_test_acq_t(page_txn_t *txn,
                        alt_create_t create)
-        : current_page_acq_t(txn, create, is_aux_block_t::normal) { }
+        : current_page_acq_t(txn, create, block_type_t::normal) { }
     current_test_acq_t(page_cache_t *cache,
                        block_id_t block_id,
                        read_access_t read)

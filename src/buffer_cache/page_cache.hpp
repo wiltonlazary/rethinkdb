@@ -43,7 +43,7 @@ enum class page_create_t { no, yes };
 
 enum class alt_create_t { create };
 
-enum class is_aux_block_t { normal, aux };
+enum class block_type_t { normal, aux };
 
 class cache_conn_t {
 public:
@@ -184,7 +184,7 @@ public:
                        page_create_t create = page_create_t::no);
     current_page_acq_t(page_txn_t *txn,
                        alt_create_t create,
-                       is_aux_block_t is_aux);
+                       block_type_t block_type);
     current_page_acq_t(page_cache_t *cache,
                        block_id_t block_id,
                        read_access_t read);
@@ -222,7 +222,7 @@ private:
               page_create_t create);
     void init(page_txn_t *txn,
               alt_create_t create,
-              is_aux_block_t is_aux);
+              block_type_t block_type);
     void init(page_cache_t *page_cache,
               block_id_t block_id,
               read_access_t read);
@@ -337,7 +337,9 @@ public:
             std::function<void(throttler_acq_t *)> on_flush_complete);
 
     current_page_t *page_for_block_id(block_id_t block_id);
-    current_page_t *page_for_new_block_id(is_aux_block_t is_aux, block_id_t *block_id_out);
+    current_page_t *page_for_new_block_id(
+        block_type_t block_type,
+        block_id_t *block_id_out);
     current_page_t *page_for_new_chosen_block_id(block_id_t block_id);
 
     // Returns how much memory is being used by all the pages in the cache at this

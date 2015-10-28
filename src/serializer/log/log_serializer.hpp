@@ -11,8 +11,8 @@
 #include "serializer/serializer.hpp"
 #include "serializer/log/config.hpp"
 #include "utils.hpp"
-#include "concurrency/mutex.hpp"
 #include "concurrency/mutex_assertion.hpp"
+#include "concurrency/new_mutex.hpp"
 #include "concurrency/signal.hpp"
 #include "concurrency/cond_var.hpp"
 #include "containers/scoped.hpp"
@@ -249,6 +249,12 @@ private:
         state_shutting_down,
         state_shut_down
     } state;
+
+    /* Set to true during startup if the static file header needs to be migrated.
+    We delay migration until we perform the first index_write. That way if some other
+    migration step fails, users can still downgrade to the previous release. */
+    bool static_header_needs_migration;
+    new_mutex_t static_header_migration_mutex;
 
     file_t *dbfile;
     scoped_ptr_t<file_account_t> index_writes_io_account;

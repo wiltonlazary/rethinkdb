@@ -169,13 +169,13 @@ public:
     // from one of the unused block id's.
     buf_lock_t(buf_parent_t parent,
                alt_create_t create,
-               is_aux_block_t is_aux = is_aux_block_t::normal);
+               block_type_t block_type = block_type_t::normal);
 
     // Creates a block, a new child of the given parent.  It gets assigned a block id
     // from one of the unused block id's.
     buf_lock_t(buf_lock_t *parent,
                alt_create_t create,
-               is_aux_block_t is_aux = is_aux_block_t::normal);
+               block_type_t block_type = block_type_t::normal);
 
     ~buf_lock_t();
 
@@ -228,7 +228,10 @@ public:
 
 private:
     void help_construct(buf_parent_t parent, block_id_t block_id, access_t access);
-    void help_construct(buf_parent_t parent, alt_create_t create, is_aux_block_t is_aux);
+    void help_construct(
+        buf_parent_t parent,
+        alt_create_t create,
+        block_type_t block_type);
     void help_construct(buf_parent_t parent, block_id_t block_id, alt_create_t create);
 
     static alt_snapshot_node_t *help_make_child(cache_t *cache, block_id_t child_id);

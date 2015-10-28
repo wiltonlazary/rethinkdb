@@ -20,8 +20,8 @@ index_block_info_t in_memory_index_t::get_block_info(block_id_t id) {
     if (is_aux_block_id(id)) {
         index_aux_block_info_t aux_info = aux_infos_.get(make_aux_block_id_relative(id));
         return index_block_info_t(aux_info.offset,
-                                   repli_timestamp_t::invalid,
-                                   aux_info.ser_block_size);
+                                  repli_timestamp_t::invalid,
+                                  aux_info.ser_block_size);
     } else {
         return infos_.get(id);
     }

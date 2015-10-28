@@ -214,18 +214,14 @@ struct ls_start_existing_fsm_t :
     bool next_starting_up_step() {
         if (start_existing_state == state_read_static_header) {
             // STATE B
-            // TODO: static_header_read now always returns false.
-            if (static_header_read(ser->dbfile,
-                    &ser->static_config,
-                    sizeof(log_serializer_on_disk_static_config_t),
-                    this)) {
-                crash("static_header_read always returns false");
-                // start_existing_state = state_find_metablock;
-            } else {
-                start_existing_state = state_waiting_for_static_header;
-                // STATE B above implies STATE C here
-                return false;
-            }
+            static_header_read(ser->dbfile,
+                &ser->static_config,
+                sizeof(log_serializer_on_disk_static_config_t),
+                &ser->static_header_needs_migration,
+                this);
+            start_existing_state = state_waiting_for_static_header;
+            // STATE B above implies STATE C here
+            return false;
         }
 
         rassert(start_existing_state != state_waiting_for_static_header);
@@ -392,6 +388,7 @@ log_serializer_t::log_serializer_t(dynamic_config_t _dynamic_config, serializer_
       shutdown_callback(NULL),
       shutdown_state(shutdown_not_started),
       state(state_unstarted),
+      static_header_needs_migration(false),
       dbfile(NULL),
       extent_manager(NULL),
       metablock_manager(NULL),
@@ -515,6 +512,19 @@ void log_serializer_t::index_write(new_mutex_in_line_t *mutex_acq,
 
     // All changes are now in the in-memory LBA
     on_writes_reflected();
+
+    // Before we fully commit the write to disk, we must migrate the static header
+    // if necessary.
+    // Note that this is early enough for upgrading from the 1.13 serializer
+    // version to 2.2, since only the format of the LBA changed.
+    // Future serializer format changes might require this step to happen earlier.
+    {
+        new_mutex_acq_t acq(&static_header_migration_mutex);
+        if (static_header_needs_migration) {
+            static_header_needs_migration = false;
+            migrate_static_header(dbfile, sizeof(log_serializer_on_disk_static_config_t));
+        }
+    }
 
     index_write_finish(mutex_acq, &txn, index_writes_io_account.get());
 

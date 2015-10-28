@@ -244,7 +244,7 @@ page_cache_t::~page_cache_t() {
 
     drainer_.reset();
     size_t i = 0;
-    for (auto page : current_pages_) {
+    for (auto &&page : current_pages_) {
         if (i % 256 == 255) {
             coro_t::yield();
         }
@@ -352,14 +352,19 @@ current_page_t *page_cache_t::page_for_block_id(block_id_t block_id) {
 }
 
 current_page_t *page_cache_t::page_for_new_block_id(
-        is_aux_block_t is_aux,
+        block_type_t block_type,
         block_id_t *block_id_out) {
     assert_thread();
     block_id_t block_id;
-    if (is_aux == is_aux_block_t::aux) {
+    switch (block_type) {
+    case block_type_t::aux:
         block_id = free_list_.acquire_aux_block_id();
-    } else {
+        break;
+    case block_type_t::normal:
         block_id = free_list_.acquire_block_id();
+        break;
+    default:
+        unreachable();
     }
     current_page_t *ret = internal_page_for_new_chosen(block_id);
     *block_id_out = block_id;
@@ -390,12 +395,11 @@ current_page_t *page_cache_t::internal_page_for_new_chosen(block_id_t block_id) 
     memset(buf.cache_data(), 0xCD, max_block_size_.value());
 #endif
 
-    auto page_it = current_pages_.find(block_id);
-    guarantee(page_it == current_pages_.end());
-    page_it = current_pages_.insert(page_it, std::make_pair(
+    auto inserted_page = current_pages_.insert(std::make_pair(
         block_id, new current_page_t(block_id, std::move(buf), this)));
+    guarantee(inserted_page.second);
 
-    return page_it->second;
+    return inserted_page.first->second;
 }
 
 cache_account_t page_cache_t::create_cache_account(int priority) {
@@ -437,9 +441,9 @@ current_page_acq_t::current_page_acq_t(page_txn_t *txn,
 
 current_page_acq_t::current_page_acq_t(page_txn_t *txn,
                                        alt_create_t create,
-                                       is_aux_block_t is_aux)
+                                       block_type_t block_type)
     : page_cache_(NULL), the_txn_(NULL) {
-    init(txn, create, is_aux);
+    init(txn, create, block_type);
 }
 
 current_page_acq_t::current_page_acq_t(page_cache_t *page_cache,
@@ -479,14 +483,14 @@ void current_page_acq_t::init(page_txn_t *txn,
 
 void current_page_acq_t::init(page_txn_t *txn,
                               alt_create_t,
-                              is_aux_block_t is_aux) {
+                              block_type_t block_type) {
     txn->page_cache()->assert_thread();
     guarantee(page_cache_ == NULL);
     page_cache_ = txn->page_cache();
     the_txn_ = txn;
     access_ = access_t::write;
     declared_snapshotted_ = false;
-    current_page_ = page_cache_->page_for_new_block_id(is_aux, &block_id_);
+    current_page_ = page_cache_->page_for_new_block_id(block_type, &block_id_);
     dirtied_page_ = false;
     touched_page_ = false;
 

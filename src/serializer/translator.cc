@@ -191,7 +191,7 @@ serializer_multiplexer_t::~serializer_multiplexer_t() {
 
 block_id_t translator_serializer_t::translate_block_id(block_id_t id, int mod_count, int mod_id, config_block_id_t cfgid) {
     if (is_aux_block_id(id)) {
-        return FIRST_AUX_BLOCK_ID | translate_block_id(make_aux_block_id_relative(id), mod_count, mod_id, cfgid);
+        return FIRST_AUX_BLOCK_ID + translate_block_id(make_aux_block_id_relative(id), mod_count, mod_id, cfgid);
     } else {
         return id * mod_count + mod_id + cfgid.subsequent_ser_id();
     }
@@ -212,7 +212,7 @@ int translator_serializer_t::untranslate_block_id_to_mod_id(block_id_t inner_id,
 
 block_id_t translator_serializer_t::untranslate_block_id_to_id(block_id_t inner_id, int mod_count, int mod_id, config_block_id_t cfgid) {
     if (is_aux_block_id(inner_id)) {
-        return FIRST_AUX_BLOCK_ID | untranslate_block_id_to_id(
+        return FIRST_AUX_BLOCK_ID + untranslate_block_id_to_id(
             make_aux_block_id_relative(inner_id), mod_count, mod_id, cfgid);
     } else {
         // (simply dividing by mod_count should be sufficient, but this is cleaner)
