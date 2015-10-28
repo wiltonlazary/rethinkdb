@@ -416,7 +416,12 @@ struct rdb_r_shard_visitor_t : public boost::static_visitor<bool> {
     }
 
     bool operator()(const changefeed_limit_subscribe_t &s) const {
-        return rangey_read(s);
+        bool do_read = rangey_read(s);
+        if (do_read) {
+            auto *out = boost::get<changefeed_limit_subscribe_t>(payload_out);
+            out->current_shard = region;
+        }
+        return do_read;
     }
 
     bool operator()(const changefeed_stamp_t &t) const {
@@ -466,7 +471,7 @@ struct rdb_r_shard_visitor_t : public boost::static_visitor<bool> {
             do_read = rangey_read(rg);
         }
         if (do_read) {
-            auto rg_out = boost::get<rget_read_t>(payload_out);
+            auto *rg_out = boost::get<rget_read_t>(payload_out);
             guarantee(!region.inner.right.unbounded);
             rg_out->current_shard = region;
             rg_out->batchspec = rg_out->batchspec.scale_down(
@@ -1269,8 +1274,8 @@ RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(
         distribution_read_t, max_depth, result_limit, region);
 
 RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(changefeed_subscribe_t, addr, region);
-RDB_IMPL_SERIALIZABLE_5_FOR_CLUSTER(
-    changefeed_limit_subscribe_t, addr, uuid, spec, table, region);
+RDB_IMPL_SERIALIZABLE_6_FOR_CLUSTER(
+    changefeed_limit_subscribe_t, addr, uuid, spec, table, region, current_shard);
 RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(changefeed_stamp_t, addr, region);
 RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(changefeed_point_stamp_t, addr, key);
 

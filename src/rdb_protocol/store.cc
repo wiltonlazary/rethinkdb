@@ -281,6 +281,7 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
             }
             rget_read_t rget;
             rget.region = s.region;
+            rget.current_shard = s.current_shard;
             rget.table_name = s.table;
             rget.batchspec = ql::batchspec_t::all(); // Terminal takes care of stopping.
             if (s.spec.range.sindex) {
@@ -420,6 +421,8 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
             res->result = e;
             return;
         }
+        res->skey_version = ql::skey_version_from_reql_version(
+            sindex_info.mapping_version_info.latest_compatible_reql_version);
 
         if (sindex_info.geo != sindex_geo_bool_t::GEO) {
             res->result = ql::exc_t(

@@ -445,6 +445,7 @@ struct changefeed_limit_subscribe_t {
     std::string table;
     std::map<std::string, ql::wire_func_t> optargs;
     region_t region;
+    boost::optional<region_t> current_shard;
 };
 RDB_DECLARE_SERIALIZABLE(changefeed_limit_subscribe_t);
 

@@ -220,17 +220,17 @@ public:
     }
 
     void finish() {
-        debugf("%p: %s\n", cached, debug_str(cached->state).c_str());
+        // debugf("%p: %s\n", cached, debug_str(cached->state).c_str());
         switch (cached->state) {
         case range_state_t::ACTIVE:
             if (cached->cache.size() != 0) {
                 if (cached_index == 0) {
-                    debugf("-> SAT (no cached values read)\n");
+                    // debugf("-> SAT (no cached values read)\n");
                     cached->state = range_state_t::SATURATED;
                 }
             } else if (fresh && fresh->stream.size() != 0) {
                 if (fresh_index == 0) {
-                    debugf("-> SAT (no fresh values read)\n");
+                    // debugf("-> SAT (no fresh values read)\n");
                     cached->state = range_state_t::SATURATED;
                 }
             } else {
@@ -242,7 +242,7 @@ public:
             // A shard should never be saturated unless it has cached values.
             r_sanity_check(cached->cache.size() != 0);
             if (cached_index != 0) {
-                debugf("-> ACT (cached value read)\n");
+                // debugf("-> ACT (cached value read)\n");
                 cached->state = range_state_t::ACTIVE;
             }
             break;
@@ -303,21 +303,20 @@ private:
 };
 
 raw_stream_t rget_response_reader_t::unshard(rget_read_response_t &&res) {
-    debugf("UNSHARDING\n");
+    // debugf("UNSHARDING\n");
     sorting_t sorting = readgen->get_sorting();
 
     grouped_t<stream_t> *gs = boost::get<grouped_t<stream_t> >(&res.result);
     r_sanity_check(gs != nullptr);
     auto stream = groups_to_batch(gs->get_underlying_map());
-    debugf("stream: %s\n", debug_str(stream).c_str());
-    debugf("!!! 1 active_ranges: %s\n", debug_str(active_ranges).c_str());
+    // debugf("stream: %s\n", debug_str(stream).c_str());
+    // debugf("!!! 1 active_ranges: %s\n", debug_str(active_ranges).c_str());
     if (!active_ranges) {
         active_ranges = new_active_ranges(
             stream, readgen->original_keyrange(res.skey_version),
             readgen->sindex_name() ? is_secondary_t::YES : is_secondary_t::NO);
     }
     debugf("!!! 2 active_ranges: %s\n", debug_str(active_ranges).c_str());
-    // debugf("%s\n", debug_str(*active_ranges).c_str());
 
     raw_stream_t ret;
     // Create the pseudoshards, which represent the cached, fresh, and
@@ -340,9 +339,9 @@ raw_stream_t rget_response_reader_t::unshard(rget_read_response_t &&res) {
                     n_fresh += 1;
                     fresh = &it->second;
                     new_bound = &it->second.last_key;
-                    debugf("new_bound: %s\n", debug_str(*new_bound).c_str());
+                    // debugf("new_bound: %s\n", debug_str(*new_bound).c_str());
                 } else {
-                    debugf("no new bound\n");
+                    // debugf("no new bound\n");
                 }
                 // If we enter this branch we got no data back from this shard
                 // despite issuing a read to it, which means it's exhausted.
@@ -385,9 +384,9 @@ raw_stream_t rget_response_reader_t::unshard(rget_read_response_t &&res) {
             }
         }
     }
-    debugf("pseudoshards: %zu (active/%zu fresh/%zu)\n",
-           pseudoshards.size(), n_active, n_fresh);
-    debugf("!!! 3 active_ranges: %s\n", debug_str(active_ranges).c_str());
+    // debugf("pseudoshards: %zu (active/%zu fresh/%zu)\n",
+    //        pseudoshards.size(), n_active, n_fresh);
+    // debugf("!!! 3 active_ranges: %s\n", debug_str(active_ranges).c_str());
     if (pseudoshards.size() == 0) {
         r_sanity_check(shards_exhausted());
         return ret;
@@ -433,7 +432,7 @@ raw_stream_t rget_response_reader_t::unshard(rget_read_response_t &&res) {
             }
         }
     }
-    debugf("!!! 4 active_ranges: %s\n", debug_str(active_ranges).c_str());
+    // debugf("!!! 4 active_ranges: %s\n", debug_str(active_ranges).c_str());
     // We should have aborted earlier if there was no data.  If this assert ever
     // becomes false, make sure that we can't get into a state where all shards
     // are marked saturated.
@@ -441,7 +440,7 @@ raw_stream_t rget_response_reader_t::unshard(rget_read_response_t &&res) {
 
     // Make sure `active_ranges` is in a clean state.
     for (auto &&ps : pseudoshards) ps.finish();
-    debugf("!!! 5 active_ranges: %s\n", debug_str(active_ranges).c_str());
+    // debugf("!!! 5 active_ranges: %s\n", debug_str(active_ranges).c_str());
     bool seen_active = false;
     bool seen_saturated = false;
     for (auto &&pair : active_ranges->ranges) {
@@ -740,10 +739,8 @@ std::vector<rget_item_t> intersecting_reader_t::do_intersecting_read(
     env_t *env, const read_t &read) {
     rget_read_response_t res = do_read(env, read);
 
-    auto gr = boost::get<intersecting_geo_read_t>(&read.read);
+    auto *gr = boost::get<intersecting_geo_read_t>(&read.read);
     r_sanity_check(gr);
-
-    r_sanity_check(active_ranges);
     r_sanity_check(gr->sindex.region);
 
     return unshard(std::move(res));
@@ -1057,6 +1054,9 @@ void intersecting_readgen_t::sindex_sort(UNUSED std::vector<rget_item_t> *vec) c
 key_range_t intersecting_readgen_t::original_keyrange(skey_version_t ver) const {
     // This is always universe for intersection reads.
     // The real query is in the query geometry.
+    debugf("ORIG: (%d) %s\n",
+           ver,
+           debug_str(datum_range_t::universe().to_sindex_keyrange(ver)).c_str());
     return datum_range_t::universe().to_sindex_keyrange(ver);
 }
 

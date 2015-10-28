@@ -1182,7 +1182,8 @@ boost::optional<uint64_t> datum_t::extract_tag(const store_key_t &key) {
 // but the amount truncated depends on the length of the primary key.  Since we
 // do not know how much was truncated, we have to truncate the maximum amount,
 // then return all matches and filter them out later.
-store_key_t datum_t::truncated_secondary(skey_version_t skey_version, extrema_ok_t extrema_ok) const {
+store_key_t datum_t::truncated_secondary(skey_version_t skey_version,
+                                         extrema_ok_t extrema_ok) const {
     std::string s;
     if (get_type() == R_NUM) {
         num_to_str_key(&s);
