@@ -316,7 +316,7 @@ raw_stream_t rget_response_reader_t::unshard(rget_read_response_t &&res) {
             stream, readgen->original_keyrange(res.skey_version),
             readgen->sindex_name() ? is_secondary_t::YES : is_secondary_t::NO);
     }
-    debugf("!!! 2 active_ranges: %s\n", debug_str(active_ranges).c_str());
+    // debugf("!!! 2 active_ranges: %s\n", debug_str(active_ranges).c_str());
 
     raw_stream_t ret;
     // Create the pseudoshards, which represent the cached, fresh, and
@@ -1054,9 +1054,6 @@ void intersecting_readgen_t::sindex_sort(UNUSED std::vector<rget_item_t> *vec) c
 key_range_t intersecting_readgen_t::original_keyrange(skey_version_t ver) const {
     // This is always universe for intersection reads.
     // The real query is in the query geometry.
-    debugf("ORIG: (%d) %s\n",
-           ver,
-           debug_str(datum_range_t::universe().to_sindex_keyrange(ver)).c_str());
     return datum_range_t::universe().to_sindex_keyrange(ver);
 }
 
