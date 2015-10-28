@@ -93,6 +93,10 @@ void get_table_status(
         status_out->server_shards.clear();
     }
 
+    /* Get the Raft leader for this table. */
+    table_meta_client->get_raft_leader(table_id, interruptor, &status_out->raft_leader);
+    bool raft_leader_in_config = static_cast<bool>(status_out->raft_leader) == false;
+
     /* We need to pay special attention to servers that appear in the config but not in
     the status response. There are two possible reasons: they might be disconnected, or
     they might not be hosting the server currently. In the former case we insert them
@@ -118,6 +122,17 @@ void get_table_status(
                 }
             }
         }
+        if (raft_leader_in_config == false) {
+            raft_leader_in_config |=
+                shard.all_replicas.count(status_out->raft_leader.get()) == 1;
+        }
+    }
+
+    if (raft_leader_in_config == false) {
+        /* We didn't find the Raft leader in the config which means it's either
+        disconnected or no longer hosting the table, thus it's outdated and we set it to
+        none. */
+        status_out->raft_leader = boost::none;
     }
 
     /* Collect server names. We need the name of every server in the config and every
