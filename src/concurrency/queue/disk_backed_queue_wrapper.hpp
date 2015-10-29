@@ -41,9 +41,9 @@ public:
 
     void push(const T &value) {
         write_message_t wm;
-        // Despite that we are serializing this *to disk* disk backed
-        // queues are not intended to persist across restarts, so this
-        // is safe.
+        // Despite that we are serializing this *to disk*, disk backed queues are not
+        // intended to persist across restarts, so using
+        // `cluster_version_t::LATEST_OVERALL` is safe.
         serialize<cluster_version_t::LATEST_OVERALL>(&wm, value);
 
         mutex_t::acq_t acq(&push_mutex);

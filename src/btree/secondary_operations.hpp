@@ -25,13 +25,14 @@ class buf_lock_t;
 struct secondary_index_t {
     secondary_index_t()
         : superblock(NULL_BLOCK_ID),
+          needs_post_construction_range(key_range_t::universe()),
           being_deleted(false),
           id(generate_uuid()) { }
 
     /* A virtual superblock. */
     block_id_t superblock;
 
-    /* Whether the index is still needs to be post constructed, and/or is being deleted.
+    /* Whether the index still needs to be post constructed, and/or is being deleted.
      Note that an index can be in any combination of those states. */
     key_range_t needs_post_construction_range;
     bool being_deleted;

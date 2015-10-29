@@ -15,8 +15,8 @@ works is that we perform a distribution query on construction. Then you can call
 `estimate_progress` with the current traversal key boundary, and we estimate how many
 keys are left to be traversed and divide it by the total number of keys.
 
-You can also serialize this, so you can send the distribution over to a different and
-estimate progress there. */
+You can also serialize this, so you can send the distribution over to a different server
+and estimate progress there. */
 class distribution_progress_estimator_t {
 public:
     distribution_progress_estimator_t(store_view_t *store, signal_t *interruptor);
