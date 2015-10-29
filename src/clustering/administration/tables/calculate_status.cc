@@ -79,7 +79,7 @@ void get_table_status(
     status_out->total_loss = false;
     status_out->config = config;
 
-    /* Determine raft leader for this table */
+    /* Get the Raft leader for this table. */
     table_meta_client->get_raft_leader(table_id, interruptor, &status_out->raft_leader);
 
     /* Send the status query to every server for the table. */
@@ -92,10 +92,6 @@ void get_table_status(
         all_replicas_ready = false;
         status_out->server_shards.clear();
     }
-
-    /* Get the Raft leader for this table. */
-    table_meta_client->get_raft_leader(table_id, interruptor, &status_out->raft_leader);
-    bool raft_leader_in_config = static_cast<bool>(status_out->raft_leader) == false;
 
     /* We need to pay special attention to servers that appear in the config but not in
     the status response. There are two possible reasons: they might be disconnected, or
@@ -122,46 +118,45 @@ void get_table_status(
                 }
             }
         }
-        if (raft_leader_in_config == false) {
-            raft_leader_in_config |=
-                shard.all_replicas.count(status_out->raft_leader.get()) == 1;
-        }
     }
 
-    if (raft_leader_in_config == false) {
-        /* We didn't find the Raft leader in the config which means it's either
-        disconnected or no longer hosting the table, thus it's outdated and we set it to
-        none. */
-        status_out->raft_leader = boost::none;
-    }
-
-    /* Collect server names. We need the name of every server in the config and every
-    server in `server_shards`. */
+    /* Collect server names. We need the name of every server in the config, every
+    server in `server_shards`, and the Raft leader. */
     status_out->server_names = config.server_names;
-    for (auto it = status_out->server_shards.begin();
-              it != status_out->server_shards.end();) {
-        if (status_out->server_names.names.find(it->first) !=
-                status_out->server_names.names.end()) {
-            ++it;
+
+    std::set<server_id_t> server_ids;
+    for (const auto &server_shard : status_out->server_shards) {
+        server_ids.insert(server_shard.first);
+    }
+    if (static_cast<bool>(status_out->raft_leader)) {
+        server_ids.insert(status_out->raft_leader.get());
+    }
+
+    for (const auto &server_id : server_ids) {
+        if (status_out->server_names.names.count(server_id) == 1) {
+            continue;
         } else {
             bool found = false;
-            server_config_client->get_server_config_map()->read_key(it->first,
-            [&](const server_config_versioned_t *sc) {
-                if (sc != nullptr) {
-                    found = true;
-                    status_out->server_names.names.insert(std::make_pair(it->first,
-                        std::make_pair(sc->version, sc->config.name)));
-                }
-            });
-            if (found) {
-                ++it;
-            } else {
-                /* If we can't find the name for one of the servers in the response, then
-                act as though it was disconnected */
-                status_out->server_names.names.insert(std::make_pair(it->first,
-                    std::make_pair(0, name_string_t::guarantee_valid("__disconnected_server__"))));
-                status_out->disconnected.insert(it->first);
-                status_out->server_shards.erase(it++);
+            server_config_client->get_server_config_map()->read_key(
+                server_id,
+                [&](const server_config_versioned_t *server_config) {
+                    if (server_config != nullptr) {
+                        found = true;
+                        status_out->server_names.names.insert(std::make_pair(
+                            server_id,
+                            std::make_pair(
+                                server_config->version, server_config->config.name)));
+                    }
+                });
+            if (!found) {
+                /* If we can't find the name for one of the servers in the response,
+                then act as though it was disconnected. */
+                status_out->server_names.names.insert(std::make_pair(
+                    server_id,
+                    std::make_pair(
+                        0, name_string_t::guarantee_valid("__disconnected_server__"))));
+                status_out->disconnected.insert(server_id);
+                status_out->server_shards.erase(server_id);
             }
         }
     }
