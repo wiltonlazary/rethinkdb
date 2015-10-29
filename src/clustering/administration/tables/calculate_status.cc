@@ -133,31 +133,28 @@ void get_table_status(
     }
 
     for (const auto &server_id : server_ids) {
-        if (status_out->server_names.names.count(server_id) == 1) {
-            continue;
-        } else {
-            bool found = false;
+        if (status_out->server_names.names.count(server_id) == 0) {
             server_config_client->get_server_config_map()->read_key(
                 server_id,
                 [&](const server_config_versioned_t *server_config) {
                     if (server_config != nullptr) {
-                        found = true;
                         status_out->server_names.names.insert(std::make_pair(
                             server_id,
                             std::make_pair(
                                 server_config->version, server_config->config.name)));
+                    } else {
+                        /* If we can't find the name for one of the servers in the
+                        response, then act as though it was disconnected. */
+                        status_out->server_names.names.insert(std::make_pair(
+                            server_id,
+                            std::make_pair(
+                                0,
+                                name_string_t::guarantee_valid(
+                                    "__disconnected_server__"))));
+                        status_out->disconnected.insert(server_id);
+                        status_out->server_shards.erase(server_id);
                     }
                 });
-            if (!found) {
-                /* If we can't find the name for one of the servers in the response,
-                then act as though it was disconnected. */
-                status_out->server_names.names.insert(std::make_pair(
-                    server_id,
-                    std::make_pair(
-                        0, name_string_t::guarantee_valid("__disconnected_server__"))));
-                status_out->disconnected.insert(server_id);
-                status_out->server_shards.erase(server_id);
-            }
         }
     }
 
