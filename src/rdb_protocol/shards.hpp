@@ -354,18 +354,19 @@ public:
     virtual ~accumulator_t();
     // May be overridden as an optimization (currently is for `count`).
     virtual bool uses_val() { return true; }
+    virtual void stop_at_boundary(store_key_t &&) { }
     virtual bool should_send_batch() = 0;
     virtual continue_bool_t operator()(env_t *env,
                                        groups_t *groups,
                                        const store_key_t &key,
                                        // sindex_val may be NULL
                                        const datum_t &sindex_val) = 0;
-    virtual void finish(result_t *out);
+    virtual void finish(continue_bool_t last_cb, result_t *out);
     virtual void unshard(env_t *env, const std::vector<result_t *> &results) = 0;
 protected:
     void mark_finished();
 private:
-    virtual void finish_impl(result_t *out) = 0;
+    virtual void finish_impl(continue_bool_t last_cb, result_t *out) = 0;
     bool finished;
 };
 

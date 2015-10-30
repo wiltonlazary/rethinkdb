@@ -1026,10 +1026,15 @@ public:
             throw *exc;
         }
         stream_t stream = groups_to_batch(gs->get_underlying_map());
-        guarantee(stream.substreams.size() == 1);
-        raw_stream_t *raw_stream = &stream.substreams.begin()->second.stream;
-        std::vector<item_t> item_vec = mangle_sort_truncate_stream(
-            std::move(*raw_stream), is_primary_t::NO, sorting, n);
+        guarantee(stream.substreams.size() <= 1);
+        std::vector<item_t> item_vec;
+        if (stream.substreams.size() == 1) {
+            raw_stream_t *raw_stream = &stream.substreams.begin()->second.stream;
+            item_vec = mangle_sort_truncate_stream(
+                std::move(*raw_stream), is_primary_t::NO, sorting, n);
+        } else {
+            guarantee(item_vec.size() == 0);
+        }
         return item_vec;
     }
 

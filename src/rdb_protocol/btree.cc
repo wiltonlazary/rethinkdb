@@ -604,7 +604,7 @@ public:
         scoped_key_value_t &&keyvalue,
         concurrent_traversal_fifo_enforcer_signal_t waiter)
         THROWS_ONLY(interrupted_exc_t);
-    void finish() THROWS_ONLY(interrupted_exc_t);
+    void finish(continue_bool_t last_cb) THROWS_ONLY(interrupted_exc_t);
 private:
     const rget_io_data_t io; // How do get data in/out.
     job_data_t job; // What to do next (stateful).
@@ -632,8 +632,8 @@ rget_cb_t::rget_cb_t(rget_io_data_t &&_io,
                                         job.env->trace));
 }
 
-void rget_cb_t::finish() THROWS_ONLY(interrupted_exc_t) {
-    job.accumulator->finish(&io.response->result);
+void rget_cb_t::finish(continue_bool_t last_cb) THROWS_ONLY(interrupted_exc_t) {
+    job.accumulator->finish(last_cb, &io.response->result);
 }
 
 // Handle a keyvalue pair.  Returns whether or not we're done early.
@@ -641,21 +641,29 @@ continue_bool_t rget_cb_t::handle_pair(
     scoped_key_value_t &&keyvalue,
     concurrent_traversal_fifo_enforcer_signal_t waiter)
     THROWS_ONLY(interrupted_exc_t) {
+    debugf("HANDLE_PAIR\n");
     sampler->new_sample();
 
     if (bad_init || boost::get<ql::exc_t>(&io.response->result) != NULL) {
+        debugf("ret1\n");
         return continue_bool_t::ABORT;
     }
 
     // Load the key and value.
     store_key_t key(keyvalue.key());
     if (sindex && !sindex->pkey_range.contains_key(ql::datum_t::extract_primary(key))) {
+        debugf("ret2\n");
         return continue_bool_t::CONTINUE;
     }
+    // RSI: this is the wrong check.  We should be checking whether or not it's
+    // long enough that another key might be truncated to be <= to it.
     bool key_truncated = sindex ? ql::datum_t::key_is_truncated(key) : false;
     if (last_truncated_secondary_for_abort
         && (*last_truncated_secondary_for_abort
-            != ql::datum_t::extract_secondary(key_to_unescaped_str(key)))) {
+            != ql::datum_t::extract_truncated_secondary(key_to_unescaped_str(key)))) {
+        key.decrement();
+        job.accumulator->stop_at_boundary(std::move(key));
+        debugf("ret3\n");
         return continue_bool_t::ABORT;
     }
 
@@ -695,6 +703,7 @@ continue_bool_t rget_cb_t::handle_pair(
                 guarantee(sindex_val.has());
             }
             if (!sindex->range.contains(sindex_val)) {
+                debugf("ret4\n");
                 return continue_bool_t::CONTINUE;
             }
         }
@@ -708,16 +717,19 @@ continue_bool_t rget_cb_t::handle_pair(
         }
         // We need lots of extra data for the accumulation because we might be
         // accumulating `rget_item_t`s for a batch.
-        continue_bool_t cont =  (*job.accumulator)(
+        continue_bool_t cont = (*job.accumulator)(
             job.env, &data, std::move(key), std::move(sindex_val));
         //                NULL if no sindex ^^^^^^^^^^^^^^^^^^^^^
         if (key_truncated) {
             if (cont == continue_bool_t::ABORT) {
-                last_truncated_secondary_for_abort = ql::datum_t::extract_secondary(
-                    key_to_unescaped_str(key));
+                debugf("set\n");
+                last_truncated_secondary_for_abort =
+                    ql::datum_t::extract_truncated_secondary(key_to_unescaped_str(key));
             }
+            debugf("ret5\n");
             return continue_bool_t::CONTINUE;
         } else {
+            debugf("RET CONT (%d)\n", cont);
             return cont;
         }
     } catch (const ql::exc_t &e) {
@@ -761,13 +773,14 @@ void rdb_rget_slice(
                        : range.right.key_or_max(),
                    sorting),
         boost::optional<rget_sindex_data_t>());
-    btree_concurrent_traversal(
+    continue_bool_t cb = btree_concurrent_traversal(
         superblock,
         range,
         &callback,
         (!reversed(sorting) ? FORWARD : BACKWARD),
         release_superblock);
-    callback.finish();
+    debugf("cb: %d\n", cb);
+    callback.finish(cb);
 }
 
 void rdb_rget_secondary_slice(
@@ -805,13 +818,14 @@ void rdb_rget_secondary_slice(
                    sorting),
         rget_sindex_data_t(pk_range, sindex_datum_range, sindex_func_reql_version,
                            sindex_info.mapping, sindex_info.multi));
-    btree_concurrent_traversal(
+    continue_bool_t cb = btree_concurrent_traversal(
         superblock,
         sindex_range,
         &callback,
         (!reversed(sorting) ? FORWARD : BACKWARD),
         release_superblock);
-    callback.finish();
+    debugf("cb: %d\n", cb);
+    callback.finish(cb);
 }
 
 void rdb_get_intersecting_slice(
@@ -848,11 +862,11 @@ void rdb_get_intersecting_slice(
                           sindex_func_reql_version, sindex_info.multi),
         query_geometry,
         response);
-    btree_concurrent_traversal(
+    continue_bool_t cb = btree_concurrent_traversal(
         superblock, sindex_range, &callback,
         direction_t::FORWARD,
         release_superblock_t::RELEASE);
-    callback.finish();
+    callback.finish(cb);
 }
 
 void rdb_get_nearest_slice(

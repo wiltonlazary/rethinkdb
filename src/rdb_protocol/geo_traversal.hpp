@@ -139,7 +139,7 @@ public:
             const ql::datum_t &_query_geometry,
             rget_read_response_t *_resp_out);
 
-    void finish() THROWS_ONLY(interrupted_exc_t);
+    void finish(continue_bool_t last_cb) THROWS_ONLY(interrupted_exc_t);
 
 protected:
     bool post_filter(

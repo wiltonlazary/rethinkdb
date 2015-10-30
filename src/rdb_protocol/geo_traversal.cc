@@ -206,8 +206,9 @@ collect_all_geo_intersecting_cb_t::collect_all_geo_intersecting_cb_t(
     init_query(_query_geometry);
 }
 
-void collect_all_geo_intersecting_cb_t::finish() THROWS_ONLY(interrupted_exc_t) {
-    job.accumulator->finish(&response->result);
+void collect_all_geo_intersecting_cb_t::finish(
+    continue_bool_t last_cb) THROWS_ONLY(interrupted_exc_t) {
+    job.accumulator->finish(last_cb, &response->result);
 }
 
 bool collect_all_geo_intersecting_cb_t::post_filter(

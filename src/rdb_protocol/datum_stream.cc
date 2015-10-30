@@ -303,7 +303,7 @@ private:
 };
 
 raw_stream_t rget_response_reader_t::unshard(rget_read_response_t &&res) {
-    // debugf("UNSHARDING\n");
+    debugf("UNSHARDING\n");
     sorting_t sorting = readgen->get_sorting();
 
     grouped_t<stream_t> *gs = boost::get<grouped_t<stream_t> >(&res.result);
@@ -384,9 +384,9 @@ raw_stream_t rget_response_reader_t::unshard(rget_read_response_t &&res) {
             }
         }
     }
-    // debugf("pseudoshards: %zu (active/%zu fresh/%zu)\n",
-    //        pseudoshards.size(), n_active, n_fresh);
-    // debugf("!!! 3 active_ranges: %s\n", debug_str(active_ranges).c_str());
+    debugf("pseudoshards: %zu (active/%zu fresh/%zu)\n",
+           pseudoshards.size(), n_active, n_fresh);
+    debugf("!!! 3 active_ranges: %s\n", debug_str(active_ranges).c_str());
     if (pseudoshards.size() == 0) {
         r_sanity_check(shards_exhausted());
         return ret;

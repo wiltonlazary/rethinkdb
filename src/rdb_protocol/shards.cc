@@ -42,11 +42,11 @@ accumulator_t::accumulator_t() : finished(false) { }
 accumulator_t::~accumulator_t() { }
 void accumulator_t::mark_finished() { finished = true; }
 
-void accumulator_t::finish(result_t *out) {
+void accumulator_t::finish(continue_bool_t last_cb, result_t *out) {
     mark_finished();
     // We fill in the result if there have been no errors.
     if (boost::get<exc_t>(out) == NULL) {
-        finish_impl(out);
+        finish_impl(last_cb, out);
     }
 }
 
@@ -74,7 +74,7 @@ protected:
         : default_val(std::move(_default_val)) { }
     virtual ~grouped_acc_t() { }
 
-    virtual void finish_impl(result_t *out) {
+    virtual void finish_impl(continue_bool_t, result_t *out) {
         *out = grouped_t<T>();
         boost::get<grouped_t<T> >(*out).swap(acc);
         guarantee(acc.size() == 0);
@@ -153,24 +153,26 @@ protected:
         return batcher != NULL && batcher->should_send_batch();
     }
 
-    virtual void finish_impl(result_t *out) {
-        // If we're finishing early, we've read the whole range, so update the
-        // `keyed_stream_t`s to reflect that.  Don't call `should_send_batch`
-        // here because if we're unsharding (and `batcher` is NULL) we don't
-        // want to do this adjustment.
-        if (batcher && !batcher->should_send_batch()) {
-            for (auto &&pair : *get_acc()) {
-                for (auto &&stream_pair : pair.second.substreams) {
-                    // We have to do it this way rather than using the end of
-                    // the range in `stream_pair.first` because we might be
-                    // sorting by an sindex.
-                    stream_pair.second.last_key = !reversed(sorting)
-                        ? store_key_t::max()
-                        : store_key_t::min();
-                }
+    void finish_impl(continue_bool_t last_cb, result_t *out) final {
+        // If we never aborted then we've read the whole range, so update the
+        // `keyed_stream_t`s to reflect that.
+        if (last_cb == continue_bool_t::CONTINUE) {
+            stop_at_boundary(!reversed(sorting)
+                             ? store_key_t::max()
+                             : store_key_t::min());
+        }
+        grouped_acc_t::finish_impl(last_cb, out);
+    }
+
+    void stop_at_boundary(store_key_t &&key) final {
+        for (auto &&pair : *get_acc()) {
+            for (auto &&stream_pair : pair.second.substreams) {
+                // We have to do it this way rather than using the end of
+                // the range in `stream_pair.first` because we might be
+                // sorting by an sindex.
+                stream_pair.second.last_key = std::move(key);
             }
         }
-        grouped_acc_t::finish_impl(out);
     }
 
     virtual bool accumulate(env_t *,
@@ -197,14 +199,14 @@ protected:
         return true;
     }
 
-    virtual datum_t unpack(stream_t *) {
+    datum_t unpack(stream_t *) {
         r_sanity_check(false); // We never unpack a stream.
         unreachable();
     }
 
-    virtual void unshard_impl(env_t *,
-                              stream_t *out,
-                              const std::vector<stream_t *> &streams) {
+    void unshard_impl(env_t *,
+                      stream_t *out,
+                      const std::vector<stream_t *> &streams) final {
         // RSI: we probably have to detect resharding here.
         // debugf("streams size: %zu\n", streams.size());
         r_sanity_check(streams.size() > 0);
