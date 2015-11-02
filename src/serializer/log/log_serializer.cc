@@ -292,18 +292,19 @@ struct ls_start_existing_fsm_t :
                     break;
                 }
 
-                flagged_off64_t offset = ser->lba_index->get_block_offset(next_block_to_reconstruct);
+                flagged_off64_t offset =
+                    ser->lba_index->get_block_offset(next_block_to_reconstruct);
                 if (offset.has_value()) {
                     ser->data_block_manager->mark_live(offset.get_value(),
                         ser->lba_index->get_block_size(next_block_to_reconstruct));
                 }
+
+                ++next_block_to_reconstruct;
                 ++batch;
                 if (batch >= LBA_RECONSTRUCTION_BATCH_SIZE) {
                     call_later_on_this_thread(this);
                     return false;
                 }
-
-                ++next_block_to_reconstruct;
             }
             ser->data_block_manager->end_reconstruct();
             ser->data_block_manager->start_existing(ser->dbfile, &metablock_buffer.data_block_manager_part);
