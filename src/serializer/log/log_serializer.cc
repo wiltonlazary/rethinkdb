@@ -282,12 +282,16 @@ struct ls_start_existing_fsm_t :
 
         if (start_existing_state == state_reconstruct_ongoing) {
             int batch = 0;
-            for (; next_block_to_reconstruct < ser->lba_index->end_aux_block_id(); next_block_to_reconstruct++) {
+            while (true) {
                 // Once we are done with the normal blocks, switch over to the aux blocks.
                 if (!is_aux_block_id(next_block_to_reconstruct)
                     && next_block_to_reconstruct >= ser->lba_index->end_block_id()) {
                     next_block_to_reconstruct = FIRST_AUX_BLOCK_ID;
                 }
+                if (next_block_to_reconstruct >= ser->lba_index->end_aux_block_id()) {
+                    break;
+                }
+
                 flagged_off64_t offset = ser->lba_index->get_block_offset(next_block_to_reconstruct);
                 if (offset.has_value()) {
                     ser->data_block_manager->mark_live(offset.get_value(),
@@ -298,6 +302,8 @@ struct ls_start_existing_fsm_t :
                     call_later_on_this_thread(this);
                     return false;
                 }
+
+                ++next_block_to_reconstruct;
             }
             ser->data_block_manager->end_reconstruct();
             ser->data_block_manager->start_existing(ser->dbfile, &metablock_buffer.data_block_manager_part);

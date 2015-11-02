@@ -331,7 +331,8 @@ void lba_list_t::gc(int lba_shard, auto_drainer_t::lock_t) {
     bool aborted = false;
     const block_id_t end_id = end_block_id();
     const block_id_t aux_end_id = end_aux_block_id();
-    for (block_id_t id = lba_shard; id < aux_end_id; id += LBA_SHARD_FACTOR) {
+    guarantee(aux_end_id >= end_id);
+    for (block_id_t id = lba_shard; ; id += LBA_SHARD_FACTOR) {
         // Once we are done with the regular block IDs, continue with the aux
         // block IDs.
         // This assertion makes sure that we can simply restart at
@@ -339,6 +340,10 @@ void lba_list_t::gc(int lba_shard, auto_drainer_t::lock_t) {
         CT_ASSERT(FIRST_AUX_BLOCK_ID % LBA_SHARD_FACTOR == 0);
         if (!is_aux_block_id(id) && id >= end_id) {
             id = lba_shard + FIRST_AUX_BLOCK_ID;
+        }
+
+        if (id >= aux_end_id) {
+            break;
         }
 
         flagged_off64_t off = get_block_offset(id);
