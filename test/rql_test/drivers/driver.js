@@ -803,6 +803,23 @@ function partial(expected, compOpts) {
     }
 }
 
+function regex(pattern) {
+    regex = new RegExp(pattern)
+    var fun = function regexReturn(other) {
+        console.error('a', pattern, regex.test(other), '---', other)
+        if (regex.exec(other) === null) {
+            return false;
+        }
+        return true;
+    }
+    fun.isErr = true;
+    fun.hasDesc = true;
+    fun.toString = function() {
+        return 'regex: ' + pattern.toString();
+    };
+    return fun;
+}
+
 // Invoked by generated code to demonstrate expected error output
 function err(err_name, err_msg, err_frames) {
     return err_predicate(
