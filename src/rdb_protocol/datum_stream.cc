@@ -836,10 +836,6 @@ key_range_t primary_readgen_t::original_keyrange(skey_version_t) const {
     return original_datum_range.to_primary_keyrange();
 }
 
-key_range_t primary_readgen_t::sindex_keyrange(skey_version_t) const {
-    crash("Cannot call `sindex_keyrange` on a primary readgen (internal server error).");
-}
-
 boost::optional<std::string> primary_readgen_t::sindex_name() const {
     return boost::optional<std::string>();
 }
@@ -945,10 +941,6 @@ key_range_t sindex_readgen_t::original_keyrange(skey_version_t ver) const {
     return original_datum_range.to_sindex_keyrange(ver);
 }
 
-key_range_t sindex_readgen_t::sindex_keyrange(skey_version_t skey_version) const {
-    return original_datum_range.to_sindex_keyrange(skey_version);
-}
-
 boost::optional<std::string> sindex_readgen_t::sindex_name() const {
     return sindex;
 }
@@ -1039,13 +1031,6 @@ key_range_t intersecting_readgen_t::original_keyrange(skey_version_t ver) const 
     // This is always universe for intersection reads.
     // The real query is in the query geometry.
     return datum_range_t::universe().to_sindex_keyrange(ver);
-}
-
-key_range_t intersecting_readgen_t::sindex_keyrange(
-    skey_version_t skey_version) const {
-    // This is always universe for intersection reads.
-    // The real query is in the query geometry.
-    return datum_range_t::universe().to_sindex_keyrange(skey_version);
 }
 
 boost::optional<std::string> intersecting_readgen_t::sindex_name() const {

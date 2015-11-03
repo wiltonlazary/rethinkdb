@@ -445,7 +445,6 @@ public:
         const batchspec_t &batchspec) const = 0;
 
     virtual key_range_t original_keyrange(skey_version_t ver) const = 0;
-    virtual key_range_t sindex_keyrange(skey_version_t skey_version) const = 0;
     virtual boost::optional<std::string> sindex_name() const = 0;
 
     virtual changefeed::keyspec_t::range_t get_range_spec(
@@ -521,8 +520,6 @@ private:
         const batchspec_t &batchspec) const;
     virtual void sindex_sort(std::vector<rget_item_t> *vec) const;
     virtual key_range_t original_keyrange(skey_version_t ver) const;
-    // RSI: can this be removed? vvv
-    virtual key_range_t sindex_keyrange(skey_version_t skey_version) const;
     virtual boost::optional<std::string> sindex_name() const;
 };
 
@@ -538,7 +535,6 @@ public:
 
     virtual void sindex_sort(std::vector<rget_item_t> *vec) const;
     virtual key_range_t original_keyrange(skey_version_t ver) const;
-    virtual key_range_t sindex_keyrange(skey_version_t skey_version) const;
     virtual boost::optional<std::string> sindex_name() const;
 private:
     sindex_readgen_t(
@@ -582,7 +578,6 @@ public:
 
     virtual void sindex_sort(std::vector<rget_item_t> *vec) const;
     virtual key_range_t original_keyrange(skey_version_t ver) const;
-    virtual key_range_t sindex_keyrange(skey_version_t skey_version) const;
     virtual boost::optional<std::string> sindex_name() const;
 
     virtual changefeed::keyspec_t::range_t get_range_spec(
