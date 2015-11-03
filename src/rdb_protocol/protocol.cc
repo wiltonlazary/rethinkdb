@@ -480,9 +480,6 @@ struct rdb_r_shard_visitor_t : public boost::static_visitor<bool> {
                 rg_out->stamp->region = rg_out->region;
             }
         }
-        // debugf("region: %s\n", debug_str(rg.region).c_str());
-        // debugf("hints: %s\n", debug_str(rg.hints).c_str());
-        // debugf("do_read: %d (%s)\n", do_read, debug_str(region).c_str());
         return do_read;
     }
 
