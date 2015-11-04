@@ -656,7 +656,8 @@ protected:
 
     // Returns `true` if there's data in `items`.
     // Overwrite this in an implementation
-    virtual bool load_items(env_t *env, const batchspec_t &batchspec) = 0;
+    virtual std::vector<rget_item_t> load_items(
+        env_t *env, const batchspec_t &batchspec) = 0;
     rget_read_response_t do_read(env_t *env, const read_t &read);
 
     counted_t<real_table_t> table;
@@ -669,11 +670,6 @@ protected:
     boost::optional<active_ranges_t> active_ranges;
     boost::optional<skey_version_t> skey_version;
     std::map<uuid_u, uint64_t> shard_stamps;
-
-    // We need this to handle the SINDEX_CONSTANT case.
-    // RSI: can this go away?
-    std::vector<rget_item_t> items;
-    size_t items_index;
 };
 
 class rget_reader_t : public rget_response_reader_t {
@@ -686,7 +682,7 @@ public:
 protected:
     // Loads new items into the `items` field of rget_response_reader_t.
     // Returns `true` if there's data in `items`.
-    virtual bool load_items(env_t *env, const batchspec_t &batchspec);
+    std::vector<rget_item_t> load_items(env_t *env, const batchspec_t &batchspec) final;
 
 private:
     std::vector<rget_item_t> do_range_read(env_t *env, const read_t &read);
@@ -705,7 +701,7 @@ public:
 protected:
     // Loads new items into the `items` field of rget_response_reader_t.
     // Returns `true` if there's data in `items`.
-    virtual bool load_items(env_t *env, const batchspec_t &batchspec);
+    std::vector<rget_item_t> load_items(env_t *env, const batchspec_t &batchspec) final;
 
 private:
     std::vector<rget_item_t> do_intersecting_read(env_t *env, const read_t &read);
