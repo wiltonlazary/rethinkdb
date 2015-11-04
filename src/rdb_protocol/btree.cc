@@ -641,18 +641,15 @@ continue_bool_t rget_cb_t::handle_pair(
     scoped_key_value_t &&keyvalue,
     concurrent_traversal_fifo_enforcer_signal_t waiter)
     THROWS_ONLY(interrupted_exc_t) {
-    debugf("HANDLE_PAIR\n");
     sampler->new_sample();
 
     if (bad_init || boost::get<ql::exc_t>(&io.response->result) != NULL) {
-        debugf("ret1\n");
         return continue_bool_t::ABORT;
     }
 
     // Load the key and value.
     store_key_t key(keyvalue.key());
     if (sindex && !sindex->pkey_range.contains_key(ql::datum_t::extract_primary(key))) {
-        debugf("ret2\n");
         return continue_bool_t::CONTINUE;
     }
     // RSI: this is the wrong check.  We should be checking whether or not it's
@@ -670,7 +667,6 @@ continue_bool_t rget_cb_t::handle_pair(
             key.increment();
         }
         job.accumulator->stop_at_boundary(std::move(key));
-        debugf("ret3\n");
         return continue_bool_t::ABORT;
     }
 
@@ -710,7 +706,6 @@ continue_bool_t rget_cb_t::handle_pair(
                 guarantee(sindex_val.has());
             }
             if (!sindex->range.contains(sindex_val)) {
-                debugf("ret4\n");
                 return continue_bool_t::CONTINUE;
             }
         }
@@ -729,14 +724,11 @@ continue_bool_t rget_cb_t::handle_pair(
         //                NULL if no sindex ^^^^^^^^^^^^^^^^^^^^^
         if (key_truncated) {
             if (cont == continue_bool_t::ABORT) {
-                debugf("set\n");
                 last_truncated_secondary_for_abort =
                     ql::datum_t::extract_truncated_secondary(key_to_unescaped_str(key));
             }
-            debugf("ret5\n");
             return continue_bool_t::CONTINUE;
         } else {
-            debugf("RET CONT (%d)\n", cont);
             return cont;
         }
     } catch (const ql::exc_t &e) {
@@ -786,7 +778,6 @@ void rdb_rget_slice(
         &callback,
         (!reversed(sorting) ? FORWARD : BACKWARD),
         release_superblock);
-    debugf("cb: %d\n", cb);
     callback.finish(cb);
 }
 
@@ -831,7 +822,6 @@ void rdb_rget_secondary_slice(
         &callback,
         (!reversed(sorting) ? FORWARD : BACKWARD),
         release_superblock);
-    debugf("cb: %d\n", cb);
     callback.finish(cb);
 }
 
