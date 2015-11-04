@@ -543,13 +543,13 @@ public:
                        ql::datumspec_t _datumspec,
                        key_range_t *_active_region_range_inout,
                        reql_version_t wire_func_reql_version,
-                       ql::map_wire_func_t wire_func,
+                       const counted_t<const ql::func_t> &_func,
                        sindex_multi_bool_t _multi)
         : pkey_range(std::move(_pkey_range)),
           datumspec(std::move(_datumspec)),
           active_region_range_inout(_active_region_range_inout),
           func_reql_version(wire_func_reql_version),
-          func(wire_func.compile_wire_func()),
+          func(_func),
           multi(_multi) {
         datumspec.visit<void>(
             [&](const ql::datum_range_t &r) {
@@ -1019,7 +1019,7 @@ void rdb_rget_secondary_slice(
             datumspec,
             &active_region_range,
             sindex_func_reql_version,
-            sindex_info->mapping,
+            sindex_info->compiled_mapping,
             sindex_info->multi),
         sindex_region_range);
 
