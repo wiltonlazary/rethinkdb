@@ -10,9 +10,7 @@
 
 namespace ql {
 
-// RSI: changing this to 1 doesn't seem to work, but we should lower it to 1 now
-// that we cache.
-static const int64_t DEFAULT_MIN_ELS = 8;
+static const int64_t DEFAULT_MIN_ELS = 1;
 static const int64_t DEFAULT_FIRST_SCALEDOWN = 4;
 static const int64_t DEFAULT_MAX_SIZE = MEGABYTE;
 // The maximum duration of a batch in microseconds.
