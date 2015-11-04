@@ -316,7 +316,7 @@ raw_stream_t rget_response_reader_t::unshard(rget_read_response_t &&res) {
             stream, readgen->original_keyrange(res.skey_version),
             readgen->sindex_name() ? is_secondary_t::YES : is_secondary_t::NO);
     }
-    // debugf("!!! 2 active_ranges: %s\n", debug_str(active_ranges).c_str());
+    debugf("!!! 2 active_ranges: %s\n", debug_str(active_ranges).c_str());
 
     raw_stream_t ret;
     // Create the pseudoshards, which represent the cached, fresh, and
@@ -397,9 +397,11 @@ raw_stream_t rget_response_reader_t::unshard(rget_read_response_t &&res) {
         for (;;) {
             pseudoshard_t *best_shard = &pseudoshards[0];
             const store_key_t *best_key = best_shard->best_unpopped_key();
+            debugf("%d %s\n", 0, debug_str(*best_key).c_str());
             for (size_t i = 1; i < pseudoshards.size(); ++i) {
                 pseudoshard_t *cur_shard = &pseudoshards[i];
                 const store_key_t *cur_key = cur_shard->best_unpopped_key();
+                debugf("%zu %s\n", i, debug_str(*cur_key).c_str());
                 if (is_better(*cur_key, *best_key, sorting)) {
                     best_shard = cur_shard;
                     best_key = cur_key;
@@ -407,7 +409,9 @@ raw_stream_t rget_response_reader_t::unshard(rget_read_response_t &&res) {
             }
             if (auto maybe_item = best_shard->pop()) {
                 ret.push_back(*maybe_item);
+                debugf("pushing (new size %zu\n)", ret.size());
             } else {
+                debugf("not pushing (new size %zu\n)", ret.size());
                 break;
             }
         }
@@ -432,7 +436,7 @@ raw_stream_t rget_response_reader_t::unshard(rget_read_response_t &&res) {
             }
         }
     }
-    // debugf("!!! 4 active_ranges: %s\n", debug_str(active_ranges).c_str());
+    debugf("!!! 4 active_ranges: %s\n", debug_str(active_ranges).c_str());
     // We should have aborted earlier if there was no data.  If this assert ever
     // becomes false, make sure that we can't get into a state where all shards
     // are marked saturated.
@@ -440,6 +444,7 @@ raw_stream_t rget_response_reader_t::unshard(rget_read_response_t &&res) {
 
     // Make sure `active_ranges` is in a clean state.
     for (auto &&ps : pseudoshards) ps.finish();
+    debugf("!!! 5 active_ranges: %s\n", debug_str(active_ranges).c_str());
     // debugf("!!! 5 active_ranges: %s\n", debug_str(active_ranges).c_str());
     bool seen_active = false;
     bool seen_saturated = false;
@@ -458,6 +463,7 @@ raw_stream_t rget_response_reader_t::unshard(rget_read_response_t &&res) {
         r_sanity_check(shards_exhausted());
     }
 
+    debugf("RET %zu\n", ret.size());
     return ret;
 }
 
@@ -1247,6 +1253,7 @@ indexed_sort_datum_stream_t::next_raw_batch(env_t *env, const batchspec_t &batch
     profile::sampler_t sampler("Sorting by index.", env->trace);
     while (ret.size() == 0 && !source->is_exhausted()) {
         ret = source->next_batch(env, batchspec);
+        debugf("ret2 size: %zu\n", ret.size());
         std::stable_sort(ret.begin(), ret.end(),
                          std::bind(lt_cmp, env, &sampler, ph::_1, ph::_2));
     }

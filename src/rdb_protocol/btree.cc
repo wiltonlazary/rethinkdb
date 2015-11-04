@@ -661,7 +661,14 @@ continue_bool_t rget_cb_t::handle_pair(
     if (last_truncated_secondary_for_abort
         && (*last_truncated_secondary_for_abort
             != ql::datum_t::extract_truncated_secondary(key_to_unescaped_str(key)))) {
-        key.decrement();
+        // The semantics here are that we're returning the "last considered
+        // key", so since we're aborting early we declare that the last
+        // considered key was the one right before us.
+        if (!reversed(job.sorting)) {
+            key.decrement();
+        } else {
+            key.increment();
+        }
         job.accumulator->stop_at_boundary(std::move(key));
         debugf("ret3\n");
         return continue_bool_t::ABORT;
