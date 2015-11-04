@@ -9,7 +9,7 @@ import binascii
 import json as py_json
 import threading
 
-from .errors import ReqlDriverError, QueryPrinter, T
+from .errors import ReqlDriverError, ReqlDriverCompileError, QueryPrinter, T
 from . import ql2_pb2 as p
 
 pTerm = p.Term.TermType
@@ -53,10 +53,10 @@ def expr(val, nesting_depth=20):
         Convert a Python primitive into a RQL primitive value
     '''
     if not isinstance(nesting_depth, int):
-        raise ReqlDriverError("Second argument to `r.expr` must be a number.")
+        raise ReqlDriverCompileError("Second argument to `r.expr` must be a number.")
 
     if nesting_depth <= 0:
-        raise ReqlDriverError("Nesting depth limit exceeded")
+        raise ReqlDriverCompileError("Nesting depth limit exceeded.")
 
     if isinstance(val, RqlQuery):
         return val
@@ -64,7 +64,7 @@ def expr(val, nesting_depth=20):
         return Func(val)
     elif isinstance(val, (datetime.datetime, datetime.date)):
         if not hasattr(val, 'tzinfo') or not val.tzinfo:
-            raise ReqlDriverError("""Cannot convert %s to ReQL time object
+            raise ReqlDriverCompileError("""Cannot convert %s to ReQL time object
             without timezone information. You can add timezone information with
             the third party module \"pytz\" or by constructing ReQL compatible
             timezone values with r.make_timezone(\"[+-]HH:MM\"). Alternatively,
@@ -126,10 +126,9 @@ class RqlQuery(object):
 
     # Compile this query to a json-serializable object
     def build(self):
-        res = [self.tt, [arg.build() for arg in self.args]]
+        res = [self.tt, self.args]
         if len(self.optargs) > 0:
-            res.append(dict((k, v.build())
-                            for k, v in dict_items(self.optargs)))
+            res.append(self.optargs)
         return res
 
     # The following are all operators and methods that operate on
@@ -279,6 +278,9 @@ class RqlQuery(object):
 
     def keys(self, *args):
         return Keys(self, *args)
+
+    def values(self, *args):
+        return Values(self, *args)
 
     def changes(self, *args, **kwargs):
         return Changes(self, *args, **kwargs)
@@ -597,9 +599,9 @@ class RqlBiCompareOperQuery(RqlBiOperQuery):
                         "Note that `a < b | b < c` <==> `a < (b | b) < c`.\n"
                         "If you really want this behavior, use `.or_` or "
                         "`.and_` instead.")
-                    raise ReqlDriverError(err %
-                                          (self.st,
-                                           QueryPrinter(self).print_query()))
+                    raise ReqlDriverCompileError(err %
+                                                 (self.st,
+                                                  QueryPrinter(self).print_query()))
             except AttributeError:
                 pass  # No infix attribute, so not possible to be an infix bool operator
 
@@ -683,6 +685,20 @@ def recursively_make_hashable(obj):
         return frozenset([(k, recursively_make_hashable(v))
                           for k, v in dict_items(obj)])
     return obj
+
+
+class ReQLEncoder(py_json.JSONEncoder):
+    '''
+        Default JSONEncoder subclass to handle query conversion.
+    '''
+    def __init__(self):
+        py_json.JSONEncoder.__init__(self, ensure_ascii=False, allow_nan=False,
+                                     check_circular=False, separators=(',', ':'))
+
+    def default(self, obj):
+        if isinstance(obj, RqlQuery):
+            return obj.build()
+        return py_json.JSONEncoder.default(self, o)
 
 
 class ReQLDecoder(py_json.JSONDecoder):
@@ -781,9 +797,6 @@ class MakeArray(RqlQuery):
     def compose(self, args, optargs):
         return T('[', T(*args, intsp=', '), ']')
 
-    def do(self, *args):
-        return FunCall(self, *args)
-
 
 class MakeObj(RqlQuery):
     tt = pTerm.MAKE_OBJ
@@ -797,15 +810,11 @@ class MakeObj(RqlQuery):
         self.optargs = {}
         for k, v in dict_items(obj_dict):
             if not isinstance(k, (str, unicode)):
-                raise ReqlDriverError("Object keys must be strings.")
+                raise ReqlDriverCompileError("Object keys must be strings.")
             self.optargs[k] = expr(v)
 
     def build(self):
-        res = {}
-        for k, v in dict_items(self.optargs):
-            k = k.build() if isinstance(k, RqlQuery) else k
-            res[k] = v.build() if isinstance(v, RqlQuery) else v
-        return res
+        return self.optargs
 
     def compose(self, args, optargs):
         return T('r.expr({', T(*[T(repr(k), ': ', v)
@@ -1028,6 +1037,11 @@ class Keys(RqlMethodQuery):
     st = 'keys'
 
 
+class Values(RqlMethodQuery):
+    tt = pTerm.VALUES
+    st = 'values'
+
+
 class Object(RqlMethodQuery):
     tt = pTerm.OBJECT
     st = 'object'
@@ -1092,7 +1106,7 @@ class FunCall(RqlQuery):
     # before passing it down to the base class constructor.
     def __init__(self, *args):
         if len(args) == 0:
-            raise ReqlDriverError("Expected 1 or more arguments but found 0.")
+            raise ReqlDriverCompileError("Expected 1 or more arguments but found 0.")
         args = [func_wrap(args[-1])] + list(args[:-1])
         RqlQuery.__init__(self, *args)
 
@@ -1571,13 +1585,13 @@ class Binary(RqlTopLevelQuery):
         if isinstance(data, RqlQuery):
             RqlTopLevelQuery.__init__(self, data)
         elif isinstance(data, unicode):
-            raise ReqlDriverError("Cannot convert a unicode string to binary, "
-                                  "use `unicode.encode()` to specify the "
-                                  "encoding.")
+            raise ReqlDriverCompileError("Cannot convert a unicode string to binary, "
+                                         "use `unicode.encode()` to specify the "
+                                         "encoding.")
         elif not isinstance(data, bytes):
-            raise ReqlDriverError(("Cannot convert %s to binary, convert the "
-                                   "object to a `bytes` object first.")
-                                  % type(data).__name__)
+            raise ReqlDriverCompileError(("Cannot convert %s to binary, convert the "
+                                          "object to a `bytes` object first.")
+                                         % type(data).__name__)
         else:
             self.base64_data = base64.b64encode(data)
 

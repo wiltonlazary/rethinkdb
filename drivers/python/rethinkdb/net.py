@@ -7,6 +7,7 @@ import socket
 import struct
 import time
 import ssl
+import collections
 try:
     from importlib import import_module
 except ImportError:
@@ -24,7 +25,7 @@ pResponse = p.Response.ResponseType
 pQuery = p.Query.QueryType
 
 from .errors import *
-from .ast import RqlQuery, RqlTopLevelQuery, DB, Repl, ReQLDecoder
+from .ast import RqlQuery, RqlTopLevelQuery, DB, Repl, ReQLDecoder, ReQLEncoder
 
 try:
     from ssl import match_hostname, CertificateError
@@ -64,16 +65,13 @@ class Query(object):
         self.term = term
         self.global_optargs = global_optargs
 
-    def serialize(self):
+    def serialize(self, reql_encoder=ReQLEncoder()):
         message = [self.type]
         if self.term is not None:
-            message.append(self.term.build())
+            message.append(self.term)
         if self.global_optargs is not None:
-            optargs = {}
-            for k, v in dict_items(self.global_optargs):
-                optargs[k] = v.build() if isinstance(v, RqlQuery) else v
-            message.append(optargs)
-        query_str = json.dumps(message, ensure_ascii=False, allow_nan=False).encode('utf-8')
+            message.append(self.global_optargs)
+        query_str = reql_encoder.encode(message).encode('utf-8')
         query_header = struct.pack('<QL', self.token, len(query_str))
         return query_header + query_str
 
@@ -96,7 +94,7 @@ class Response(object):
         if self.type == pResponse.CLIENT_ERROR:
             return ReqlDriverError(self.data[0], query.term, self.backtrace)
         elif self.type == pResponse.COMPILE_ERROR:
-            return ReqlCompileError(self.data[0], query.term, self.backtrace)
+            return ReqlServerCompileError(self.data[0], query.term, self.backtrace)
         elif self.type == pResponse.RUNTIME_ERROR:
             return {
                 pErrorType.INTERNAL: ReqlInternalError,
@@ -142,15 +140,18 @@ class Response(object):
 #     def _empty_error(self):
 #         which returns the appropriate error to be raised when the cursor is empty
 class Cursor(object):
-    def __init__(self, conn_instance, query):
+    def __init__(self, conn_instance, query, first_response, items_type = collections.deque):
         self.conn = conn_instance
         self.query = query
-        self.items = list()
-        self.outstanding_requests = 1
-        self.threshold = 0
+        self.items = items_type()
+        self.outstanding_requests = 0
+        self.threshold = 1
         self.error = None
 
         self.conn._cursor_cache[self.query.token] = self
+
+        self._maybe_fetch_batch()
+        self._extend_internal(first_response)
 
     def close(self):
         if self.error is None:
@@ -171,8 +172,15 @@ class Cursor(object):
     def next(self, wait=True):
         return self._get_next(Cursor._wait_to_timeout(wait))
 
-    def _extend(self, res):
+    def _extend(self, res_buf):
         self.outstanding_requests -= 1
+        self._maybe_fetch_batch()
+
+        res = Response(self.query.token, res_buf,
+                       self.conn._parent._get_json_decoder(self.query.global_optargs))
+        self._extend_internal(res)
+
+    def _extend_internal(self, res):
         self.threshold = len(res.data)
         if self.error is None:
             if res.type == pResponse.SUCCESS_PARTIAL:
@@ -182,7 +190,6 @@ class Cursor(object):
                 self.error = self._empty_error()
             else:
                 self.error = res.make_error(self.query)
-        self._maybe_fetch_batch()
 
         if self.outstanding_requests == 0 and self.error is not None:
             del self.conn._cursor_cache[res.token]
@@ -205,13 +212,12 @@ class Cursor(object):
         # Set an error and extend with a dummy response to trigger any waiters
         if self.error is None:
             self.error = ReqlRuntimeError(message, self.query.term, [])
-            dummy_response = Response(self.query.token,
-                '{"t":%d,"r":[]}' % pResponse.SUCCESS_SEQUENCE)
+            dummy_response = '{"t":%d,"r":[]}' % pResponse.SUCCESS_SEQUENCE
             self._extend(dummy_response)
 
     def _maybe_fetch_batch(self):
         if self.error is None and \
-           len(self.items) <= self.threshold and \
+           len(self.items) < self.threshold and \
            self.outstanding_requests == 0:
             self.outstanding_requests += 1
             self.conn._parent._continue(self)
@@ -239,7 +245,7 @@ class DefaultCursor(Cursor):
             if self.error is not None:
                 raise self.error
             self.conn._read_response(self.query, deadline)
-        return self.items.pop(0)
+        return self.items.popleft()
 
 
 class SocketWrapper(object):
@@ -426,7 +432,7 @@ class ConnectionInstance(object):
             self._header_in_progress = None
 
     def run_query(self, query, noreply):
-        self._socket.sendall(query.serialize())
+        self._socket.sendall(query.serialize(self._parent._get_json_encoder()))
         if noreply:
             return None
 
@@ -437,8 +443,7 @@ class ConnectionInstance(object):
             return maybe_profile(res.data[0], res)
         elif res.type in (pResponse.SUCCESS_PARTIAL,
                           pResponse.SUCCESS_SEQUENCE):
-            cursor = DefaultCursor(self, query)
-            cursor._extend(res)
+            cursor = DefaultCursor(self, query, res)
             return maybe_profile(cursor, res)
         elif res.type == pResponse.WAIT_COMPLETE:
             return None
@@ -472,10 +477,7 @@ class ConnectionInstance(object):
             cursor = self._cursor_cache.get(res_token)
             if cursor is not None:
                 # Construct response
-                res = Response(
-                    res_token, res_buf,
-                    self._parent._get_json_decoder(cursor.query.global_optargs))
-                self._handle_cursor_response(cursor, res)
+                cursor._extend(res_buf)
                 if res_token == token:
                     return res
             elif res_token == token:
@@ -486,9 +488,6 @@ class ConnectionInstance(object):
                 # This response is corrupted or not intended for us
                 self.close(False, None)
                 raise ReqlDriverError("Unexpected response received.")
-
-    def _handle_cursor_response(self, cursor, res):
-        cursor._extend(res)
 
 
 class Connection(object):
@@ -589,6 +588,9 @@ class Connection(object):
 
     def _get_json_decoder(self, format_opts):
         return ReQLDecoder(format_opts)
+
+    def _get_json_encoder(self):
+        return ReQLEncoder()
 
 class DefaultConnection(Connection):
     def __init__(self, *args, **kwargs):
