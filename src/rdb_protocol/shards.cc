@@ -405,7 +405,8 @@ private:
                                       raw_stream_t::iterator> > v;
                 v.reserve(stream->substreams.size());
                 for (auto &&pair : stream->substreams) {
-                    r_sanity_check(pair.second.last_key == store_key_max);
+                    r_sanity_check(pair.second.last_key == store_key_max
+                                   || pair.second.last_key == store_key_min);
                     v.push_back(std::make_pair(pair.second.stream.begin(),
                                                pair.second.stream.end()));
                 }
@@ -424,7 +425,8 @@ private:
                 }
             } else {
                 for (auto &&pair : stream->substreams) {
-                    r_sanity_check(pair.second.last_key == store_key_max);
+                    r_sanity_check(pair.second.last_key == store_key_max
+                                   || pair.second.last_key == store_key_min);
                     for (auto &&val : pair.second.stream) {
                         lst->push_back(std::move(val.data));
                     }
