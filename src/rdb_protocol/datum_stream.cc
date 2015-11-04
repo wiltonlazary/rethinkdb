@@ -213,12 +213,6 @@ public:
     pseudoshard_t(pseudoshard_t &&) noexcept = default;
     pseudoshard_t &operator=(pseudoshard_t &&) = default;
 
-    ~pseudoshard_t() {
-        // RSI: what if an exception is thrown?
-        // RSI: does this make the move constructor wrong?
-        r_sanity_check(finished);
-    }
-
     void finish() {
         switch (cached->state) {
         case range_state_t::ACTIVE:
@@ -398,8 +392,6 @@ raw_stream_t rget_response_reader_t::unshard(rget_read_response_t &&res) {
             }
         }
     } else {
-        // RSI: doing this the smart way where we swap things around inside
-        // pseudoshards causes a crash.  WTF?
         std::vector<size_t> active;
         active.reserve(pseudoshards.size());
         for (size_t i = 0; i < pseudoshards.size(); ++i) {

@@ -652,22 +652,30 @@ continue_bool_t rget_cb_t::handle_pair(
     if (sindex && !sindex->pkey_range.contains_key(ql::datum_t::extract_primary(key))) {
         return continue_bool_t::CONTINUE;
     }
-    // RSI: this is the wrong check.  We should be checking whether or not it's
-    // long enough that another key might be truncated to be <= to it.
-    bool key_truncated = sindex ? ql::datum_t::key_is_truncated(key) : false;
-    if (last_truncated_secondary_for_abort
-        && (*last_truncated_secondary_for_abort
-            != ql::datum_t::extract_truncated_secondary(key_to_unescaped_str(key)))) {
-        // The semantics here are that we're returning the "last considered
-        // key", so since we're aborting early we declare that the last
-        // considered key was the one right before us.
-        if (!reversed(job.sorting)) {
-            key.decrement();
-        } else {
-            key.increment();
+
+    // If the sindex portion of the key is long enough that it might be >= the
+    // length of a truncated sindex, we need to rember the key so we can make
+    // sure not to stop in the middle of a sindex range where some of the values
+    // are out of order because of truncation.
+    bool remember_key_for_sindex_batching = sindex
+        ? (ql::datum_t::extract_secondary(key_to_unescaped_str(key)).size()
+           >= ql::datum_t::max_trunc_size(
+               ql::skey_version_from_reql_version(sindex->func_reql_version)))
+        : false;
+    if (last_truncated_secondary_for_abort) {
+        if (*last_truncated_secondary_for_abort
+            != ql::datum_t::extract_truncated_secondary(key_to_unescaped_str(key))) {
+            // The semantics here are that we're returning the "last considered
+            // key", so since we're aborting early we declare that the last
+            // considered key was the one right before us.
+            if (!reversed(job.sorting)) {
+                key.decrement();
+            } else {
+                key.increment();
+            }
+            job.accumulator->stop_at_boundary(std::move(key));
+            return continue_bool_t::ABORT;
         }
-        job.accumulator->stop_at_boundary(std::move(key));
-        return continue_bool_t::ABORT;
     }
 
     lazy_json_t row(static_cast<const rdb_value_t *>(keyvalue.value()),
@@ -722,7 +730,7 @@ continue_bool_t rget_cb_t::handle_pair(
         continue_bool_t cont = (*job.accumulator)(
             job.env, &data, std::move(key), std::move(sindex_val));
         //                NULL if no sindex ^^^^^^^^^^^^^^^^^^^^^
-        if (key_truncated) {
+        if (remember_key_for_sindex_batching) {
             if (cont == continue_bool_t::ABORT) {
                 last_truncated_secondary_for_abort =
                     ql::datum_t::extract_truncated_secondary(key_to_unescaped_str(key));
