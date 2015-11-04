@@ -249,15 +249,13 @@ public:
                            const datum_t &,
                            const datum_t &)> lt_cmp);
 private:
-virtual std::vector<datum_t>
-next_raw_batch(env_t *env, const batchspec_t &batchspec);
+    virtual std::vector<datum_t>
+    next_raw_batch(env_t *env, const batchspec_t &batchspec);
 
-std::function<bool(env_t *,  // NOLINT(readability/casting)
-                   profile::sampler_t *,
-                   const datum_t &,
-                   const datum_t &)> lt_cmp;
-size_t index;
-std::vector<datum_t> data;
+    std::function<bool(env_t *,  // NOLINT(readability/casting)
+                       profile::sampler_t *,
+                       const datum_t &,
+                       const datum_t &)> lt_cmp;
 };
 
 struct coro_info_t;

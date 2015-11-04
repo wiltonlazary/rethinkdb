@@ -1223,35 +1223,16 @@ indexed_sort_datum_stream_t::indexed_sort_datum_stream_t(
                        profile::sampler_t *,
                        const datum_t &,
                        const datum_t &)> _lt_cmp)
-    : wrapper_datum_stream_t(stream), lt_cmp(_lt_cmp), index(0) { }
+    : wrapper_datum_stream_t(stream), lt_cmp(_lt_cmp) { }
 
 std::vector<datum_t>
 indexed_sort_datum_stream_t::next_raw_batch(env_t *env, const batchspec_t &batchspec) {
     std::vector<datum_t> ret;
-    batcher_t batcher = batchspec.to_batcher();
-
     profile::sampler_t sampler("Sorting by index.", env->trace);
-    while (!batcher.should_send_batch()) {
-        if (index >= data.size()) {
-            if (ret.size() > 0
-                && batchspec.get_batch_type() == batch_type_t::SINDEX_CONSTANT) {
-                // Never read more than one SINDEX_CONSTANT batch if we need to
-                // return an SINDEX_CONSTANT batch.
-                return ret;
-            }
-            index = 0;
-            data = source->next_batch(
-                env, batchspec.with_new_batch_type(batch_type_t::SINDEX_CONSTANT));
-            if (index >= data.size()) {
-                return ret;
-            }
-            std::stable_sort(data.begin(), data.end(),
-                             std::bind(lt_cmp, env, &sampler, ph::_1, ph::_2));
-        }
-        for (; index < data.size() && !batcher.should_send_batch(); ++index) {
-            batcher.note_el(data[index]);
-            ret.push_back(std::move(data[index]));
-        }
+    while (ret.size() == 0 && !source->is_exhausted()) {
+        ret = source->next_batch(env, batchspec);
+        std::stable_sort(ret.begin(), ret.end(),
+                         std::bind(lt_cmp, env, &sampler, ph::_1, ph::_2));
     }
     return ret;
 }
