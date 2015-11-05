@@ -728,7 +728,13 @@ void rdb_r_unshard_visitor_t::operator()(const nearest_geo_read_t &query) {
 }
 
 void rdb_r_unshard_visitor_t::operator()(const rget_read_t &rg) {
-    unshard_range_batch<rget_read_response_t>(rg, rg.sorting);
+    if (rg.hints && count != rg.hints->size()) {
+        response_out->response = rget_read_response_t(
+            ql::exc_t(ql::base_exc_t::OP_FAILED, "Read aborted by unshard operation.",
+                      ql::backtrace_id_t::empty()));
+    } else {
+        unshard_range_batch<rget_read_response_t>(rg, rg.sorting);
+    }
 }
 
 template<class query_response_t, class query_t>

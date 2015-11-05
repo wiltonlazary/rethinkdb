@@ -114,8 +114,6 @@ private:
             guarantee(*res);
             grouped_t<T> *gres = boost::get<grouped_t<T> >(*res);
             guarantee(gres);
-            // `gres`'s ordering doesn't affect things here because we're putting the
-            // values into a parallel map.
             for (auto kv = gres->begin(); kv != gres->end(); ++kv) {
                 vecs[kv->first].push_back(&kv->second);
             }
