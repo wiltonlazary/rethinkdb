@@ -245,7 +245,7 @@ public:
         std::move(cached->cache.begin() + cached_index,
                   cached->cache.end(),
                   std::back_inserter(new_cache));
-        if (fresh) {
+        if (fresh != nullptr) {
             std::move(fresh->stream.begin() + fresh_index,
                       fresh->stream.end(),
                       std::back_inserter(new_cache));
