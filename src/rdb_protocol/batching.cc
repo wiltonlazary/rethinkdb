@@ -219,6 +219,7 @@ batcher_t batchspec_t::to_batcher() const {
         end_time = std::max(start_time + (max_dur / first_scaledown_factor),
                             cur_time + (max_dur / (first_scaledown_factor * 2)));
         break;
+    case batch_type_t::SINDEX_CONSTANT: // fallthru
     case batch_type_t::TERMINAL:
         end_time = std::numeric_limits<decltype(end_time)>::max();
         break;

@@ -28,9 +28,13 @@ enum class batch_type_t {
     // insert.  Ignores latency caps because the latency the user encounters is
     // determined by bandwidth instead.
     TERMINAL = 2,
+    // If we're ordering by an sindex, get a batch with a constant value for
+    // that sindex.  We sometimes need a batch with that invariant for sorting.
+    // (This replaces that SORTING_HINT_NEXT stuff.)
+    SINDEX_CONSTANT = 3
 };
 ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(
-    batch_type_t, int8_t, batch_type_t::NORMAL, batch_type_t::TERMINAL);
+    batch_type_t, int8_t, batch_type_t::NORMAL, batch_type_t::SINDEX_CONSTANT);
 
 enum ignore_latency_t { NO, YES };
 
