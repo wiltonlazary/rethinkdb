@@ -449,7 +449,8 @@ rget_response_reader_t::rget_response_reader_t(
     : table(_table),
       started(false),
       readgen(std::move(_readgen)),
-      last_read_start(store_key_t::min()) { }
+      last_read_start(store_key_t::min()),
+      items_index(0) { }
 
 void rget_response_reader_t::add_transformation(transform_variant_t &&tv) {
     r_sanity_check(!started);
@@ -486,18 +487,82 @@ void rget_response_reader_t::accumulate(env_t *env,
 std::vector<datum_t> rget_response_reader_t::next_batch(
     env_t *env, const batchspec_t &batchspec) {
     started = true;
-    std::vector<rget_item_t> items = load_items(env, batchspec);
-    std::vector<datum_t> res;
-    res.reserve(items.size());
-    for (auto &&item : items) {
-        res.push_back(std::move(item.data));
+    if (!load_items(env, batchspec)) {
+        return std::vector<datum_t>();
     }
-    r_sanity_check(res.size() != 0 || shards_exhausted());
+    r_sanity_check(items_index < items.size());
+
+    std::vector<datum_t> res;
+    switch (batchspec.get_batch_type()) {
+    case batch_type_t::NORMAL: // fallthru
+    case batch_type_t::NORMAL_FIRST: // fallthru
+    case batch_type_t::TERMINAL: {
+        res.reserve(items.size() - items_index);
+        for (; items_index < items.size(); ++items_index) {
+            res.push_back(std::move(items[items_index].data));
+        }
+    } break;
+    case batch_type_t::SINDEX_CONSTANT: {
+        ql::datum_t sindex = std::move(items[items_index].sindex_key);
+        store_key_t key = std::move(items[items_index].key);
+        res.push_back(std::move(items[items_index].data));
+        items_index += 1;
+
+        bool maybe_more_with_sindex = true;
+        while (maybe_more_with_sindex) {
+            for (; items_index < items.size(); ++items_index) {
+                if (sindex.has()) {
+                    r_sanity_check(items[items_index].sindex_key.has());
+                    if (items[items_index].sindex_key != sindex) {
+                        break; // batch is done
+                    }
+                } else {
+                    r_sanity_check(!items[items_index].sindex_key.has());
+                    if (items[items_index].key != key) {
+                        break;
+                    }
+                }
+                res.push_back(std::move(items[items_index].data));
+
+                rcheck_datum(
+                    res.size() <= env->limits().array_size_limit(), base_exc_t::RESOURCE,
+                    strprintf("Too many rows (> %zu) with the same value "
+                              "for index `%s`:\n%s",
+                              env->limits().array_size_limit(),
+                              opt_or(readgen->sindex_name(), "").c_str(),
+                              // This is safe because you can't have duplicate
+                              // primary keys, so they will never exceed the
+                              // array limit.
+                              sindex.trunc_print().c_str()));
+            }
+            if (items_index >= items.size()) {
+                // If we consumed the whole batch without finding a new sindex,
+                // we might have more rows with the same sindex in the next
+                // batch, which we promptly load.
+                maybe_more_with_sindex = load_items(env, batchspec);
+            } else {
+                maybe_more_with_sindex = false;
+            }
+        }
+    } break;
+    default: unreachable();
+    }
+
+    if (items_index >= items.size()) { // free memory immediately
+        items_index = 0;
+        std::vector<rget_item_t> tmp;
+        tmp.swap(items);
+    }
+
+    if (res.size() == 0) {
+        r_sanity_check(shards_exhausted());
+    }
+
     return res;
 }
 
 bool rget_response_reader_t::is_finished() const {
-    return shards_exhausted();
+    return shards_exhausted() && items_index >= items.size();
 }
 
 struct last_read_start_visitor_t : public boost::static_visitor<store_key_t> {
@@ -578,11 +643,10 @@ rget_reader_t::do_range_read(env_t *env, const read_t &read) {
     return unshard(std::move(res));
 }
 
-std::vector<rget_item_t> rget_reader_t::load_items(
-    env_t *env, const batchspec_t &batchspec) {
+bool rget_reader_t::load_items(env_t *env, const batchspec_t &batchspec) {
     started = true;
-    std::vector<rget_item_t> items;
-    while (items.size() == 0 && !shards_exhausted()) {
+    while (items_index >= items.size() && !shards_exhausted()) {
+        items_index = 0;
         // `active_range` is guaranteed to be full after the `do_range_read`,
         // because `do_range_read` is responsible for updating the active range.
         items = do_range_read(
@@ -591,7 +655,7 @@ std::vector<rget_item_t> rget_reader_t::load_items(
         r_sanity_check(active_ranges);
         readgen->sindex_sort(&items);
     }
-    return items;
+    return items_index < items.size();
 }
 
 intersecting_reader_t::intersecting_reader_t(
@@ -619,16 +683,16 @@ void intersecting_reader_t::accumulate_all(env_t *env, eager_acc_t *acc) {
     acc->add_res(env, &resp.result, sorting_t::UNORDERED);
 }
 
-std::vector<rget_item_t> intersecting_reader_t::load_items(
-    env_t *env, const batchspec_t &batchspec) {
+bool intersecting_reader_t::load_items(env_t *env, const batchspec_t &batchspec) {
     started = true;
-    std::vector<rget_item_t> items;
-    while (items.size() == 0 && !shards_exhausted()) { // read some more
+    while (items_index >= items.size() && !shards_exhausted()) { // read some more
         std::vector<rget_item_t> unfiltered_items = do_intersecting_read(
             env, readgen->next_read(active_ranges, stamp, transforms, batchspec));
         if (unfiltered_items.empty()) {
             r_sanity_check(shards_exhausted());
         } else {
+            items_index = 0;
+            items.clear();
             items.reserve(unfiltered_items.size());
             for (size_t i = 0; i < unfiltered_items.size(); ++i) {
                 r_sanity_check(unfiltered_items[i].key.size() > 0);
@@ -644,7 +708,7 @@ std::vector<rget_item_t> intersecting_reader_t::load_items(
             }
         }
     }
-    return items;
+    return items_index < items.size();
 }
 
 std::vector<rget_item_t> intersecting_reader_t::do_intersecting_read(
