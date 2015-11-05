@@ -392,8 +392,9 @@ private:
 enum class range_state_t { ACTIVE, SATURATED, EXHAUSTED };
 void debug_print(printf_buffer_t *buf, const range_state_t &rs);
 struct hash_range_with_cache_t {
-    // We store a range instead of just a `store_key_t` because this range is
-    // only a restriction of the indexed range for primary key reads.
+    // This is the range of values that we have yet to read from the shard.  We
+    // store a range instead of just a `store_key_t` because this range is only
+    // a restriction of the indexed range for primary key reads.
     key_range_t key_range;
     raw_stream_t cache; // Entries we weren't able to unshard.
     range_state_t state;
