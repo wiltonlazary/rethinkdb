@@ -220,7 +220,7 @@ public:
                 if (cached_index == 0) {
                     cached->state = range_state_t::SATURATED;
                 }
-            } else if (fresh && fresh->stream.size() != 0) {
+            } else if (fresh != nullptr && fresh->stream.size() != 0) {
                 if (fresh_index == 0) {
                     cached->state = range_state_t::SATURATED;
                 }
@@ -257,7 +257,7 @@ public:
     const store_key_t *best_unpopped_key() const {
         if (cached_index < cached->cache.size()) {
             return &cached->cache[cached_index].key;
-        } else if (fresh && fresh_index < fresh->stream.size()) {
+        } else if (fresh != nullptr && fresh_index < fresh->stream.size()) {
             return &fresh->stream[fresh_index].key;
         } else {
             if (!reversed(sorting)) {
@@ -273,7 +273,7 @@ public:
     }
 
     boost::optional<rget_item_t> pop() {
-        if (cached && cached_index < cached->cache.size()) {
+        if (cached_index < cached->cache.size()) {
             return std::move(cached->cache[cached_index++]);
         } else if (fresh != nullptr && fresh_index < fresh->stream.size()) {
             return std::move(fresh->stream[fresh_index++]);
