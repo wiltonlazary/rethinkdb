@@ -389,7 +389,18 @@ private:
     std::vector<datum_t> args;
 };
 
+// Every shard is in a particular state.  ACTIVE means we should read more data
+// from it, SATURATED means that there's more data to read but we didn't
+// actually use any of the data we read last time so don't bother issuing
+// another read, and `EXHAUSTED` means there's no more to read.  (Generally when
+// iterating over a stream ordered by the primary key, range shards we've
+// already read will be EXHAUSTED, the range shard we're currently reading will
+// be ACTIVE, and the range shards we've yet to read will be SATURATED.)
+//
+// We track these on a per-hash-shard basis because it's easier, but we decide
+// whether or not to issue reads on a per-range-shard basis.
 enum class range_state_t { ACTIVE, SATURATED, EXHAUSTED };
+
 void debug_print(printf_buffer_t *buf, const range_state_t &rs);
 struct hash_range_with_cache_t {
     // This is the range of values that we have yet to read from the shard.  We
