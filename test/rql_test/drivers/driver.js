@@ -554,7 +554,7 @@ function stringValue(value) {
         return value.name;
     } else {
 		try {
-			return JSON.stringify(value); // ToDo: handle nested values properly
+			return JSON.stringify(value);
 		} catch (err) {
 			try {
 				return value.toString();

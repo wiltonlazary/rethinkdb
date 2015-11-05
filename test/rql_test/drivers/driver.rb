@@ -211,11 +211,15 @@ def cmp_test(expected, result, testopts={}, ordered=true, partial=false)
   end
   
   # - unpack Bags
-  
   if expected.is_a?(Bag)
     ordered = expected.ordered
     partial = expected.partial
     expected = expected.value
+  end
+  
+  # - strip assertion messages from any strings
+  if result.is_a?(String) then
+    result = result.sub(/\nFailed assertion:(.|\n)*/, "")
   end
   
   # -
@@ -238,7 +242,6 @@ def cmp_test(expected, result, testopts={}, ordered=true, partial=false)
     if not result.is_a?(String)
       return -1
     end
-    
     return expected.match(result) ? 0 : 1
   
   when expected.is_a?(Array)
@@ -381,13 +384,8 @@ def cmp_test(expected, result, testopts={}, ordered=true, partial=false)
     else
       return result <=> expected
     end
-  
+
   else
-    # Clean strings
-    if result.is_a?(String) then
-      result = result.sub(/\nFailed assertion:(.|\n)*/, "")
-    end
-    
     begin
       cmp = result <=> expected
       return cmp if cmp != nil
@@ -502,6 +500,7 @@ def test(src, expected, name, opthash=nil, testopts=nil)
     end
 
     # -- process the result
+
     return check_result(name, src, result, expected, testopts)
 
   rescue StandardError, SyntaxError => err
