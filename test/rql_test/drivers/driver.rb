@@ -56,8 +56,7 @@ $defines = binding
 NoError = "<no error>"
 AnyUUID = "<any uuid>"
 Err = Struct.new(:class, :message, :backtrace)
-Bag = Struct.new(:items, :partial)
-PartialHash = Struct.new(:hash, :partial)
+Bag = Struct.new(:value, :ordered, :partial)
 
 # --
 
@@ -76,21 +75,37 @@ def show(x)
   return (PP.pp x, "").chomp
 end
 
-def bag(list, partial=true)
-  Bag.new(list, partial)
+def bag(expected, ordered=nil, partial=nil)
+  if ordered.nil?
+    ordered = false
+  end
+  if partial.nil?
+    partial = false
+  end
+  
+  if expected.kind_of?(Array) or expected.kind_of?(Hash)
+    Bag.new(expected, ordered, partial)
+  elsif expected.kind_of?(Bag)
+    Bag.new(expected.items, ordered, partial)
+  else
+    raise("bag() can only handle items ot type Hash, Array, or Bag. Got: #{expected.class}")
+  end
 end
 
-def partial(expected, partial=true)
-  if expected.kind_of?(Array)
-    bag(expected, partial)
+def partial(expected, ordered=nil, partial=nil)
+  if ordered.nil?
+    ordered = false
+  end
+  if partial.nil?
+    partial = true
+  end
+  
+  if expected.kind_of?(Array) or expected.kind_of?(Hash)
+    Bag.new(expected, ordered, partial)
   elsif expected.kind_of?(Bag)
-    bag(expected.items, partial)
-  elsif expected.kind_of?(Hash)
-    PartialHash.new(expected, partial)
-  elsif expected.kind_of?(PartialHash)
-    PartialHash.new(expected.hash, partial)
+    Bag.new(expected.items, ordered, partial)
   else
-    raise("partial() can only handle items ot type Hash, Array, Bag, or PartialHash. Got: #{expected.class}")
+    raise("partial() can only handle items ot type Hash, Array, or Bag. Got: #{expected.class}")
   end
 end
 
@@ -166,9 +181,10 @@ def float_cmp(value)
   return Number.new(value)
 end
 
-def cmp_test(expected, result, testopts={}, partial=false)
-  print_debug("\tCompare - expected: <<#{show(expected)}>> (#{expected.class}) actual: <<#{show(result)}>>")
+def cmp_test(expected, result, testopts={}, ordered=true, partial=false)
+  print_debug("\tCompare - expected: <<#{show(expected)}>> (#{expected.class}) actual: <<#{show(result)}>> (#{result.class})")
   
+  # - NoError
   if expected.object_id == NoError.object_id
     if result.is_a?(Err) || result.is_a?(Exception) || result.is_a?(RethinkDB::ReqlError)
       puts result
@@ -177,7 +193,8 @@ def cmp_test(expected, result, testopts={}, partial=false)
     end
     return 0
   end
-
+  
+  # - nils in expected or result
   if expected.nil? and result.nil?
     return 0
   elsif result.nil?
@@ -185,16 +202,23 @@ def cmp_test(expected, result, testopts={}, partial=false)
   elsif expected.nil?
     return -1
   end
-
+  
+  # - AnyUUID
   if expected.object_id == AnyUUID.object_id
     return -1 if not result.kind_of? String
     return 0 if result.match /[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}/
     return 1
   end
-
-  if result.is_a?(String) then
-    result = result.sub(/\nFailed assertion:(.|\n)*/, "")
+  
+  # - unpack Bags
+  
+  if expected.is_a?(Bag)
+    ordered = expected.ordered
+    partial = expected.partial
+    expected = expected.value
   end
+  
+  # -
   
   case
   when expected.is_a?(Err) || expected.is_a?(Exception)
@@ -208,58 +232,129 @@ def cmp_test(expected, result, testopts={}, partial=false)
     else
       return result.class.name <=> expected.class.name
     end
-
-  when expected.is_a?(Array) || expected.is_a?(Bag)
-    if expected.is_a?(Bag)
-      partial = expected.partial
-      expected = expected.items
+  
+  when expected.is_a?(Regexp)
+    # short circuit if result is not a String
+    if not result.is_a?(String)
+      return -1
     end
+    
+    return expected.match(result) ? 0 : 1
+  
+  when expected.is_a?(Array)
+    # short circuit if result is not an array
     if not result.is_a?(Array)
-      return -1 # short circuit if not an array
+      return -1
     end
-    if partial
-      if result.length < expected.length
-        return -1 # short circuit if it is too short
+    
+    # short circut on lengths
+    if expected.length == 0
+      if partial or result.length == 0
+        return 0
+      else
+        return -1
       end
-      remaining = expected.dup
-      for straw in result
-        for needle in remaining
-          if cmp_test(needle, straw, testopts, partial) == 0
-            remaining.delete(needle)
-            break
+    end
+    if not(partial) && expected.length != result.length
+      return -1
+    end
+    
+    if ordered
+      haystack = result.each
+      for needle in expected
+        begin
+          straw = haystack.next
+        rescue StopIteration
+          return -1 # ran out of straw before finding all the needles
+        end
+        while cmp_test(needle, straw, testopts=testopts, ordered=ordered, partial=partial) != 0
+          if not partial
+            return -1
+          end
+          begin
+            straw = haystack.next
+          rescue StopIteration
+            return -1 # ran out of straw before finding all the needles
           end
         end
       end
+      if not partial
+        begin
+          haystack.next
+        rescue StopIteration
+          # looks good
+        else
+          return -1 # ran out of needles before straw
+        end
+      end
     else
-      cmp = result.length <=> expected.length
-      return cmp if cmp != 0 # short circuit if lengths don't match
-      expected.zip(result) { |needle, straw|
-        cmp = cmp_test(needle, straw, testopts, partial)
-        return cmp if cmp != 0
-      }
+      # non-ordered
+      needles = expected.dup
+      for straw in result
+        if needles.length == 0
+          if partial
+            return 0
+          else
+            return -1 # ran out of needles before straw
+          end
+        end
+        if needles.each do |needle|
+          if cmp_test(needle, straw, testopts=testopts, ordered=ordered, partial=partial) == 0
+            needles.delete_at(needles.find_index(needle))
+            break needle # bypass the `end.nil?` below
+          end
+        end.nil?
+          if not partial
+            return -1 # no match for this straw
+          end
+        end
+      end
+      if needles.length != 0
+        return -1
+      end
     end
     return 0
 
-  when expected.is_a?(Hash) || expected.is_a?(PartialHash)
-    if expected.is_a?(PartialHash)
-      partial = expected.partial
-      expected = expected.hash
-    end
+  when expected.is_a?(Hash)
     if not result.is_a?(Hash)
       return -1 # short circuit if not a hash
     end
-    if partial
-        if not Set.new(expected.keys).subset?(Set.new(result.keys))
+    
+    # short circut on lengths
+    if expected.length == 0
+      if partial or result.length == 0
+        return 0
+      else
+        return -1
+      end
+    end
+    if not(partial) && expected.length != result.length
+      return expected.length, result.length
+    end
+    
+    # compare the items
+    needles = expected.dup
+    result.each{ |strawKey, strawValue|
+      if needles.length == 0
+        if partial
+          return 0
+        else
           return -1
         end
-    else
-        cmp = result.keys.sort <=> expected.keys.sort
-        return cmp if cmp != 0
-    end
-    expected.each_key { |key|
-      cmp = cmp_test(expected[key], result[key], testopts)
-      return cmp if cmp != 0
+      end
+      if needles.has_key?(strawKey)
+        if cmp_test(needles[strawKey], strawValue, testopts=testopts, ordered=ordered, partial=partial) != 0
+          return -1
+        else
+          needles.delete(strawKey)
+        end
+      elsif not partial
+        return -1 # not everything in the hastack is a needle
+      end
     }
+    if needles.length != 0
+      return -1
+    end
     return 0
   
   when expected.is_a?(Float) || expected.is_a?(Fixnum) || expected.is_a?(Number)
@@ -286,8 +381,13 @@ def cmp_test(expected, result, testopts={}, partial=false)
     else
       return result <=> expected
     end
-
+  
   else
+    # Clean strings
+    if result.is_a?(String) then
+      result = result.sub(/\nFailed assertion:(.|\n)*/, "")
+    end
+    
     begin
       cmp = result <=> expected
       return cmp if cmp != nil
@@ -435,7 +535,8 @@ def setup_table(table_variable_name, table_name, db_name="test")
     end
     res = r.db(db_name).table_create(table_name).run($reql_conn)
     raise "Unable to create table #{db_name}.#{table_name}: #{res}" unless res["tables_created"] == 1
-
+    r.db(db_name).table(table_name).wait().run($reql_conn)
+    
     print_debug("Created table: #{db_name}.#{table_name}, will be: #{table_variable_name}")
     $stdout.flush
 
@@ -479,7 +580,7 @@ def check_result(name, src, result, expected, testopts={})
     end
     
     # - read out cursors
-    if (result.kind_of?(RethinkDB::Cursor) || result.kind_of?(Enumerator)) && not(expected == NoError || testopts.kas_key?('variable'))
+    if (result.kind_of?(RethinkDB::Cursor) || result.kind_of?(Enumerator)) && not(expected == NoError || testopts.has_key?('variable'))
       begin
         result = result.to_a
       rescue Exception => err
