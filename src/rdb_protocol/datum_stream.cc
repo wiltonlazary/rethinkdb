@@ -329,8 +329,6 @@ raw_stream_t rget_response_reader_t::unshard(rget_read_response_t &&res) {
                     fresh = &it->second;
                     new_bound = &it->second.last_key;
                 }
-                // If we enter this branch we got no data back from this shard
-                // despite issuing a read to it, which means it's exhausted.
                 if (!reversed(sorting)) {
                     if (new_bound != nullptr && *new_bound != store_key_max) {
                         hash_pair.second.key_range.left = *new_bound;
