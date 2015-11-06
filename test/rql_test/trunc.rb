@@ -6,9 +6,6 @@ $port ||= (ARGV[0] || ENV['RDB_DRIVER_PORT'] || raise('driver port not supplied'
 ARGV.clear
 $c = r.connect(port: $port).repl
 
-a_prefix = 'A'*300
-z_prefix = 'Z'*300
-
 # We do it this way because one of the bugs we're testing for is where
 # the `N` prefix to the primary key accidentally gets compared to the
 # content of the field.
