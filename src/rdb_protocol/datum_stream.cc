@@ -87,16 +87,9 @@ store_key_t truncate_and_get_left(active_ranges_t *ranges) {
     for (auto &&pair: ranges->ranges) {
         for (auto &&hash_pair : pair.second.hash_ranges) {
             if (hash_pair.second.cache.size() != 0) {
-                // If we truncate the cache for an exhausted shard, it's no
-                // longer exhausted.
-                switch (hash_pair.second.state) {
-                case range_state_t::ACTIVE: // fallthru
-                case range_state_t::SATURATED: break;
-                case range_state_t::EXHAUSTED:
-                    hash_pair.second.state = range_state_t::ACTIVE;
-                    break;
-                default: unreachable();
-                }
+                // If we truncate the cache for a shard, it's always active.
+                hash_pair.second.state = range_state_t::ACTIVE;
+                // This should only ever be called when iterating left to right.
                 hash_pair.second.key_range.left = hash_pair.second.cache[0].key;
                 hash_pair.second.cache.clear();
             }
@@ -464,6 +457,7 @@ bool rget_response_reader_t::add_stamp(changefeed_stamp_t _stamp) {
 }
 
 boost::optional<active_state_t> rget_response_reader_t::truncate_and_get_active_state() {
+    r_sanity_check(readgen->get_sorting() == sorting_t::ASCENDING);
     if (!stamp || !active_ranges || shard_stamps.size() == 0) return boost::none;
     return active_state_t{
         key_range_t(key_range_t::closed, last_read_start,
