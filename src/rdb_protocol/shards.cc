@@ -81,9 +81,9 @@ protected:
     }
 private:
     virtual continue_bool_t operator()(env_t *env,
-                                         groups_t *groups,
-                                         const store_key_t &key,
-                                         const datum_t &sindex_val) {
+                                       groups_t *groups,
+                                       const store_key_t &key,
+                                       const datum_t &sindex_val) {
         for (auto it = groups->begin(); it != groups->end(); ++it) {
             auto pair = acc.insert(std::make_pair(it->first, default_val));
             auto t_it = pair.first;
@@ -398,10 +398,25 @@ private:
             // `last_key` because whoever is using `to_array` should be calling
             // `accumulate_all`.
             if (sorting != sorting_t::UNORDERED) {
+                boost::optional<bool> is_sindex_sort;
                 std::vector<std::pair<raw_stream_t::iterator,
                                       raw_stream_t::iterator> > v;
                 v.reserve(stream->substreams.size());
                 for (auto &&pair : stream->substreams) {
+                    if (pair.second.stream.size() > 0) {
+                        bool is_sindex = pair.second.stream[0].sindex_key.get_type()
+                            != datum_t::UNINITIALIZED;
+                        if (is_sindex) {
+                            std::stable_sort(pair.second.stream.begin(),
+                                             pair.second.stream.end(),
+                                             sindex_compare_t(sorting));
+                        }
+                        if (is_sindex_sort) {
+                            r_sanity_check(*is_sindex_sort == is_sindex);
+                        } else {
+                            is_sindex_sort = is_sindex;
+                        }
+                    }
                     r_sanity_check(pair.second.last_key == store_key_max
                                    || pair.second.last_key == store_key_min);
                     v.push_back(std::make_pair(pair.second.stream.begin(),
@@ -411,8 +426,15 @@ private:
                     raw_stream_t::iterator *best = nullptr;
                     for (auto &&pair : v) {
                         if (pair.first != pair.second) {
-                            if (best == nullptr
-                                || is_better(pair.first->key, (*best)->key, sorting)) {
+                            r_sanity_check(is_sindex_sort);
+                            if ((best == nullptr)
+                                || (*is_sindex_sort
+                                    ? is_better(pair.first->sindex_key,
+                                                (*best)->sindex_key,
+                                                sorting)
+                                    : is_better(pair.first->key,
+                                                (*best)->key,
+                                                sorting))) {
                                 best = &pair.first;
                             }
                         }

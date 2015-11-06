@@ -53,6 +53,27 @@ struct rget_item_t {
 };
 RDB_DECLARE_SERIALIZABLE(rget_item_t);
 
+class sindex_compare_t {
+public:
+    explicit sindex_compare_t(sorting_t _sorting)
+        : sorting(_sorting) { }
+    bool operator()(const rget_item_t &l, const rget_item_t &r) {
+        r_sanity_check(l.sindex_key.has() && r.sindex_key.has());
+
+        if (l.sindex_key == r.sindex_key) {
+            return reversed(sorting)
+                ? datum_t::extract_primary(l.key) > datum_t::extract_primary(r.key)
+                : datum_t::extract_primary(l.key) < datum_t::extract_primary(r.key);
+        } else {
+            return reversed(sorting)
+                ? l.sindex_key > r.sindex_key
+                : l.sindex_key < r.sindex_key;
+        }
+    }
+private:
+    sorting_t sorting;
+};
+
 void debug_print(printf_buffer_t *, const rget_item_t &);
 
 typedef std::vector<rget_item_t> raw_stream_t;

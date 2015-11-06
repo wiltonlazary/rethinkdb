@@ -863,33 +863,6 @@ scoped_ptr_t<readgen_t> sindex_readgen_t::make(
             sorting));
 }
 
-class sindex_compare_t {
-public:
-    explicit sindex_compare_t(sorting_t _sorting)
-        : sorting(_sorting) { }
-    bool operator()(const rget_item_t &l, const rget_item_t &r) {
-        r_sanity_check(l.sindex_key.has() && r.sindex_key.has());
-
-        // We don't have to worry about v1.13.x because there's no way this is
-        // running inside of a secondary index function.  Also, in case you're
-        // wondering, it's okay for this ordering to be different from the buggy
-        // secondary index key ordering that existed in v1.13.  It was different in
-        // v1.13 itself.  For that, we use the last_key value in the
-        // rget_read_response_t.
-        if (l.sindex_key == r.sindex_key) {
-            return reversed(sorting)
-                ? datum_t::extract_primary(l.key) > datum_t::extract_primary(r.key)
-                : datum_t::extract_primary(l.key) < datum_t::extract_primary(r.key);
-        } else {
-            return reversed(sorting)
-                ? l.sindex_key > r.sindex_key
-                : l.sindex_key < r.sindex_key;
-        }
-    }
-private:
-    sorting_t sorting;
-};
-
 void sindex_readgen_t::sindex_sort(std::vector<rget_item_t> *vec) const {
     if (vec->size() == 0) {
         return;
