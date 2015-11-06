@@ -214,6 +214,7 @@ public:
     pseudoshard_t &operator=(pseudoshard_t &&) = default;
 
     void finish() {
+        r_sanity_check(!finished);
         switch (cached->state) {
         case range_state_t::ACTIVE:
             if (cached->cache.size() != 0) {
@@ -255,6 +256,7 @@ public:
     }
 
     const store_key_t *best_unpopped_key() const {
+        r_sanity_check(!finished);
         if (cached_index < cached->cache.size()) {
             return &cached->cache[cached_index].key;
         } else if (fresh != nullptr && fresh_index < fresh->stream.size()) {
@@ -273,6 +275,7 @@ public:
     }
 
     boost::optional<rget_item_t> pop() {
+        r_sanity_check(!finished);
         if (cached_index < cached->cache.size()) {
             return std::move(cached->cache[cached_index++]);
         } else if (fresh != nullptr && fresh_index < fresh->stream.size()) {
