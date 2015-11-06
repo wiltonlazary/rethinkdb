@@ -332,7 +332,7 @@ raw_stream_t rget_response_reader_t::unshard(rget_read_response_t &&res) {
                 // If we enter this branch we got no data back from this shard
                 // despite issuing a read to it, which means it's exhausted.
                 if (!reversed(sorting)) {
-                    if (new_bound && *new_bound != store_key_max) {
+                    if (new_bound != nullptr && *new_bound != store_key_max) {
                         hash_pair.second.key_range.left = *new_bound;
                         bool incremented = hash_pair.second.key_range.left.increment();
                         r_sanity_check(incremented); // not max key
@@ -342,7 +342,7 @@ raw_stream_t rget_response_reader_t::unshard(rget_read_response_t &&res) {
                     }
                 } else {
                     // The right bound is open so we don't need to decrement.
-                    if (new_bound && *new_bound != store_key_min) {
+                    if (new_bound != nullptr && *new_bound != store_key_min) {
                         hash_pair.second.key_range.right =
                             key_range_t::right_bound_t(*new_bound);
                     } else {
