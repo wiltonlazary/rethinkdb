@@ -394,7 +394,7 @@ private:
                               env->limits().array_size_limit()).c_str());
             }
 
-            // It's safe to YOLO unshard like this because without considering
+            // It's safe to YOLO unshard like this without considering
             // `last_key` because whoever is using `to_array` should be calling
             // `accumulate_all`.
             if (sorting != sorting_t::UNORDERED) {
