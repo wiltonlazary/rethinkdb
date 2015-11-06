@@ -780,13 +780,13 @@ void rdb_rget_slice(
                        : range.right.key_or_max(),
                    sorting),
         boost::optional<rget_sindex_data_t>());
-    continue_bool_t cb = btree_concurrent_traversal(
+    continue_bool_t cont = btree_concurrent_traversal(
         superblock,
         range,
         &callback,
         (!reversed(sorting) ? FORWARD : BACKWARD),
         release_superblock);
-    callback.finish(cb);
+    callback.finish(cont);
 }
 
 void rdb_rget_secondary_slice(
@@ -824,13 +824,13 @@ void rdb_rget_secondary_slice(
                    sorting),
         rget_sindex_data_t(pk_range, sindex_datum_range, sindex_func_reql_version,
                            sindex_info.mapping, sindex_info.multi));
-    continue_bool_t cb = btree_concurrent_traversal(
+    continue_bool_t cont = btree_concurrent_traversal(
         superblock,
         sindex_range,
         &callback,
         (!reversed(sorting) ? FORWARD : BACKWARD),
         release_superblock);
-    callback.finish(cb);
+    callback.finish(cont);
 }
 
 void rdb_get_intersecting_slice(
@@ -867,11 +867,11 @@ void rdb_get_intersecting_slice(
                           sindex_func_reql_version, sindex_info.multi),
         query_geometry,
         response);
-    continue_bool_t cb = btree_concurrent_traversal(
+    continue_bool_t cont = btree_concurrent_traversal(
         superblock, sindex_range, &callback,
         direction_t::FORWARD,
         release_superblock_t::RELEASE);
-    callback.finish(cb);
+    callback.finish(cont);
 }
 
 void rdb_get_nearest_slice(
