@@ -251,8 +251,8 @@ public:
             rassert(!unbounded);
             return internal_key;
         }
-        store_key_t key_or_max() const {
-            return unbounded ? store_key_t::max() : internal_key;
+        const store_key_t &key_or_max() const {
+            return unbounded ? store_key_max : internal_key;
         }
 
         bool unbounded;
@@ -263,7 +263,7 @@ public:
     };
 
     const store_key_t &right_or_max() const {
-        return right.unbounded ? store_key_max : right.internal_key;
+        return right.key_or_max();
     }
 
     enum bound_t {
