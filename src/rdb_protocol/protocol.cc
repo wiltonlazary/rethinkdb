@@ -446,10 +446,12 @@ struct rdb_r_shard_visitor_t : public boost::static_visitor<bool> {
                     rr->hints = boost::none;
                     if (!rg.sindex) {
                         if (!reversed(rg.sorting)) {
+                            guarantee(it->second >= rr->region.inner.left);
                             rr->region.inner.left = it->second;
                         } else {
-                            rr->region.inner.right =
-                                key_range_t::right_bound_t(it->second);
+                            key_range_t::right_bound_t rb(it->second);
+                            guarantee(rb <= rr->region.inner.right);
+                            rr->region.inner.right = rb;
                         }
                         r_sanity_check(!rr->region.inner.is_empty());
                     } else {
