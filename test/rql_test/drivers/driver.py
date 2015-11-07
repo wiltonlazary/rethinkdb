@@ -317,10 +317,8 @@ class Number:
 
 class Regex:
     value = None
-    raw = None
-    
+
     def __init__ (self, value, **kwargs):
-        self.raw = value
         try:
             self.value = re.compile(value)
         except Exception as e:
@@ -332,7 +330,7 @@ class Regex:
         return not self.value.match(other) is None
     
     def __repr__(self):
-        return "Regex: %s" % self.raw
+        return "Regex: %s" % (self.value.pattern if self.value else '<none>')
 
 # -- Curried output test functions --
 
