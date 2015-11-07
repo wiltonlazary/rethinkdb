@@ -67,9 +67,9 @@ region_map_t<contract_ack_frag_t> break_ack_into_fragments(
                         version_find_branch_common(&combined_branch_history,
                             vers, branch, branch_reg);
                 } catch (const missing_branch_exc_t &) {
-#ifndef NDEBUG
-                    crash("Branch history is incomplete");
-#else
+//#ifndef NDEBUG
+//                    crash("Branch history is incomplete");
+//#else
                     logERR("The branch history is incomplete. This probably means "
                            "that there is a bug in RethinkDB. Please report this "
                            "at https://github.com/rethinkdb/rethinkdb/issues/ .");
@@ -77,7 +77,7 @@ region_map_t<contract_ack_frag_t> break_ack_into_fragments(
                     points_on_canonical_branch =
                         region_map_t<version_t>(region_t::universe(),
                                                 version_t::zero());
-#endif
+//#endif
                 }
                 return points_on_canonical_branch.map(branch_reg,
                 [&](const version_t &common_vers) {
@@ -573,8 +573,8 @@ void calculate_all_contracts(
                 region);
             for (const auto &pair : *this_contract_acks) {
                 /* Sanity-check the ack */
-                DEBUG_ONLY_CODE(pair.second.sanity_check(
-                    pair.first, cpair.first, old_state));
+                //DEBUG_ONLY_CODE(pair.second.sanity_check(
+                //    pair.first, cpair.first, old_state));
 
                 /* There are two situations where we don't compute the common ancestor:
                 1. If the server sending the ack is not in `voters` or `temp_voters`
