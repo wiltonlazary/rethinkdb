@@ -243,6 +243,16 @@ describe("JavaScript Callback style", function() {
             });
         });
 
+        describe('server info', function(){
+            it("works", function(done){
+                return reqlConn.server().then(function (res) {
+                    assert.equal(res["id"].length, "8524eb22-b048-4189-b7d4-986a184f428e".length);
+                    assert(res["name"].length > 0);
+                    done();
+                });
+            });
+        });
+
         describe('close', function(){
             it("waits by default", function(done){
                 var t = Date.now();
