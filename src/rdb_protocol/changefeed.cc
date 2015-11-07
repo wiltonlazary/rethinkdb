@@ -2985,7 +2985,6 @@ void feed_t::each_limit_sub_cb(const std::function<void(limit_sub_t *)> &f, int 
     on_thread_t th((threadnum_t(i)));
     for (auto const &pair : limit_subs) {
         for (limit_sub_t *sub : pair.second[i]) {
-            sub->assert_thread();
             f(sub);
         }
     }
