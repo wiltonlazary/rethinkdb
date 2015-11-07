@@ -2842,8 +2842,9 @@ void feed_t::del_sub_with_lock(
         rwlock_in_line_t spot(rwlock, access_t::write);
         spot.write_signal()->wait_lazily_unordered();
         size_t erased = f();
-        guarantee(erased == 1);
+        guarantee(erased == 1 || detached);
     }
+    if (detached) return;
     guarantee(num_subs > 0);
     num_subs -= 1;
     if (num_subs == 0) {
