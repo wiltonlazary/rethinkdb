@@ -94,6 +94,10 @@ public:
         return limits_;
     }
 
+    boost::optional<sorting_t> sorting_override() const {
+        return sorting_override_;
+    }
+
     configured_limits_t limits_with_changefeed_queue_size(
         scoped_ptr_t<val_t> changefeed_queue_size) {
         if (changefeed_queue_size.has()) {
@@ -117,6 +121,10 @@ private:
 
     // User specified configuration limits; e.g. array size limits
     const configured_limits_t limits_;
+
+    // This overrides the default sorting on streams.  It only makes sense when
+    // streams are effectively used as sets, as in e.g. the changefeed code.
+    const boost::optional<sorting_t> sorting_override_;
 
     // The version of ReQL behavior that we should use.  Normally this is
     // LATEST_DISK, but when evaluating secondary index functions, it could be an

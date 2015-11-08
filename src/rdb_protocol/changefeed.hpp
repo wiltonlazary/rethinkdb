@@ -134,10 +134,7 @@ struct keyspec_t {
         datum_t key;
     };
 
-    keyspec_t(keyspec_t &&other)
-        : spec(std::move(other.spec)),
-          table(std::move(other.table)),
-          table_name(std::move(other.table_name)) { }
+    keyspec_t(keyspec_t &&other) = default;
     ~keyspec_t();
 
     // Accursed reference collapsing!

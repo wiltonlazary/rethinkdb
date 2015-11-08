@@ -448,7 +448,8 @@ public:
         const batchspec_t &batchspec) const = 0;
     // This has to be on `readgen_t` because we sort differently depending on
     // the kinds of reads we're doing.
-    virtual void sindex_sort(std::vector<rget_item_t> *vec) const = 0;
+    virtual void sindex_sort(std::vector<rget_item_t> *vec,
+                             const batchspec_t &batchspec) const = 0;
 
     virtual read_t next_read(
         const boost::optional<active_ranges_t> &active_ranges,
@@ -465,13 +466,14 @@ public:
 
     const std::string &get_table_name() const { return table_name; }
     read_mode_t get_read_mode() const { return read_mode; }
-    sorting_t get_sorting() const { return sorting; }
+    // Returns `sorting_` unless the batchspec overrides it.
+    sorting_t sorting(const batchspec_t &batchspec) const;
 protected:
     const global_optargs_t global_optargs;
     const std::string table_name;
     const profile_bool_t profile;
     const read_mode_t read_mode;
-    const sorting_t sorting;
+    const sorting_t sorting_;
 };
 
 class rget_readgen_t : public readgen_t {
@@ -530,7 +532,8 @@ private:
         boost::optional<changefeed_stamp_t> stamp,
         std::vector<transform_variant_t> transform,
         const batchspec_t &batchspec) const;
-    virtual void sindex_sort(std::vector<rget_item_t> *vec) const;
+    virtual void sindex_sort(std::vector<rget_item_t> *vec,
+                             const batchspec_t &batchspec) const;
     virtual key_range_t original_keyrange(reql_version_t rv) const;
     virtual boost::optional<std::string> sindex_name() const;
 
@@ -550,7 +553,8 @@ public:
         const datumspec_t &datumspec = datumspec_t(datum_range_t::universe()),
         sorting_t sorting = sorting_t::UNORDERED);
 
-    virtual void sindex_sort(std::vector<rget_item_t> *vec) const;
+    virtual void sindex_sort(std::vector<rget_item_t> *vec,
+                             const batchspec_t &batchspec) const;
     virtual key_range_t original_keyrange(reql_version_t rv) const;
     virtual boost::optional<std::string> sindex_name() const;
 private:
@@ -598,7 +602,8 @@ public:
         std::vector<transform_variant_t> transform,
         const batchspec_t &batchspec) const;
 
-    virtual void sindex_sort(std::vector<rget_item_t> *vec) const;
+    virtual void sindex_sort(std::vector<rget_item_t> *vec,
+                             const batchspec_t &batchspec) const;
     virtual key_range_t original_keyrange(reql_version_t rv) const;
     virtual boost::optional<std::string> sindex_name() const;
 
@@ -668,7 +673,7 @@ public:
     }
 
 protected:
-    raw_stream_t unshard(rget_read_response_t &&res);
+    raw_stream_t unshard(sorting_t sorting, rget_read_response_t &&res);
     bool shards_exhausted() const {
         return active_ranges ? active_ranges->totally_exhausted() : false;
     }

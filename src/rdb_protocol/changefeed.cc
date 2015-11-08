@@ -2590,7 +2590,11 @@ private:
                 }
             }
             if (!src->is_exhausted() && !batcher.should_send_batch()) {
-                std::vector<datum_t> batch = src->next_batch(env, bs);
+                std::vector<datum_t> batch =
+                    src->next_batch(
+                        env,
+                        bs.with_lazy_sorting_override(
+                            sorting_t::ASCENDING));
                 update_ranges();
                 r_sanity_check(active_state);
                 read_once = true;

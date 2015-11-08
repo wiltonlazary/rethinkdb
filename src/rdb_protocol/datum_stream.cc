@@ -301,8 +301,9 @@ private:
     bool finished;
 };
 
-raw_stream_t rget_response_reader_t::unshard(rget_read_response_t &&res) {
-    sorting_t sorting = readgen->get_sorting();
+raw_stream_t rget_response_reader_t::unshard(
+    sorting_t sorting,
+    rget_read_response_t &&res) {
 
     grouped_t<stream_t> *gs = boost::get<grouped_t<stream_t> >(&res.result);
     r_sanity_check(gs != nullptr);
@@ -311,6 +312,9 @@ raw_stream_t rget_response_reader_t::unshard(rget_read_response_t &&res) {
         active_ranges = new_active_ranges(
             stream, readgen->original_keyrange(res.reql_version),
             readgen->sindex_name() ? is_secondary_t::YES : is_secondary_t::NO);
+        reql_version = res.reql_version;
+    } else {
+        r_sanity_check(res.reql_version == reql_version);
     }
 
     raw_stream_t ret;
@@ -465,7 +469,6 @@ bool rget_response_reader_t::add_stamp(changefeed_stamp_t _stamp) {
 }
 
 boost::optional<active_state_t> rget_response_reader_t::truncate_and_get_active_state() {
-    r_sanity_check(readgen->get_sorting() == sorting_t::ASCENDING);
     if (!stamp || !active_ranges || shard_stamps.size() == 0) return boost::none;
     return active_state_t{
         key_range_t(key_range_t::closed, last_read_start,
@@ -484,7 +487,7 @@ void rget_response_reader_t::accumulate(env_t *env,
     read_t read = readgen->terminal_read(transforms, tv, batchspec);
     result_t res = do_read(env, std::move(read)).result;
     mark_shards_exhausted();
-    acc->add_res(env, &res, readgen->get_sorting());
+    acc->add_res(env, &res, readgen->sorting(batchspec));
 }
 
 std::vector<datum_t> rget_response_reader_t::next_batch(
@@ -624,7 +627,7 @@ void rget_reader_t::accumulate_all(env_t *env, eager_acc_t *acc) {
     }
     mark_shards_exhausted();
 
-    acc->add_res(env, &resp.result, readgen->get_sorting());
+    acc->add_res(env, &resp.result, readgen->sorting(batchspec));
 }
 
 std::vector<rget_item_t>
@@ -647,7 +650,7 @@ rget_reader_t::do_range_read(env_t *env, const read_t &read) {
         }
     }
 
-    return unshard(std::move(res));
+    return unshard(rr->sorting, std::move(res));
 }
 
 bool rget_reader_t::load_items(env_t *env, const batchspec_t &batchspec) {
@@ -661,7 +664,7 @@ bool rget_reader_t::load_items(env_t *env, const batchspec_t &batchspec) {
             readgen->next_read(
                 active_ranges, reql_version, stamp, transforms, batchspec));
         r_sanity_check(active_ranges);
-        readgen->sindex_sort(&items);
+        readgen->sindex_sort(&items, batchspec);
     }
     return items_index < items.size();
 }
@@ -730,7 +733,7 @@ std::vector<rget_item_t> intersecting_reader_t::do_intersecting_read(
     r_sanity_check(gr);
     r_sanity_check(gr->sindex.region);
 
-    return unshard(std::move(res));
+    return unshard(sorting_t::UNORDERED, std::move(res));
 }
 
 readgen_t::readgen_t(
@@ -743,7 +746,7 @@ readgen_t::readgen_t(
       table_name(std::move(_table_name)),
       profile(_profile),
       read_mode(_read_mode),
-      sorting(_sorting) { }
+      sorting_(_sorting) { }
 
 rget_readgen_t::rget_readgen_t(
     global_optargs_t _global_optargs,
@@ -772,6 +775,10 @@ read_t rget_readgen_t::next_read(
             batchspec),
         profile,
         stamp ? up_to_date_read_mode(read_mode) : read_mode);
+}
+
+sorting_t readgen_t::sorting(const batchspec_t &batchspec) const {
+    return batchspec.lazy_sorting(sorting_);
 }
 
 // TODO: this is how we did it before, but it sucks.
@@ -835,7 +842,7 @@ rget_read_t primary_readgen_t::next_read_impl(
     return rget_read_t(
         std::move(stamp),
         std::move(region),
-        active_ranges_to_hints(sorting, active_ranges),
+        active_ranges_to_hints(sorting(batchspec), active_ranges),
         store_keys,
         global_optargs,
         table_name,
@@ -843,10 +850,11 @@ rget_read_t primary_readgen_t::next_read_impl(
         std::move(transforms),
         boost::optional<terminal_variant_t>(),
         boost::optional<sindex_rangespec_t>(),
-        sorting);
+        sorting(batchspec));
 }
 
-void primary_readgen_t::sindex_sort(UNUSED std::vector<rget_item_t> *vec) const {
+void primary_readgen_t::sindex_sort(
+    std::vector<rget_item_t> *, const batchspec_t &) const {
     return;
 }
 
@@ -863,7 +871,7 @@ changefeed::keyspec_t::range_t primary_readgen_t::get_range_spec(
     return changefeed::keyspec_t::range_t{
         std::move(transforms),
         sindex_name(),
-        sorting,
+        sorting_,
         datumspec};
 }
 
@@ -903,12 +911,15 @@ scoped_ptr_t<readgen_t> sindex_readgen_t::make(
             sorting));
 }
 
-void sindex_readgen_t::sindex_sort(std::vector<rget_item_t> *vec) const {
+void sindex_readgen_t::sindex_sort(
+    std::vector<rget_item_t> *vec,
+    const batchspec_t &batchspec) const {
     if (vec->size() == 0) {
         return;
     }
-    if (sorting != sorting_t::UNORDERED) {
-        std::stable_sort(vec->begin(), vec->end(), sindex_compare_t(sorting));
+    if (sorting(batchspec) != sorting_t::UNORDERED) {
+        std::stable_sort(vec->begin(), vec->end(),
+                         sindex_compare_t(sorting(batchspec)));
     }
 }
 
@@ -940,7 +951,7 @@ rget_read_t sindex_readgen_t::next_read_impl(
     return rget_read_t(
         std::move(stamp),
         region_t::universe(),
-        active_ranges_to_hints(sorting, active_ranges),
+        active_ranges_to_hints(sorting(batchspec), active_ranges),
         boost::none,
         global_optargs,
         table_name,
@@ -948,7 +959,7 @@ rget_read_t sindex_readgen_t::next_read_impl(
         std::move(transforms),
         boost::optional<terminal_variant_t>(),
         sindex_rangespec_t(sindex, std::move(region), std::move(ds)),
-        sorting);
+        sorting(batchspec));
 }
 
 key_range_t sindex_readgen_t::original_keyrange(reql_version_t rv) const {
@@ -962,7 +973,7 @@ boost::optional<std::string> sindex_readgen_t::sindex_name() const {
 changefeed::keyspec_t::range_t sindex_readgen_t::get_range_spec(
         std::vector<transform_variant_t> transforms) const {
     return changefeed::keyspec_t::range_t{
-        std::move(transforms), sindex_name(), sorting, datumspec};
+        std::move(transforms), sindex_name(), sorting_, datumspec};
 }
 
 intersecting_readgen_t::intersecting_readgen_t(
@@ -1050,7 +1061,9 @@ intersecting_geo_read_t intersecting_readgen_t::next_read_impl(
         query_geometry);
 }
 
-void intersecting_readgen_t::sindex_sort(UNUSED std::vector<rget_item_t> *vec) const {
+void intersecting_readgen_t::sindex_sort(
+    std::vector<rget_item_t> *,
+    const batchspec_t &) const {
     // No sorting required for intersection queries, since they don't
     // support any specific ordering.
 }

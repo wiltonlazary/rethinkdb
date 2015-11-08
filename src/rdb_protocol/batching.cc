@@ -168,6 +168,12 @@ batchspec_t batchspec_t::with_at_most(uint64_t _max_els) const {
         start_time);
 }
 
+batchspec_t batchspec_t::with_lazy_sorting_override(sorting_t sort) const {
+    batchspec_t ret = *this;
+    ret.lazy_sorting_override = sort;
+    return ret;
+}
+
 batchspec_t batchspec_t::scale_down(int64_t divisor) const {
     // We divide by e.g. 7/8th of the divisor (assuming DIVISOR_SCALING_FACTOR == 8)
     // and add SCALE_CONSTANT to reduce the chances of needing a second round-trip
