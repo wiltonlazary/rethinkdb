@@ -37,6 +37,7 @@ struct make_sindex_read_t {
             rget_read_t(
                 boost::optional<changefeed_stamp_t>(),
                 region_t::universe(),
+                std::map<region_t, store_key_t>(),
                 boost::none,
                 ql::global_optargs_t(),
                 "",

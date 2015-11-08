@@ -10,7 +10,7 @@
 
 namespace ql {
 
-static const int64_t DEFAULT_MIN_ELS = 8;
+static const int64_t DEFAULT_MIN_ELS = 1;
 static const int64_t DEFAULT_FIRST_SCALEDOWN = 4;
 static const int64_t DEFAULT_MAX_SIZE = MEGABYTE;
 // The maximum duration of a batch in microseconds.
