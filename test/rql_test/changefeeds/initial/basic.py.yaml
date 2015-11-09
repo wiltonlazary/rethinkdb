@@ -1,0 +1,183 @@
+desc: Changefeeds with `include_initial` produce all of the expected items
+table_variable_name: tbl
+tests:
+    # -- create secondary index
+    
+    - py: tbl.index_create('alpha')
+      ot: {'created':1}
+    - py: tbl.index_wait()['ready']
+      ot: [True]
+    
+    # -- insert initial records - id: 0-9, alpha: t-k
+    
+    - py: tbl.insert(r.range(10).map({'id':r.row, 'alpha':r.expr('abcdefghijklmnopqrst').slice(r.expr(20).sub(r.row).sub(1), r.expr(20).sub(r.row))}))
+      ot: partial({'errors':0, 'inserted':10})
+    
+    # -- setup feeds
+    
+    - py:
+       # table.changes
+       - tblFeed = tbl.changes(include_states=True, include_initial=True)
+       
+       # get.changes
+       - getPreFeed = tbl.get(5).changes(include_states=True, include_initial=True)
+       - getPostFeed = tbl.get(15).changes(include_states=True, include_initial=True)
+       
+       # getAll.changes
+       - getAllPrimaryFeed = tbl.get_all(5, 15).changes(include_states=True, include_initial=True)
+       - getAllSecondaryFeed = tbl.get_all('n', 'd', index='alpha').changes(include_states=True, include_initial=True)
+       
+       # between.changes
+       - betweenPrimaryFeed = tbl.between(5, 15).changes(include_states=True, include_initial=True)
+       - betweenSecondaryFeed = tbl.between('d', 'n', index='alpha').changes(include_states=True, include_initial=True) # equivelent to id:[6, 16]
+       
+      runopts:
+        max_batch_rows: 1
+    
+    # -- read inital records
+    
+    # - table
+    - py: fetch(tblFeed, 1)
+      ot: [{"state": "initializing"}]
+    - py: fetch(tblFeed, 10)
+      ot: bag([{'new_val':{'id':0, 'alpha':'t'}}, {'new_val':{'id':1, 'alpha':'s'}},
+               {'new_val':{'id':2, 'alpha':'r'}}, {'new_val':{'id':3, 'alpha':'q'}},
+               {'new_val':{'id':4, 'alpha':'p'}}, {'new_val':{'id':5, 'alpha':'o'}},
+               {'new_val':{'id':6, 'alpha':'n'}}, {'new_val':{'id':7, 'alpha':'m'}},
+               {'new_val':{'id':8, 'alpha':'l'}}, {'new_val':{'id':9, 'alpha':'k'}}])
+    - py: fetch(tblFeed)
+      ot: [{"state": "ready"}]
+    
+    # - getPreFeed
+    - py: fetch(getPreFeed, 1)
+      ot: [{"state": "initializing"}]
+    - py: fetch(getPreFeed, 1)
+      ot: [{'new_val':{'id':5, 'alpha':'o'}}]
+    - py: fetch(getPreFeed)
+      ot: [{"state": "ready"}]
+    
+    # - getPostFeed
+    - py: fetch(getPostFeed, 1)
+      ot: [{"state": "initializing"}]
+    - py: fetch(getPostFeed, 1)
+      ot: [{'new_val':None}]
+    - py: fetch(getPostFeed)
+      ot: [{"state": "ready"}]
+    
+    # - getAllPrimaryFeed
+    - py: fetch(getAllPrimaryFeed, 1)
+      ot: [{"state": "initializing"}]
+    - py: fetch(getAllPrimaryFeed, 1)
+      ot: [{'new_val':{'id':5, 'alpha':'o'}}]
+    - py: fetch(getAllPrimaryFeed)
+      ot: [{"state": "ready"}]
+    
+    # - getAllSecondaryFeed
+    - py: fetch(getAllSecondaryFeed, 1)
+      ot: [{"state": "initializing"}]
+    - py: fetch(getAllSecondaryFeed, 1)
+      ot: [{'new_val':{'id':6, 'alpha':'n'}}]
+    - py: fetch(getAllSecondaryFeed)
+      ot: [{"state": "ready"}]
+    
+    # - betweenPrimaryFeed
+    - py: fetch(betweenPrimaryFeed, 1)
+      ot: [{"state": "initializing"}]
+    - py: fetch(betweenPrimaryFeed, 5)
+      ot: bag([{'new_val':{'id':5, 'alpha':'o'}}, {'new_val':{'id':6, 'alpha':'n'}},
+               {'new_val':{'id':7, 'alpha':'m'}}, {'new_val':{'id':8, 'alpha':'l'}},
+               {'new_val':{'id':9, 'alpha':'k'}}])
+    - py: fetch(betweenPrimaryFeed)
+      ot: [{"state": "ready"}]
+    
+    # - betweenSecondaryFeed
+    - py: fetch(betweenSecondaryFeed, 1)
+      ot: [{"state": "initializing"}]
+    - py: fetch(betweenSecondaryFeed, 3)
+      ot: bag([{'new_val':{'id':7, 'alpha':'m'}}, {'new_val':{'id':8, 'alpha':'l'}},
+               {'new_val':{'id':9, 'alpha':'k'}}])
+    - py: fetch(betweenSecondaryFeed)
+      ot: [{"state": "ready"}]
+    
+    # -- add additional records
+    
+    - py: tbl.insert(r.range(10, 20).map({'id':r.row, 'alpha':r.expr('abcdefghijklmnopqrst').slice(r.expr(20).sub(r.row).sub(1), r.expr(20).sub(r.row))}))
+      ot: partial({'errors':0, 'inserted':10})
+    
+    - py: tbl.get_all(5, 15).update({'updated':True})
+    - py: tbl.get_all('d', 'n', index='alpha').update({'updated':True})
+    
+    - py: wait(1)
+    
+    # -- read changed records
+    
+    # - tblFeed
+    - py: fetch(tblFeed)
+      ot: partial([
+        # updates for records already seen
+        {'old_val':{'id':5,  'alpha':'o'}, 'new_val':{'id':5,  'alpha':'o', 'updated':True}},
+        {'old_val':{'id':6,  'alpha':'n'}, 'new_val':{'id':6,  'alpha':'n', 'updated':True}},
+        
+        # purely new records
+        {'old_val':None, 'new_val':{'id':10, 'alpha':'j'}},
+        {'old_val':None, 'new_val':{'id':11, 'alpha':'i'}},
+        {'old_val':None, 'new_val':{'id':12, 'alpha':'h'}},
+        {'old_val':None, 'new_val':{'id':13, 'alpha':'g'}},
+        {'old_val':None, 'new_val':{'id':14, 'alpha':'f'}}, 
+        
+        {'old_val':None, 'new_val':{'id':17, 'alpha':'c'}},
+        {'old_val':None, 'new_val':{'id':18, 'alpha':'b'}},
+        {'old_val':None, 'new_val':{'id':19, 'alpha':'a'}},
+        
+        # possibly squashed insert/updates
+        {'new_val':{'id':15, 'alpha':'e', 'updated':True}},
+        {'new_val':{'id':16, 'alpha':'d', 'updated':True}}])
+    
+    # - getPreFeed
+    - py: fetch(getPreFeed)
+      ot: [{'old_val':{'id':5,  'alpha':'o'}, 'new_val':{'id':5, 'alpha':'o', 'updated':True}}]
+    
+    # - getPostFeed
+    - py: fetch(getPostFeed)
+      ot: partial([{'new_val':{'id':15, 'alpha':'e', 'updated':True}}])
+    
+    # - getAllPrimaryFeed
+    - py: fetch(getAllPrimaryFeed)
+      ot: partial([
+        {'old_val':{'id':5,  'alpha':'o'}, 'new_val':{'id':5, 'alpha':'o', 'updated':True}},
+        {'new_val':{'id':15, 'alpha':'e', 'updated':True}}
+        ])
+    
+    # - getAllSecondaryFeed
+    - py: fetch(getAllSecondaryFeed)
+      ot: bag([{'old_val': None,                   'new_val': {'alpha':'d', 'id':16}},
+               {'old_val': {'id':16, 'alpha':'d'}, 'new_val': {'id':16, 'alpha':'d', 'updated':True}},
+               {'old_val': {'id':6,  'alpha':'n'}, 'new_val': {'id':6,  'alpha':'n', 'updated':True}}])
+    
+    # - betweenPrimaryFeed
+    - py: fetch(betweenPrimaryFeed)
+      ot: bag([
+               # updates for records already seen
+               {'old_val':{'id':5,  'alpha':'o'},   'new_val':{'id':5, 'alpha':'o', 'updated':True}},
+               {'old_val':{'id':6,  'alpha':'n'},   'new_val':{'id':6, 'alpha':'n', 'updated':True}},
+               
+               # purely new records
+               {'old_val':None, 'new_val':{'id':10, 'alpha':'j'}},
+               {'old_val':None, 'new_val':{'id':11, 'alpha':'i'}},
+               {'old_val':None, 'new_val':{'id':12, 'alpha':'h'}},
+               {'old_val':None, 'new_val':{'id':13, 'alpha':'g'}},
+               {'old_val':None, 'new_val':{'id':14, 'alpha':'f'}}])
+    
+    # - betweenSecondaryFeed
+    - py: fetch(betweenSecondaryFeed)
+      ot: partial([
+               # purely new records
+               {'old_val':None, 'new_val':{'id':10, 'alpha':'j'}},
+               {'old_val':None, 'new_val':{'id':11, 'alpha':'i'}},
+               {'old_val':None, 'new_val':{'id':12, 'alpha':'h'}},
+               {'old_val':None, 'new_val':{'id':13, 'alpha':'g'}},
+               {'old_val':None, 'new_val':{'id':14, 'alpha':'f'}},  
+               
+               # possibly squashed insert/updates
+               {'new_val':{'id':15, 'alpha':'e', 'updated':True}},
+               {'new_val':{'id':16, 'alpha':'d', 'updated':True}}])
