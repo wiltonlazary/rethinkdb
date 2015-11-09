@@ -1,0 +1,35 @@
+#!/usr/bin/env python
+
+import os, random, sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, os.path.pardir, 'common')))
+import rdb_unittest, utils
+
+class InitalChangefeedUnderLoad(rdb_unittest.RdbTestCase):
+    
+    def test_mixed_workload(self):
+        
+        expected = {}
+        deleted = {}
+        
+        seen = {}
+        
+        # -- record inital data
+        
+        for record in self.table.run(self.conn):
+            expected[record['id']] = record
+        
+        # -- start changefeed
+        
+        feed = self.table.changes().run(self.conn, max_batch_rows=5)
+        
+        # -- pull records with 2 reads, 1 update, and 1 delete per cycle
+        
+        while True:
+             # - read two records
+             
+             
+             
+             # - update one record
+             
+             # - delete one record
