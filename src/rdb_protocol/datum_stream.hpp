@@ -459,6 +459,8 @@ public:
         const batchspec_t &batchspec) const = 0;
 
     virtual key_range_t original_keyrange(reql_version_t rv) const = 0;
+    virtual void restrict_active_ranges(
+        sorting_t sorting, active_ranges_t *ranges_inout) const = 0;
     virtual boost::optional<std::string> sindex_name() const = 0;
 
     virtual changefeed::keyspec_t::range_t get_range_spec(
@@ -536,6 +538,8 @@ private:
                              const batchspec_t &batchspec) const;
     virtual key_range_t original_keyrange(reql_version_t rv) const;
     virtual boost::optional<std::string> sindex_name() const;
+    void restrict_active_ranges(
+        sorting_t sorting, active_ranges_t *active_ranges_inout) const final;
 
     virtual changefeed::keyspec_t::range_t get_range_spec(
             std::vector<transform_variant_t> transforms) const;
@@ -557,6 +561,7 @@ public:
                              const batchspec_t &batchspec) const;
     virtual key_range_t original_keyrange(reql_version_t rv) const;
     virtual boost::optional<std::string> sindex_name() const;
+    void restrict_active_ranges(sorting_t, active_ranges_t *) const final { }
 private:
     sindex_readgen_t(
         global_optargs_t global_optargs,
@@ -606,6 +611,7 @@ public:
                              const batchspec_t &batchspec) const;
     virtual key_range_t original_keyrange(reql_version_t rv) const;
     virtual boost::optional<std::string> sindex_name() const;
+    void restrict_active_ranges(sorting_t, active_ranges_t *) const final { }
 
     virtual changefeed::keyspec_t::range_t get_range_spec(
         std::vector<transform_variant_t>) const {

@@ -312,6 +312,7 @@ raw_stream_t rget_response_reader_t::unshard(
         active_ranges = new_active_ranges(
             stream, readgen->original_keyrange(res.reql_version),
             readgen->sindex_name() ? is_secondary_t::YES : is_secondary_t::NO);
+        readgen->restrict_active_ranges(sorting, &*active_ranges);
         reql_version = res.reql_version;
     } else {
         r_sanity_check(res.reql_version == reql_version);
@@ -811,6 +812,77 @@ primary_readgen_t::primary_readgen_t(
         _read_mode,
         sorting) {
     store_keys = datumspec.primary_key_map();
+}
+
+// If we're doing a primary key `get_all`, then we want to restrict the active
+// ranges when we first calculate them so that we never try to read past the end
+// of the set of store keys.  (This prevents extra reads from being issued and
+// preserves the invariant that we always issue a read to a shard if it's in the
+// active ranges, which is how we detect resharding right now.)
+void primary_readgen_t::restrict_active_ranges(
+    sorting_t sorting,
+    active_ranges_t *ranges_inout) const {
+    if (store_keys) {
+        std::map<key_range_t,
+                 std::map<hash_range_t,
+                          std::pair<store_key_t, store_key_t> > > limits;
+        for (auto &&pair : ranges_inout->ranges) {
+            for (auto &&hash_pair : pair.second.hash_ranges) {
+                limits[pair.first][hash_pair.first] =
+                    std::make_pair(store_key_t::max(), store_key_t::min());
+            }
+        }
+        for (const auto &key_pair : *store_keys) {
+            const store_key_t &key = key_pair.first;
+            uint64_t hash = hash_region_hasher(key);
+            bool found_pair = false;
+            for (auto &&pair : limits) {
+                if (pair.first.contains_key(key)) {
+                    bool found_hash_pair = false;
+                    for (auto &&hash_pair : pair.second) {
+                        if (hash_pair.first.contains(hash)) {
+                            hash_pair.second.first =
+                                std::min(hash_pair.second.first, key);
+                            hash_pair.second.second =
+                                std::max(hash_pair.second.second, key);
+                            found_hash_pair = true;
+                            break;
+                        }
+                    }
+                    guarantee(found_hash_pair);
+                    found_pair = true;
+                    break;
+                }
+            }
+            guarantee(found_pair);
+        }
+        for (auto &&pair : ranges_inout->ranges) {
+            for (auto &&hash_pair : pair.second.hash_ranges) {
+                const auto &keypair = limits[pair.first][hash_pair.first];
+                store_key_t new_start =
+                    std::max(keypair.first, hash_pair.second.key_range.left);
+                store_key_t new_end = keypair.second;
+                new_end.increment();
+                new_end = std::min(new_end, hash_pair.second.key_range.right_or_max());
+
+                if (new_start > new_end) {
+                    if (!reversed(sorting)) {
+                        hash_pair.second.key_range.left
+                            = hash_pair.second.key_range.right_or_max();
+                    } else {
+                        hash_pair.second.key_range.right.internal_key
+                            = hash_pair.second.key_range.left;
+                    }
+                    guarantee(hash_pair.second.key_range.is_empty());
+                } else {
+                    hash_pair.second.key_range.left = new_start;
+                    hash_pair.second.key_range.right.internal_key = new_end;
+                    guarantee(!hash_pair.second.key_range.is_empty()
+                              || new_start == new_end);
+                }
+            }
+        }
+    }
 }
 
 scoped_ptr_t<readgen_t> primary_readgen_t::make(
