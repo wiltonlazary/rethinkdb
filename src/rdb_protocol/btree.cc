@@ -729,17 +729,21 @@ continue_bool_t rget_cb_t::handle_pair(
                ql::skey_version_from_reql_version(sindex->func_reql_version)))
         : false;
     if (last_truncated_secondary_for_abort) {
-        if (*last_truncated_secondary_for_abort
-            != ql::datum_t::extract_truncated_secondary(key_to_unescaped_str(key))) {
+        std::string cur_truncated_secondary =
+            ql::datum_t::extract_truncated_secondary(key_to_unescaped_str(key));
+        if (cur_truncated_secondary != *last_truncated_secondary_for_abort) {
             // The semantics here are that we're returning the "last considered
-            // key", so since we're aborting early we declare that the last
-            // considered key was the one right before us.
+            // key", which we set specially here to preserve the invariant that
+            // unsharding either consumes all rows with a particular truncated
+            // sindex value or none of them.
+            store_key_t stop_key;
             if (!reversed(job.sorting)) {
-                key.decrement();
+                stop_key = store_key_t(cur_truncated_secondary);
             } else {
-                key.increment();
+                stop_key = store_key_t(*last_truncated_secondary_for_abort);
             }
-            job.accumulator->stop_at_boundary(std::move(key));
+            stop_key.decrement();
+            job.accumulator->stop_at_boundary(std::move(stop_key));
             return continue_bool_t::ABORT;
         }
     }
