@@ -142,6 +142,11 @@ batchspec_t batchspec_t::with_new_batch_type(batch_type_t new_batch_type) const 
                        first_scaledown_factor, max_dur, start_time);
 }
 
+batchspec_t batchspec_t::with_min_els(int64_t new_min_els) const {
+    return batchspec_t(batch_type, new_min_els, max_els, max_size,
+                       first_scaledown_factor, max_dur, start_time);
+}
+
 batchspec_t batchspec_t::with_max_dur(int64_t new_max_dur) const {
     return batchspec_t(batch_type, min_els, max_els, max_size,
                        first_scaledown_factor, new_max_dur, start_time);

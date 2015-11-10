@@ -2590,11 +2590,14 @@ private:
                 }
             }
             if (!src->is_exhausted() && !batcher.should_send_batch()) {
-                std::vector<datum_t> batch =
-                    src->next_batch(
-                        env,
-                        bs.with_lazy_sorting_override(
-                            sorting_t::ASCENDING));
+                // We set `MIN_ELS` to 8 here because we're still doing
+                // inefficient unsharding for changefeed reads, and this
+                // improves the worst-case performance by a lot in exchange for
+                // an increase in latency.  (8 used to be the global default
+                // MIN_ELS value.)
+                batchspec_t new_bs = bs.with_min_els(8);
+                new_bs = new_bs.with_lazy_sorting_override(sorting_t::ASCENDING);
+                std::vector<datum_t> batch = src->next_batch(env, new_bs);
                 update_ranges();
                 r_sanity_check(active_state);
                 read_once = true;
