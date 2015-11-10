@@ -255,7 +255,7 @@ public:
 
         connectivity_cluster_t *parent;
 
-        /* The server it's id and the set of servers we are connected to, we only allow
+        /* The server's own id and the set of servers we are connected to, we only allow
         a single connection per server. */
         server_id_t server_id;
         std::set<server_id_t> servers;

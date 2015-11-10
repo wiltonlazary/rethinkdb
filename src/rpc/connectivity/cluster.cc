@@ -917,6 +917,8 @@ void connectivity_cluster_t::run_t::handle(
 
         if (servers.count(remote_server_id) != 0) {
             // There currently is another connection open to the server
+            logINF("Rejected a connection from server %s since one is open already.",
+                   uuid_to_str(remote_server_id).c_str());
             return;
         }
     }
