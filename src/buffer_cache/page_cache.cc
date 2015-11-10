@@ -169,6 +169,7 @@ void page_cache_t::consider_evicting_all_current_pages(page_cache_t *page_cache,
                                                        auto_drainer_t::lock_t lock) {
     // Atomically grab a list of block IDs that currently exist in current_pages.
     std::vector<block_id_t> current_block_ids;
+    current_block_ids.reserve(page_cache->current_pages_.size());
     for (const auto &current_page : page_cache->current_pages_) {
         current_block_ids.push_back(current_page.first);
     }
