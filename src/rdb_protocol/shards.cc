@@ -398,7 +398,7 @@ private:
             // `last_key` because whoever is using `to_array` should be calling
             // `accumulate_all`.
             if (sorting != sorting_t::UNORDERED) {
-                boost::optional<bool> is_sindex_sort = boost::none;
+                boost::optional<bool> is_sindex_sort;
                 std::vector<std::pair<raw_stream_t::iterator,
                                       raw_stream_t::iterator> > v;
                 v.reserve(stream->substreams.size());
@@ -426,7 +426,7 @@ private:
                     raw_stream_t::iterator *best = nullptr;
                     for (auto &&pair : v) {
                         if (pair.first != pair.second) {
-                            r_sanity_check(is_sindex_sort);
+                            r_sanity_check(static_cast<bool>(is_sindex_sort));
                             if ((best == nullptr)
                                 || (*is_sindex_sort
                                     ? is_better(pair.first->sindex_key,
