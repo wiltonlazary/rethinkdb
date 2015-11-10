@@ -19,7 +19,7 @@
 #include "rdb_protocol/store.hpp"
 #include "rdb_protocol/sym.hpp"
 #include "stl_utils.hpp"
-#include "serializer/config.hpp"
+#include "serializer/log/log_serializer.hpp"
 #include "unittest/gtest.hpp"
 #include "unittest/unittest_utils.hpp"
 
@@ -60,9 +60,7 @@ void insert_rows(int start, int finish, store_t *store) {
                 static_cast<profile::trace_t *>(NULL));
 
         store_t::sindex_access_vector_t sindexes;
-        store->acquire_post_constructed_sindex_superblocks_for_write(
-                 &sindex_block,
-                 &sindexes);
+        store->acquire_all_sindex_superblocks_for_write(&sindex_block, &sindexes);
         rdb_update_sindexes(store,
                             sindexes,
                             &mod_report,
@@ -244,12 +242,12 @@ TPTEST(RDBBtree, SindexPostConstruct) {
     dummy_cache_balancer_t balancer(GIGABYTE);
 
     filepath_file_opener_t file_opener(temp_file.name(), &io_backender);
-    standard_serializer_t::create(
+    log_serializer_t::create(
         &file_opener,
-        standard_serializer_t::static_config_t());
+        log_serializer_t::static_config_t());
 
-    standard_serializer_t serializer(
-        standard_serializer_t::dynamic_config_t(),
+    log_serializer_t serializer(
+        log_serializer_t::dynamic_config_t(),
         &file_opener,
         &get_global_perfmon_collection());
 
@@ -263,7 +261,8 @@ TPTEST(RDBBtree, SindexPostConstruct) {
             NULL,
             &io_backender,
             base_path_t("."),
-            generate_uuid());
+            generate_uuid(),
+            update_sindexes_t::UPDATE);
 
     cond_t dummy_interruptor;
 
@@ -286,12 +285,12 @@ TPTEST(RDBBtree, SindexEraseRange) {
     dummy_cache_balancer_t balancer(GIGABYTE);
 
     filepath_file_opener_t file_opener(temp_file.name(), &io_backender);
-    standard_serializer_t::create(
+    log_serializer_t::create(
         &file_opener,
-        standard_serializer_t::static_config_t());
+        log_serializer_t::static_config_t());
 
-    standard_serializer_t serializer(
-        standard_serializer_t::dynamic_config_t(),
+    log_serializer_t serializer(
+        log_serializer_t::dynamic_config_t(),
         &file_opener,
         &get_global_perfmon_collection());
 
@@ -305,7 +304,8 @@ TPTEST(RDBBtree, SindexEraseRange) {
             NULL,
             &io_backender,
             base_path_t("."),
-            generate_uuid());
+            generate_uuid(),
+            update_sindexes_t::UPDATE);
 
     cond_t dummy_interruptor;
 
@@ -366,12 +366,12 @@ TPTEST(RDBBtree, SindexInterruptionViaDrop) {
     dummy_cache_balancer_t balancer(GIGABYTE);
 
     filepath_file_opener_t file_opener(temp_file.name(), &io_backender);
-    standard_serializer_t::create(
+    log_serializer_t::create(
         &file_opener,
-        standard_serializer_t::static_config_t());
+        log_serializer_t::static_config_t());
 
-    standard_serializer_t serializer(
-        standard_serializer_t::dynamic_config_t(),
+    log_serializer_t serializer(
+        log_serializer_t::dynamic_config_t(),
         &file_opener,
         &get_global_perfmon_collection());
 
@@ -385,7 +385,8 @@ TPTEST(RDBBtree, SindexInterruptionViaDrop) {
             NULL,
             &io_backender,
             base_path_t("."),
-            generate_uuid());
+            generate_uuid(),
+            update_sindexes_t::UPDATE);
 
     cond_t dummy_interruptor;
 
@@ -408,12 +409,12 @@ TPTEST(RDBBtree, SindexInterruptionViaStoreDelete) {
     dummy_cache_balancer_t balancer(GIGABYTE);
 
     filepath_file_opener_t file_opener(temp_file.name(), &io_backender);
-    standard_serializer_t::create(
+    log_serializer_t::create(
         &file_opener,
-        standard_serializer_t::static_config_t());
+        log_serializer_t::static_config_t());
 
-    standard_serializer_t serializer(
-        standard_serializer_t::dynamic_config_t(),
+    log_serializer_t serializer(
+        log_serializer_t::dynamic_config_t(),
         &file_opener,
         &get_global_perfmon_collection());
 
@@ -427,7 +428,8 @@ TPTEST(RDBBtree, SindexInterruptionViaStoreDelete) {
             NULL,
             &io_backender,
             base_path_t("."),
-            generate_uuid()));
+            generate_uuid(),
+            update_sindexes_t::UPDATE));
 
     insert_rows(0, (TOTAL_KEYS_TO_INSERT * 9) / 10, store.get());
 
