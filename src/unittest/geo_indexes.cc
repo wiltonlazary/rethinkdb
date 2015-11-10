@@ -350,16 +350,22 @@ std::vector<datum_t> perform_get_intersecting(
         ADD_FAILURE() << "got wrong type of result back";
         return std::vector<datum_t>();
     }
-    const ql::stream_t &stream = (*result)[datum_t::null()];
-    if (stream.substreams.size() != 1) {
-        ADD_FAILURE() << "got multiple subsbtreams for some reason";
+    std::vector<datum_t> result_datum;
+    if (result->size() == 0) {
+        return result_datum;
+    } else if (result->size() != 1) {
+        ADD_FAILURE() << "got grouped result for some reason";
         return std::vector<datum_t>();
     }
-    const ql::raw_stream_t *raw_stream = &stream.substreams.begin()->second.stream;
-    std::vector<datum_t> result_datum;
-    result_datum.reserve(raw_stream->size());
-    for (size_t i = 0; i < raw_stream->size(); ++i) {
-        result_datum.push_back((*raw_stream)[i].data);
+    if (result->begin()->first != datum_t::null()) {
+        ADD_FAILURE() << "got grouped result for some reason";
+        return std::vector<datum_t>();
+    }
+    const ql::stream_t &stream = (*result)[datum_t::null()];
+    for (auto &&pair : stream.substreams) {
+        for (auto &&el : pair.second.stream) {
+            result_datum.push_back(el.data);
+        }
     }
     return result_datum;
 }
