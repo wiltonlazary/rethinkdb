@@ -767,6 +767,7 @@ continue_bool_t rget_cb_t::handle_pair(
             if (!reversed(job.sorting)) {
                 if (sindex->active_region_range_inout->left < key) {
                     sindex->active_region_range_inout->left = key;
+                    sindex->active_region_range_inout->left.increment();
                 }
             } else {
                 if (key < sindex->active_region_range_inout->right.key_or_max()) {

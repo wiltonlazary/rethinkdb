@@ -822,7 +822,7 @@ primary_readgen_t::primary_readgen_t(
 void primary_readgen_t::restrict_active_ranges(
     sorting_t sorting,
     active_ranges_t *ranges_inout) const {
-    if (store_keys) {
+    if (store_keys && ranges_inout->ranges.size() != 0) {
         std::map<key_range_t,
                  std::map<hash_range_t,
                           std::pair<store_key_t, store_key_t> > > limits;
@@ -879,6 +879,9 @@ void primary_readgen_t::restrict_active_ranges(
                     hash_pair.second.key_range.right.internal_key = new_end;
                     guarantee(!hash_pair.second.key_range.is_empty()
                               || new_start == new_end);
+                }
+                if (hash_pair.second.key_range.is_empty()) {
+                    hash_pair.second.state = range_state_t::EXHAUSTED;
                 }
             }
         }
