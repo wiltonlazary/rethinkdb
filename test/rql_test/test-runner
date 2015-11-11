@@ -63,17 +63,6 @@ devNull = open(os.devnull)
 
 # -- signal and atexit handlers
 
-runningProcessGroupsIds = []
-def cleanupProcessGroups():
-    '''fired by atexit or a signal handler, this should make sure we don't leave processes running'''
-    
-    for processGroupId in runningProcessGroupsIds:
-        try:
-            utils.kill_process_group(processGroupId)
-        except Exception as e:
-            raise Warning('Unable to shut down server: %s' % str(e))
-atexit.register(cleanupProcessGroups)
-
 cancelRun = False
 def setCancelRun(*args):
     global cancelRun
@@ -1176,7 +1165,7 @@ class Test(object):
         # -- kill everything in the process group
         
         if self.__testProcess is not None and self.__testProcess.pid is not None:
-            utils.kill_process_group(self.__testProcess.pid)
+            utils.kill_process_group(self.__testProcess)
         
         # -- close the output file
         
