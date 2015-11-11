@@ -2,7 +2,7 @@
 
 from __future__ import print_function
 
-import atexit, collections, fcntl, os, random, re, shutil, signal, socket, string, subprocess, sys, tempfile, threading, time, warnings
+import atexit, collections, copy, fcntl, os, random, re, shutil, signal, socket, string, subprocess, sys, tempfile, threading, time, warnings
 
 import test_exceptions
 
@@ -351,101 +351,183 @@ def wait_for_port(port, host='localhost', timeout=5):
         time.sleep(.1)
     raise Exception('Timed out after %d seconds waiting for port %d on %s to be open' % (timeout, port, host))
 
-def kill_process_group(processGroupId, timeout=20, shutdown_grace=5, only_warn=True):
+def kill_process_group(processInput, timeout=20, shutdown_grace=5, only_warn=True):
     '''make sure that the given process group id is not running'''
     
     # -- validate input
     
-    try:
-        processGroupId = int(processGroupId)
-        if processGroupId < 0:
-            raise Exception()
-    except Exception:
-        raise ValueError('kill_process_group requires a valid process group id, got: %s' % str(processGroupId))
+    process = None
+    parentPid = None
+    if isinstance(processInput, subprocess.Popen):
+        process = processInput
+        parentPid = processInput.pid
+    else:
+        try:
+            parentPid = int(process)
+            if parentPid < 0:
+                raise Exception()
+            process = None
+        except Exception:
+            raise ValueError('kill_process_group got a bad process value: %r' % process)
     
     try:
         timeout = float(timeout)
         if timeout < 0:
             raise Exception()
     except Exception:
-        raise ValueError('kill_process_group requires a valid timeout, got: %s' % str(timeout))
+        raise ValueError('kill_process_group got a bad timeout value: %r' % timeout)
     
     try:
         shutdown_grace = float(shutdown_grace)
         if shutdown_grace < 0:
             raise Exception()
     except Exception:
-        raise ValueError('kill_process_group requires a valid shutdown_grace value, got: %s' % str(shutdown_grace))
+        raise ValueError('kill_process_group got a bad shutdown_grace value: %r' % shutdown_grace)
+    
+    only_warn = only_warn == True
     
     # --
-    
-    # ToDo: check for child processes outside the process group
     
     deadline = time.time() + timeout
     graceDeadline = time.time() + shutdown_grace
     
-    psRegex = re.compile('^\s*(%d\s|\d+\s+%d\s)' % (processGroupId, processGroupId))
-    psOutput = ''
-    psCommand = ['ps', '-u', str(os.getuid()), '-o', 'pgid=', '-o', 'pid=', '-o', 'command=', '-www']
-    psFilter = lambda output: [x for x in output.decode('utf-8').splitlines() if psRegex.match(x)]
-    psLines = []
-    try:
-        # -- allow processes to gracefully exit
-        
-        if shutdown_grace > 0:
-            os.killpg(processGroupId, signal.SIGTERM)
-            
-            while time.time() < graceDeadline:
-                os.killpg(processGroupId, 0) # 0 checks to see if the process is there
-                
-                # - check with `ps` that it too thinks there is something there
-                try:
-                    os.waitpid(processGroupId, os.WNOHANG)
-                except Exception: pass
-                psOutput, _ = subprocess.Popen(psCommand, stdout=subprocess.PIPE, stderr=subprocess.STDOUT).communicate()
-                psLines = psFilter(psOutput)
-                if len(psLines) == 0:
-                    return
-                
-                time.sleep(.1)
-        
-        # -- slam the remaining processes
-        
-        while time.time() < deadline:
-            os.killpg(processGroupId, signal.SIGKILL)
-            
-            # - check with `ps` that it too thinks there is something there
-            try:
-                os.waitpid(processGroupId, os.WNOHANG)
-            except Exception: pass
-            psOutput, _ = subprocess.Popen(psCommand, stdout=subprocess.PIPE, stderr=subprocess.STDOUT).communicate()
-            psLines = psFilter(psOutput)
-            if len(psLines) == 0:
-                return
-            
-            time.sleep(.2)
+    # -- get the list of processes
     
-    except OSError as e:
-        if e.errno == 3: # No such process
-            return
-        elif e.errno == 1: # Operation not permitted: not our process
-            return
+    psCommand = ['ps', '-u', str(os.getuid()), '-o', 'ppid,pid,state,command', '-www']
+    psRegex = re.compile(r'^\s*(?P<ppid>\d+)\s+(?P<pid>\d+)\s+(?P<state>\S+)\s+(?P<command>.+)$')
+    
+    psProcess = subprocess.Popen(psCommand, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    psOutput = psProcess.communicate()[0].decode('utf-8')
+    assert psProcess.returncode == 0, 'Bad output from ps process: %s\n%s' % (' '.join(psCommand), psOutput)
+    
+    remainingProcesses = [] # format: {'pid':, 'state':, 'command':}
+    
+    # - group the processes by parent
+    topLevelProcess = None
+    processesByParent = {} # ppid -> [{'pid':, 'state':, 'command':}]
+    for line in psOutput.splitlines():
+        parsed = psRegex.match(line)
+        if not parsed:
+            continue
         else:
-            mesg = 'Unhandled OSError while killing process group %s. `ps` output:\n%s\n' % (repr(processGroupId), '\n'.join(psLines))
-            if only_warn:
-                warnings.warn(mesg)
+            pid, ppid, state, command = parsed.group('pid', 'ppid', 'state', 'command')
+            pid = int(pid)
+            if pid == parentPid: # include the top-level parent if we find it
+                topLevelProcess = {'pid':pid, 'state':state, 'command':command}
+                remainingProcesses.append(topLevelProcess)
             else:
-                raise RuntimeError(mesg)
+                if not ppid in processesByParent:
+                    processesByParent[ppid] = []
+                processesByParent[ppid].append({'pid':pid, 'command':command})
     
-    # --
+    # - short circut if there are no items to do
+    if topLevelProcess is None and parentPid not in processesByParent:
+        return
     
-    timeElapsed = timeout - (deadline - time.time())
-    mesg = 'Unable to kill all of the processes for process group %d after %.2f seconds:\n%s\n' % (processGroupId, timeElapsed, psOutput.decode('utf-8'))
-    if only_warn:
-        warnings.warn(mesg)
+    # - assemble the list
+    canidates = processesByParent[parentPid] if parentPid in processesByParent else []
+    while canidates:
+        newCanidates = []
+        for canidate in canidates:
+            remainingProcesses.append(canidate)
+            if canidate['pid'] in processesByParent:
+                newCanidates.append(processesByParent(canidate['pid']))
+        canidates = newCanidates
+    
+    # - remove zombies
+    for topLevelProcess in copy.copy(remainingProcesses):
+        if 'Z' in topLevelProcess['state']:
+            if process:
+                process.poll()
+            else:
+                os.waitpid(topLevelProcess['pid'], os.WNOHANG)
+            remainingProcesses.remove(topLevelProcess)
+    
+    # - reverse them to get the right order to kill in 
+    remainingProcesses.reverse()
+    
+    # -- short circut if nothing is running
+    if not remainingProcesses:
+        return
+    
+    # -- send term to the leader, wait to see if it gracefully exists
+    if topLevelProcess:
+        try:
+            os.kill(parentPid, signal.SIGTERM)
+        except OSError as e:
+            if e.errno == 3: # already dead
+               remainingProcesses.remove(topLevelProcess) 
     else:
-        raise RuntimeError(mesg)
-    # ToDo: better categorize the error
+        graceDeadline = 0 # no need to wait... kill them all
+    
+    problems = []
+    
+    # -- wait for everything to be gone
+    while graceDeadline > time.time():
+        time.sleep(.1)
+        if topLevelProcess in remainingProcesses:
+            if process and hasattr(process, 'poll'):
+                process.poll()
+            else:
+                os.waitpid(process['pid'], os.WNOHANG)
+        for process in copy.copy(remainingProcesses):
+            try:
+                os.kill(process['pid'], 0) # 0 checks to see if the process is there
+            except OSError as e:
+                if e.errno == 3:
+                    pass
+                elif e.errno == 1:
+                    mesg = 'asked to kill pid %d that was not owned by the current user: %s' % (process['pid'], process['command'])
+                    if mesg not in problems:
+                        problems.append(mesg)
+                else:
+                    mesg = 'Unhandled OSError while killing process %r: %s' % (parentPid, str(e))
+                    if mesg not in problems:
+                        problems.append(mesg)
+                remainingProcesses.remove(process)
+        if not remainingProcesses:
+            break
+    else:
+        # -- the gentle approach failed, kill them all
+        while deadline > time.time():
+            for process in copy.copy(remainingProcesses):
+                try:
+                    os.kill(process['pid'], signal.SIGKILL)
+                    warnings.warn('SIGKILL %r' % process['pid'])
+
+                except OSError as e:
+                    if e.errno == 3: pass # already dead
+                    elif e.errno == 1: # not our process
+                        mesg = 'permission error while killing a process: %s %s: %s' % (process['pid'], process['command'], str(e))
+                        if mesg not in problems:
+                            problems.append(mesg)
+                    else:
+                        mesg = 'unhandeled OSError while killing a process: %s %s: %s' % (process['pid'], process['command'], str(e))
+                        if mesg not in problems:
+                            problems.append(mesg)
+                except Exception as e:
+                    mesg = 'unhandeled Exception while killing a process: %s %s: %s' % (process['pid'], process['command'], str(e))
+                    import traceback
+                    traceback.print_exc()
+                    if mesg not in problems:
+                        problems.append(mesg)
+            if not remainingProcesses:
+                break
+            else:
+                time.sleep(.1) # repeated SIGKILLs should not get better results, but we will try anyways
+        else:
+            # timed out
+            for process in remainingProcesses:
+                problems.append('Process %s was still running: %s' % (process['pid'], process['command']))
+                subprocess.call(psCommand)
+    
+    if problems:
+        timeElapsed = timeout - (deadline - time.time())
+        mesg = 'Ran into problems killing all of the processes under pid %d after %.2f seconds. The problems:\n\t%s' % (parentPid, timeElapsed, "\n\t".join(problems))
+        if only_warn:
+            warnings.warn(mesg)
+        else:
+            raise RuntimeError(mesg) # ToDo: better categorize the error
 
 def nonblocking_readline(source, seek=0):
     
