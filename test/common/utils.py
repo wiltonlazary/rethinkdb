@@ -2,7 +2,7 @@
 
 from __future__ import print_function
 
-import atexit, collections, copy, fcntl, os, random, re, shutil, signal, socket, string, subprocess, sys, tempfile, threading, time, warnings
+import atexit, collections, fcntl, os, random, re, shutil, signal, socket, string, subprocess, sys, tempfile, threading, time, warnings
 
 import test_exceptions
 
@@ -16,22 +16,67 @@ except NameError:
 project_root_dir = os.path.realpath(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir, os.pardir))
 
 driverPaths = {
-    'javascript': {
+    'JavaScript': {
+        'envName':'JAVASCRIPT_DRIVER',
         'extension':'js',
-        'driverPath':os.path.join(project_root_dir, 'build', 'packages', 'js'),
+        'driverPath':None,
+        'driverRelSourcePath':os.path.join(os.pardir, os.pardir, 'build', 'packages', 'js'),
         'sourcePath':os.path.join(project_root_dir, 'drivers', 'javascript')
     },
-    'python': {
+    'Python': {
+        'envName':'PYTHON_DRIVER',
         'extension':'py',
-        'driverPath':os.path.join(project_root_dir, 'build', 'drivers', 'python', 'rethinkdb'),
+        'driverPath':None,
+        'driverRelSourcePath':os.path.join(os.pardir, os.pardir, 'build', 'drivers', 'python', 'rethinkdb'),
         'sourcePath':os.path.join(project_root_dir, 'drivers', 'python')
     },
-    'ruby': {
+    'Ruby': {
+        'envName':'RUBY_DRIVER',
         'extension':'rb',
-        'driverPath':'build/drivers/ruby/lib',
-        'sourcePath':'drivers/ruby'
+        'driverPath':None,
+        'driverRelSourcePath':os.path.join(os.pardir, os.pardir, 'build', 'drivers', 'ruby', 'lib'),
+        'sourcePath':os.path.join(project_root_dir, 'drivers', 'ruby')
+    },
+    'JRuby': {
+        'envName':'RUBY_DRIVER',
+        'extension':'rb',
+        'driverPath':None,
+        'driverRelSourcePath':os.path.join(os.pardir, os.pardir, 'build', 'drivers', 'ruby', 'lib'),
+        'sourcePath':os.path.join(project_root_dir, 'drivers', 'ruby')
     }
 }
+
+# -- reset driverPaths based on os.environ
+
+def resetDriverPaths():
+    for name, info in driverPaths.items():
+        if info['envName'] in os.environ:
+            if os.environ[info['envName']].lower() == '--installed--':
+                info['driverPath'] = '--installed--'
+                info['sourcePath'] = None
+            else:
+                target = os.path.realpath(os.environ[info['envName']])
+                if not os.path.exists(target):
+                    warnings.warn('Supplied %s driver path (%s) was not valid: %s' % (name, info['envName'], os.environ[info['envName']]))
+                    continue
+                
+                if os.path.isfile(target) and os.path.basename(target) in ('__init__.py',):
+                    target = os.path.dirname(target)
+                
+                if os.path.isdir(target) and 'Makefile' in os.listdir(target):
+                    # source folder
+                    info['driverPath'] = os.path.normpath(os.path.join(target, info['driverRelSourcePath']))
+                    info['sourcePath'] = target
+                else:
+                    # assume it is a useable driver
+                    info['driverPath'] = target
+                    info['sourcePath'] = None
+                os.environ[info['envName']] = info['driverPath']
+        elif info['sourcePath']:
+            info['driverPath'] = os.path.normpath(os.path.join(info['sourcePath'], info['driverRelSourcePath']))
+            os.environ[info['envName']] = info['driverPath']
+
+resetDriverPaths() # pickup inital values
 
 # --
 
@@ -122,83 +167,67 @@ def build_in_folder(targetFolder, waitNotification=None, notificationTimeout=2, 
     if makeProcess.wait() != 0:
         raise test_exceptions.NotBuiltException(detail='Failed making: %s' % targetFolder, debugInfo=outputFile)
 
-def import_python_driver(targetDir=None):
-    '''import the latest built version of the python driver into the caller's namespace, ensuring that the drivers are built'''
-    import imp # note: deprecated but not gone in 3.4, will have to add importlib at some point
+__loadedPythonDriver = None
+def import_python_driver():
+    '''return the rethinkdb Python driver, defaulting (and building) the in-source driver, but following PYTHON_DRIVER'''
+    global __loadedPythonDriver
     
-    # TODO: modify this to allow for system-installed drivers
+    # -- short-circut if we already have it loaded
     
-    # -- figure out what sort of path we got
-    
-    if targetDir is None:
-        if 'PYTHON_DRIVER_DIR' in os.environ:
-            targetDir = os.environ['PYTHON_DRIVER_DIR']
-        elif 'PYTHON_DRIVER_SRC_DIR' in os.environ:
-            targetDir = os.environ['PYTHON_DRIVER_SRC_DIR']
-        else:
-            targetDir = project_root_dir
-    
-    driverDir = None
-    srcDir = None
-    
-    if not os.path.isdir(targetDir):
-        raise ValueError('import_python_driver got a non-directory path: %s' % str(targetDir))
-    targetDir = os.path.realpath(targetDir)
-    
-    validSourceFolder = lambda path: os.path.basename(path) == 'rethinkdb' and all(map(lambda x: os.path.isfile(os.path.join(path, x)), ['__init__.py', 'ast.py', 'docs.py']))
-    builtDriver = lambda path: validSourceFolder(path) and os.path.isfile(os.path.join(path, 'ql2_pb2.py'))
-    
-    # normalize path
-    if not os.path.dirname(targetDir) == 'rethinkdb' and os.path.isdir(os.path.join(targetDir, 'rethinkdb')):
-        targetDir = os.path.join(targetDir, 'rethinkdb')
-    
-    # - project directory
-    if all(map(lambda x: os.path.isdir(os.path.join(targetDir, x)), ['src', 'drivers', 'admin'])):
-        buildDriver = True
-        driverDir = os.path.join(targetDir, driverPaths['python']['driverPath'])
-        srcDir = os.path.join(targetDir, driverPaths['python']['sourcePath'])
-    
-    # - built driver - it does not matter if this is source, build, or installed, it looks complete
-    elif builtDriver(targetDir):
-        buildDriver = False
-        driverDir = targetDir
-        srcDir = None
-    
-    # - source folder
-    elif validSourceFolder(targetDir) and os.path.isfile(os.path.join(os.path.dirname(targetDir), 'Makefile')):
-        buildDriver = True
-        driverDir = os.path.join(targetDir, os.path.pardir, os.path.relpath(driverPaths['python']['driverPath'], driverPaths['python']['sourcePath']))
-        srcDir = os.path.dirname(targetDir)
-    
-    else:
-        raise ValueError('import_python_driver was unable to determine the locations from: %s' % targetDir)
-    
-    # -- build if needed
-    
-    if buildDriver == True:
-        try:
-            build_in_folder(srcDir, waitNotification='Building the python drivers. This make take a few moments.')
-        except test_exceptions.NotBuiltException as e:
-            raise test_exceptions.NotBuiltException(detail='Failed making Python driver from: %s' % srcDir, debugInfo=e.debugInfo)
+    if __loadedPythonDriver:
+        return __loadedPythonDriver
     
     # --
     
-    if not os.path.isdir(driverDir) or not os.path.basename(driverDir) == 'rethinkdb' or not os.path.isfile(os.path.join(driverDir, '__init__.py')): # ToDo: handle zipped egg case
-        raise ValueError('import_python_driver got an invalid driverDir: %s' % driverDir)
+    loadedDriver = None
+    driverPath =  driverPaths['Python']['driverPath']
+    sourcePath =  driverPaths['Python']['sourcePath']
     
-    # - return the imported module
+    # -- short-circut if the installed driver is called for
+    
+    if driverPath == '--installed--':
+        # - load the driver
+        try:
+            loadedDriver = __import__('rethinkdb')
+            driverPaths['Python']['driverPath'] = os.path.dirname(loadedDriver.__file__)
+            os.environ['PYTHON_DRIVER'] = driverPaths['Python']['driverPath']
+            return loadedDriver
+        except ImportError as e:
+            raise ImportError('Unable to load system-installed `rethinkdb` module - %s' % str(e))
+    
+    # -- build the driver if that is called for
+    
+    if sourcePath:
+        try:
+            build_in_folder(sourcePath, waitNotification='Building the python drivers. This make take a few moments.')
+        except test_exceptions.NotBuiltException as e:
+            raise test_exceptions.NotBuiltException(detail='Failed making Python driver from: %s' % sourcePath, debugInfo=e.debugInfo)
+    
+    # -- validate the built driver
+    
+    if not all(map(lambda x: os.path.isfile(os.path.join(driverPath, x)), ['__init__.py', 'ast.py', 'docs.py'])):
+        raise ValueError('Invalid Python driver: %s' % driverPath)
+        
+    # -- load the driver
     
     keptPaths = sys.path[:]
+    driverName = os.path.basename(driverPath)
     try:
-        moduleFile, pathname, desc = imp.find_module('rethinkdb', [os.path.dirname(driverDir)])
-        driverModule = imp.load_module('rethinkdb', moduleFile, pathname, desc)
-        if moduleFile is not None:
-            moduleFile.close()
-        loadedFrom = os.path.dirname(os.path.realpath(driverModule.__file__))
-        assert loadedFrom.startswith(driverDir), "The wrong version or the rethinkdb Python driver got imported. It should have been in %s but was from %s" % (driverDir, loadedFrom)
-        return driverModule
+        sys.path.insert(0, os.path.dirname(driverPath))
+        loadedDriver = __import__(driverName)
     finally:
         sys.path = keptPaths
+    
+    
+    # -- check that it is from where we assert it to be
+    
+    if not loadedDriver.__file__.startswith(driverPath):
+        raise ImportError('Loaded Python driver was %s, rather than the expected one from %s' % (loadedDriver.__file__, driverPath))
+    
+    # -- return the loaded module
+    
+    __loadedPythonDriver = loadedDriver
+    return __loadedPythonDriver
 
 class PerformContinuousAction(threading.Thread):
     '''Use to continuously perform an action on a table. Either provide an action (reql command without run) on instantiation, or subclass and override runAction'''
@@ -351,183 +380,267 @@ def wait_for_port(port, host='localhost', timeout=5):
         time.sleep(.1)
     raise Exception('Timed out after %d seconds waiting for port %d on %s to be open' % (timeout, port, host))
 
-def kill_process_group(processInput, timeout=20, shutdown_grace=5, only_warn=True):
+class RunningProcesses:
+    
+    class Process:
+        pid = None
+        ppid = None
+        pgid = None
+        status = None
+        command = None
+        
+        def __init__(self, pid, ppid, pgid, status, command):
+            self.pid = pid
+            self.ppid = ppid
+            self.pgid = pgid
+            self.status = status
+            self.command = command
+        
+        def __hash__(self):
+            return hash((self.pid, self.command))
+        
+        def __eq__(self, other):
+            if not isinstance(other, self.__class__):
+                return False
+            return self.__hash__() == other.__hash__()
+        
+        def __str__(self):
+            return 'pid: %d ppid: %d pgid: %d status: %r command: %s' % (self.pid, self.ppid, self.pgid, self.status, self.command)
+        
+        def __repr__(self):
+            return 'Process<%s>' % self.__str__()
+    
+    psCommand = ['ps', '-u', str(os.getuid()), '-o', 'pid=,ppid=,pgid=,state=,command=', '-www']
+    
+    parentId = None
+    parentProcess = None # process
+    processes = {}         # (pid, command) -> process
+    processesByParent = {} # pid -> set([process,...]}
+    processesByGroup = {}  # pgid -> set([process,...]}
+    
+    def __init__(self, parentPid):
+        
+        # -- validate input
+    
+        try:
+            self.parentPid = int(parentPid)
+            if parentPid < 0:
+                raise Exception()
+        except Exception:
+            raise ValueError('invalid parentPid: %r' % parentPid)
+        
+        # -- get the inital list
+        
+        self.list()
+    
+    def list(self):
+        
+        # - reset known processes status to ''
+        for process in self.processes.items():
+            item.status = ''
+        
+        # - get ouptut from `ps`
+        psProcess = subprocess.Popen(self.psCommand, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        psOutput = psProcess.communicate()[0].decode('utf-8')
+        #assert psProcess.returncode == 0, 'Bad output from ps process (%d): %s\n%s' % (psProcess.returncode, ' '.join(self.psCommand), psOutput)
+        
+        # - parse the list
+        for line in psOutput.splitlines():
+            try:
+                pid, ppid, pgid, state, command = line.split(None, 4)
+                pid = int(pid)
+                ppid = int(ppid)
+                pgid = int(pgid)
+            except ValueError: continue
+            
+            if (pid, command) in self.processes:
+                thisProcess = self.processes[(pid, command)]
+                thisProcess.pgid = pgid
+                thisProcess.state = state
+            else:
+                thisProcess = self.Process(pid, ppid, pgid, state, command)
+            
+            # check for our parent process
+            if thisProcess.pid == self.parentPid:
+                self.parentProcess = thisProcess
+            
+            # catalog by parent
+            if thisProcess.ppid not in self.processesByParent:
+                self.processesByParent[thisProcess.ppid] = set()
+            self.processesByParent[thisProcess.ppid].add(thisProcess)
+            
+            # catalog by pgid
+            if thisProcess.pgid not in self.processesByGroup:
+                self.processesByGroup[thisProcess.pgid] = set()
+            self.processesByGroup[thisProcess.pgid].add(thisProcess)
+        
+        # - create the target list of running processes decended from our parent process
+        targetProcesses = []
+        candidates = set()
+        candidateGroups = set()
+        if self.parentProcess:
+            candidates.add(self.parentProcess)
+            if self.parentProcess.status and self.parentProcess.status[0] in ('I', 'R', 'S'):
+                targetProcesses.append(self.parentProcess)
+            if self.parentProcess.pid == self.parentProcess.pgid:
+                candidateGroups.add(self.parentProcess.pgid)
+        
+        visited = set()
+        while True:
+            for candidate in candidates.copy():
+                candidates.remove(candidate)
+                
+                # shortcut if we have seen this node
+                if candidate in visited: continue
+                visited.add(candidate)
+                
+                # add this to the target list if it is running
+                if candidate.status and candidate.status[0] in ('I', 'R', 'S') and candidate not in targetProcesses:
+                    targetProcesses.append(candidate)
+                
+                # add any children to the list
+                if candidate.pid in self.processesByParent:
+                    candidates.update(self.processesByParent[candidate.pid])
+                
+                # add the group if it is safe
+                if self.parentProcess and candidate.pgid != self.parentProcess.pgid:
+                    candidateGroups.add(candidate.pgid)
+            
+            # add items from the groups found above
+            for candidateGroupId in candidateGroups:
+                candidates.update(self.processesByGroup[candidateGroupId])
+            candidateGroups = set()
+            
+            if not candidates:
+                targetProcesses.reverse() # so children go before their parents
+                return targetProcesses
+
+def kill_process_group(parent, timeout=20, sigkill_grace=2, only_warn=True):
     '''make sure that the given process group id is not running'''
     
     # -- validate input
     
-    process = None
+    parentPopen = None
     parentPid = None
-    if isinstance(processInput, subprocess.Popen):
-        process = processInput
-        parentPid = processInput.pid
+    
+    if isinstance(parent, subprocess.Popen):
+        parentPopen = parent
+        parentPid = parent.pid
+    elif hasattr(parent, 'process') and hasattr(parent.process, 'pid'): # presumably driver.Process
+        parentPopen = parent.process
+        parentPid = parent.process.pid
     else:
         try:
-            parentPid = int(process)
-            if parentPid < 0:
+            parentPid = int(parent)
+            if parentPid <= 0:
                 raise Exception()
-            process = None
         except Exception:
-            raise ValueError('kill_process_group got a bad process value: %r' % process)
+            raise ValueError('invalid parent: %r' % parent)
     
     try:
         timeout = float(timeout)
         if timeout < 0:
             raise Exception()
     except Exception:
-        raise ValueError('kill_process_group got a bad timeout value: %r' % timeout)
+        raise ValueError('invalid timeout: %r' % timeout)
     
     try:
-        shutdown_grace = float(shutdown_grace)
-        if shutdown_grace < 0:
+        sigkill_grace = float(sigkill_grace)
+        if sigkill_grace < 0:
             raise Exception()
     except Exception:
-        raise ValueError('kill_process_group got a bad shutdown_grace value: %r' % shutdown_grace)
+        raise ValueError('invalid sigkill_grace: %r' % sigkill_grace)
     
-    only_warn = only_warn == True
+    # -- Deadlines
     
-    # --
+    startTime = time.time()
     
-    deadline = time.time() + timeout
-    graceDeadline = time.time() + shutdown_grace
+    # deadline for a clean shutdown after SIGTERM'ing parent
+    cleanDeadline = startTime + (timeout * 0.5)
     
-    # -- get the list of processes
+    # deadline for all processes to respond to SIGINTs
+    softDeadline = cleanDeadline + (timeout * 0.5) # deadline before resporting to SIGKILL
     
-    psCommand = ['ps', '-u', str(os.getuid()), '-o', 'ppid,pid,state,command', '-www']
-    psRegex = re.compile(r'^\s*(?P<ppid>\d+)\s+(?P<pid>\d+)\s+(?P<state>\S+)\s+(?P<command>.+)$')
+    # deadline before giving up altogether
+    hardDeadline = softDeadline + sigkill_grace
     
-    psProcess = subprocess.Popen(psCommand, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    psOutput = psProcess.communicate()[0].decode('utf-8')
-    assert psProcess.returncode == 0, 'Bad output from ps process: %s\n%s' % (' '.join(psCommand), psOutput)
+    # - collect the running processes
+    processes = RunningProcesses(parentPid)
     
-    remainingProcesses = [] # format: {'pid':, 'state':, 'command':}
-    
-    # - group the processes by parent
-    topLevelProcess = None
-    processesByParent = {} # ppid -> [{'pid':, 'state':, 'command':}]
-    for line in psOutput.splitlines():
-        parsed = psRegex.match(line)
-        if not parsed:
-            continue
+    # -- Terminate the parent process
+    if timeout > 0:
+        if parentPopen:
+            if parentPopen.poll() is None:
+                parentPopen.terminate()
+            else:
+                cleanDeadline = 0 # nothing to wait for
         else:
-            pid, ppid, state, command = parsed.group('pid', 'ppid', 'state', 'command')
-            pid = int(pid)
-            if pid == parentPid: # include the top-level parent if we find it
-                topLevelProcess = {'pid':pid, 'state':state, 'command':command}
-                remainingProcesses.append(topLevelProcess)
-            else:
-                if not ppid in processesByParent:
-                    processesByParent[ppid] = []
-                processesByParent[ppid].append({'pid':pid, 'command':command})
-    
-    # - short circut if there are no items to do
-    if topLevelProcess is None and parentPid not in processesByParent:
-        return
-    
-    # - assemble the list
-    canidates = processesByParent[parentPid] if parentPid in processesByParent else []
-    while canidates:
-        newCanidates = []
-        for canidate in canidates:
-            remainingProcesses.append(canidate)
-            if canidate['pid'] in processesByParent:
-                newCanidates.append(processesByParent(canidate['pid']))
-        canidates = newCanidates
-    
-    # - remove zombies
-    for topLevelProcess in copy.copy(remainingProcesses):
-        if 'Z' in topLevelProcess['state']:
-            if process:
-                process.poll()
-            else:
-                os.waitpid(topLevelProcess['pid'], os.WNOHANG)
-            remainingProcesses.remove(topLevelProcess)
-    
-    # - reverse them to get the right order to kill in 
-    remainingProcesses.reverse()
-    
-    # -- short circut if nothing is running
-    if not remainingProcesses:
-        return
-    
-    # -- send term to the leader, wait to see if it gracefully exists
-    if topLevelProcess:
-        try:
-            os.kill(parentPid, signal.SIGTERM)
-        except OSError as e:
-            if e.errno == 3: # already dead
-               remainingProcesses.remove(topLevelProcess) 
-    else:
-        graceDeadline = 0 # no need to wait... kill them all
-    
-    problems = []
-    
-    # -- wait for everything to be gone
-    while graceDeadline > time.time():
-        time.sleep(.1)
-        if topLevelProcess in remainingProcesses:
-            if process and hasattr(process, 'poll'):
-                process.poll()
-            else:
-                os.waitpid(process['pid'], os.WNOHANG)
-        for process in copy.copy(remainingProcesses):
             try:
-                os.kill(process['pid'], 0) # 0 checks to see if the process is there
+                os.kill(parentPid, signal.SIGTERM)
             except OSError as e:
-                if e.errno == 3:
-                    pass
-                elif e.errno == 1:
-                    mesg = 'asked to kill pid %d that was not owned by the current user: %s' % (process['pid'], process['command'])
-                    if mesg not in problems:
-                        problems.append(mesg)
+                if e.errno == 3: # No such process
+                    cleanDeadline = 0 # nothing to wait for
+                elif e.errno == 1: # Operation not permitted: not our process
+                    raise Exception('Asked to kill a process that was not ours: %d' % parentPid)
                 else:
-                    mesg = 'Unhandled OSError while killing process %r: %s' % (parentPid, str(e))
-                    if mesg not in problems:
-                        problems.append(mesg)
-                remainingProcesses.remove(process)
-        if not remainingProcesses:
-            break
-    else:
-        # -- the gentle approach failed, kill them all
-        while deadline > time.time():
-            for process in copy.copy(remainingProcesses):
-                try:
-                    os.kill(process['pid'], signal.SIGKILL)
-                    warnings.warn('SIGKILL %r' % process['pid'])
-
-                except OSError as e:
-                    if e.errno == 3: pass # already dead
-                    elif e.errno == 1: # not our process
-                        mesg = 'permission error while killing a process: %s %s: %s' % (process['pid'], process['command'], str(e))
-                        if mesg not in problems:
-                            problems.append(mesg)
-                    else:
-                        mesg = 'unhandeled OSError while killing a process: %s %s: %s' % (process['pid'], process['command'], str(e))
-                        if mesg not in problems:
-                            problems.append(mesg)
-                except Exception as e:
-                    mesg = 'unhandeled Exception while killing a process: %s %s: %s' % (process['pid'], process['command'], str(e))
-                    import traceback
-                    traceback.print_exc()
-                    if mesg not in problems:
-                        problems.append(mesg)
-            if not remainingProcesses:
-                break
-            else:
-                time.sleep(.1) # repeated SIGKILLs should not get better results, but we will try anyways
-        else:
-            # timed out
-            for process in remainingProcesses:
-                problems.append('Process %s was still running: %s' % (process['pid'], process['command']))
-                subprocess.call(psCommand)
+                    raise
     
-    if problems:
-        timeElapsed = timeout - (deadline - time.time())
-        mesg = 'Ran into problems killing all of the processes under pid %d after %.2f seconds. The problems:\n\t%s' % (parentPid, timeElapsed, "\n\t".join(problems))
-        if only_warn:
-            warnings.warn(mesg)
+    # - wait for the processes to gracefully terminate
+    while time.time() < cleanDeadline:
+        if parentPopen:
+            if parentPopen.poll() is not None:
+                break
         else:
-            raise RuntimeError(mesg) # ToDo: better categorize the error
+            try:
+                result = os.waitpid(parentPid, os.WNOHANG)
+                if result != (0, 0):
+                    break
+            except OSError as e:
+                if e.errno == 10: # No such child
+                    break
+        time.sleep(0.1)
+    
+    # -- SIGINT all of the running processes
+    while time.time() < softDeadline:
+        time.sleep(0.1)
+        runningProcesses = processes.list()
+        if len(runningProcesses) == 0:
+            return # everything is done
+        for runner in runningProcesses:
+            try:
+                os.kill(runner.pid, signal.SIGINT)
+            except OSError: pass # ToDo: figure out what to do here
+        
+    # -- SIGKILL whatever is left - multiple SIGKILLs should not make a difference, but sometimes they do
+    while True:
+        runningProcesses = processes.list()
+        if len(runningProcesses) == 0:
+            return # everything is done
+        for runner in runningProcesses:
+            try:
+                os.killpg(runner.pid, signal.SIGKILL)
+            except OSError: pass # ToDo: figure out what to do here
+        
+        if time.time() < hardDeadline:
+            time.sleep(0.2)
+        else:
+            break
+    
+    # -- try to collect the return code/process
+    if parentPopen:
+        parentPopen.poll()
+    else:
+        try:
+            os.waitpid(parentPid, os.WNOHANG)
+        except Exception: pass
+    
+    # -- return failure if anything still remains
+    runningProcesses = processes.list()
+    if runningProcesses:
+        timeElapesed = time.time() - startTime
+        message = 'Unable to kill all of the processes under pid %d after %.2f seconds:\n\t%s\n' % (parentPid, timeElapesed, '\n\t'.join([str(x) for x in runningProcesses]))
+    else:
+        return
 
 def nonblocking_readline(source, seek=0):
     
