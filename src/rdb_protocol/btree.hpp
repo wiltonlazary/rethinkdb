@@ -94,12 +94,14 @@ struct btree_batched_replacer_t {
     virtual ~btree_batched_replacer_t() { }
     virtual ql::datum_t replace(
         const ql::datum_t &d, size_t index) const = 0;
+    virtual return_write_stamps_t should_return_write_stamps() const = 0;
     virtual return_changes_t should_return_changes() const = 0;
 };
 struct btree_point_replacer_t {
     virtual ~btree_point_replacer_t() { }
     virtual ql::datum_t replace(
         const ql::datum_t &d) const = 0;
+    virtual return_write_stamps_t should_return_write_stamps() const = 0;
     virtual return_changes_t should_return_changes() const = 0;
 };
 

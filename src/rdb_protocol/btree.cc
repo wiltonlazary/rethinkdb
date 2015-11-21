@@ -316,15 +316,20 @@ batched_replace_response_t rdb_replace_and_return_superblock(
 }
 
 
-class one_replace_t : public btree_point_replacer_t {
+class one_replace_t final : public btree_point_replacer_t {
 public:
     one_replace_t(const btree_batched_replacer_t *_replacer, size_t _index)
         : replacer(_replacer), index(_index) { }
 
-    ql::datum_t replace(const ql::datum_t &d) const {
+    ql::datum_t replace(const ql::datum_t &d) const final {
         return replacer->replace(d, index);
     }
-    return_changes_t should_return_changes() const { return replacer->should_return_changes(); }
+    return_write_stamps_t should_return_write_stamps() const final {
+        return replacer->should_return_write_stamps();
+    }
+    return_changes_t should_return_changes() const final {
+        return replacer->should_return_changes();
+    }
 private:
     const btree_batched_replacer_t *const replacer;
     const size_t index;

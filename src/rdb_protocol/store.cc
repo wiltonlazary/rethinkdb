@@ -622,37 +622,53 @@ void store_t::protocol_read(const read_t &read,
     response->event_log.push_back(profile::stop_t());
 }
 
-
-class func_replacer_t : public btree_batched_replacer_t {
+class func_replacer_t final : public btree_batched_replacer_t {
 public:
-    func_replacer_t(ql::env_t *_env, const ql::wire_func_t &wf, return_changes_t _return_changes)
-        : env(_env), f(wf.compile_wire_func()), return_changes(_return_changes) { }
+    func_replacer_t(ql::env_t *_env,
+                    const ql::wire_func_t &wf,
+                    return_write_stamps_t _return_write_stamps,
+                    return_changes_t _return_changes)
+        : env(_env),
+          f(wf.compile_wire_func()),
+          return_write_stamps(_return_write_stamps),
+          return_changes(_return_changes) { }
     ql::datum_t replace(
         const ql::datum_t &d, size_t) const {
         return f->call(env, d, ql::LITERAL_OK)->as_datum();
     }
-    return_changes_t should_return_changes() const { return return_changes; }
+    return_write_stamps_t should_return_write_stamps() const final {
+        return return_write_stamps;
+    }
+    return_changes_t should_return_changes() const final { return return_changes; }
 private:
     ql::env_t *const env;
     const counted_t<const ql::func_t> f;
+    const return_write_stamps_t return_write_stamps;
     const return_changes_t return_changes;
 };
 
-class datum_replacer_t : public btree_batched_replacer_t {
+class datum_replacer_t final : public btree_batched_replacer_t {
 public:
     explicit datum_replacer_t(const batched_insert_t &bi)
-        : datums(&bi.inserts), conflict_behavior(bi.conflict_behavior),
-          pkey(bi.pkey), return_changes(bi.return_changes) { }
+        : datums(&bi.inserts),
+          conflict_behavior(bi.conflict_behavior),
+          pkey(bi.pkey),
+          return_write_stamps(bi.return_write_stamps),
+          return_changes(bi.return_changes) { }
     ql::datum_t replace(const ql::datum_t &d, size_t index) const {
         guarantee(index < datums->size());
         ql::datum_t newd = (*datums)[index];
         return resolve_insert_conflict(pkey, d, newd, conflict_behavior);
     }
-    return_changes_t should_return_changes() const { return return_changes; }
+    return_write_stamps_t should_return_write_stamps() const final {
+        return return_write_stamps;
+    }
+    return_changes_t should_return_changes() const final { return return_changes; }
 private:
     const std::vector<ql::datum_t> *const datums;
     const conflict_behavior_t conflict_behavior;
     const std::string pkey;
+    const return_write_stamps_t return_write_stamps;
     const return_changes_t return_changes;
 };
 
@@ -663,7 +679,8 @@ struct rdb_write_visitor_t : public boost::static_visitor<void> {
         rdb_modification_report_cb_t sindex_cb(
             store, &sindex_block,
             auto_drainer_t::lock_t(&store->drainer));
-        func_replacer_t replacer(&ql_env, br.f, br.return_changes);
+        func_replacer_t replacer(
+            &ql_env, br.f, br.return_write_stamps, br.return_changes);
 
         response->response =
             rdb_batched_replace(
