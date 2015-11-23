@@ -1,0 +1,34 @@
+desc: Geo indexed changefeed operations
+table_variable_name: tbl
+tests:
+    - rb: tbl.index_create('L', {geo: true})
+      ot: partial({'created': 1})
+
+    - rb: tbl.index_wait().count
+      ot: 1
+
+    - def: obj11 = {id: "11", L: r.point(1,1)}
+    - def: obj12 = {id: "12", L: r.point(1,2)}
+    - def: obj21 = {id: "21", L: r.point(2,1)}
+    - def: obj22 = {id: "22", L: r.point(2,2)}
+
+    # A distance of 130,000 meters from 1,1 is enough to cover 1,2 and 2,1 (~110km
+    # distance) but not 2,2 (~150km distance.)
+    #
+    # This is useful because the S2LatLngRect bounding box passed to the shards contains
+    # 2,2 yet it should not be returned in the changefeed results.
+    - rb: feed = tbl.get_intersecting(r.circle(r.point(1,1), 130000), {index: "L"}).changes(include_initial: true)
+
+    - rb: tbl.insert([obj11, obj12, obj21, obj22])
+      ot: partial({'errors': 0, 'inserted': 4})
+
+    - rb: fetch(feed, 3)
+      ot: bag([{new_val: obj11, old_val: null}, {new_val: obj12, old_val: null}, {new_val: obj21, old_val: null}])
+
+#    - rb: feed2 = tbl.get_intersecting(r.line(end1, end2), {index: "L"}).changes(include_initial: true)
+#
+#    - rb: fetch(feed2, 3)
+#      ot: bag([{new_val: obj1, old_val: null}, {new_val: obj2, old_val: null}, {new_val: objnearline, old_val: null}])
+#
+#    - rb: tbl.get(obj1.id).update({"field": "hello"})
+#      ot: partial({'errors': 0, 'updated': 1})
