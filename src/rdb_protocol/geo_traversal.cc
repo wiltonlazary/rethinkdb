@@ -57,14 +57,20 @@ geo_job_data_t::geo_job_data_t(
     store_key_t last_key,
     const ql::batchspec_t &batchspec,
     const std::vector<ql::transform_variant_t> &_transforms,
-    const boost::optional<ql::terminal_variant_t> &_terminal)
+    const boost::optional<ql::terminal_variant_t> &_terminal,
+    is_stamp_read_t is_stamp_read)
     : env(_env),
       batcher(make_scoped<ql::batcher_t>(batchspec.to_batcher())),
       accumulator(_terminal
                   ? ql::make_terminal(*_terminal)
                   : ql::make_append(std::move(region),
                                     std::move(last_key),
-                                    sorting_t::UNORDERED,
+                                    // This causes the accumulator to include sindex_val
+                                    // in the result, which we need for post-filtering in
+                                    // reads for getIntersecting changefeeds.
+                                    is_stamp_read == is_stamp_read_t::YES
+                                        ? sorting_t::ASCENDING
+                                        : sorting_t::UNORDERED,
                                     batcher.get())) {
     for (size_t i = 0; i < _transforms.size(); ++i) {
         transformers.push_back(ql::make_op(_transforms[i]));

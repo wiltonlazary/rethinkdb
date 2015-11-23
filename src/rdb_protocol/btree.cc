@@ -1091,6 +1091,7 @@ void rdb_get_intersecting_slice(
         const boost::optional<ql::terminal_variant_t> &terminal,
         const key_range_t &pk_range,
         const sindex_disk_info_t &sindex_info,
+        is_stamp_read_t is_stamp_read,
         rget_read_response_t *response) {
     guarantee(query_geometry.has());
 
@@ -1104,11 +1105,12 @@ void rdb_get_intersecting_slice(
         slice,
         geo_job_data_t(ql_env,
                        shard,
-                       // The sorting is always `UNORDERED`, so this is always right.
+                       // The sorting is never `DESCENDING`, so this is always right.
                        sindex_range.left,
                        batchspec,
                        transforms,
-                       terminal),
+                       terminal,
+                       is_stamp_read),
         geo_sindex_data_t(pk_range, sindex_info.mapping,
                           sindex_func_reql_version, sindex_info.multi),
         query_geometry,

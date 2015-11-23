@@ -579,7 +579,7 @@ private:
         const batchspec_t &batchspec) const;
 
     virtual changefeed::keyspec_t::range_t get_range_spec(
-            std::vector<transform_variant_t> transforms) const;
+        std::vector<transform_variant_t> transforms) const;
 
     const std::string sindex;
     bool sent_first_read;
@@ -614,11 +614,8 @@ public:
     void restrict_active_ranges(sorting_t, active_ranges_t *) const final { }
 
     virtual changefeed::keyspec_t::range_t get_range_spec(
-        std::vector<transform_variant_t>) const {
-        rfail_datum(base_exc_t::LOGIC,
-                    "%s", "Cannot call `changes` on an intersection read.");
-        unreachable();
-    }
+        std::vector<transform_variant_t>) const;
+
 private:
     intersecting_readgen_t(
         global_optargs_t global_optargs,

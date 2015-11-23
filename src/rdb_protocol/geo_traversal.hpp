@@ -42,7 +42,8 @@ public:
                    store_key_t last_key,
                    const ql::batchspec_t &batchspec,
                    const std::vector<ql::transform_variant_t> &_transforms,
-                   const boost::optional<ql::terminal_variant_t> &_terminal);
+                   const boost::optional<ql::terminal_variant_t> &_terminal,
+                   is_stamp_read_t is_stamp_read);
     geo_job_data_t(geo_job_data_t &&jd)
         : env(jd.env),
           batcher(std::move(jd.batcher)),

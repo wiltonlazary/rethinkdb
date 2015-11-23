@@ -11,6 +11,8 @@
 #include "rdb_protocol/artificial_table/backend.hpp"
 #include "rdb_protocol/btree.hpp"
 #include "rdb_protocol/env.hpp"
+#include "rdb_protocol/geo/exceptions.hpp"
+#include "rdb_protocol/geo/intersection.hpp"
 #include "rdb_protocol/protocol.hpp"
 #include "rdb_protocol/response.hpp"
 #include "rdb_protocol/val.hpp"
@@ -1895,6 +1897,17 @@ public:
     boost::optional<std::string> sindex() const { return spec.sindex; }
     size_t copies(const datum_t &sindex_key) const {
         guarantee(spec.sindex);
+        if (spec.intersect_geometry) {
+            try {
+                if (!geo_does_intersect(*spec.intersect_geometry, sindex_key)) {
+                    return 0;
+                }
+            } catch (const geo_exception_t &) {
+                return 0;
+            } catch (const base_exc_t &) {
+                return 0;
+            }
+        }
         return spec.datumspec.copies(sindex_key);
     }
     size_t copies(const store_key_t &pkey) const {

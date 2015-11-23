@@ -125,6 +125,7 @@ struct keyspec_t {
         boost::optional<std::string> sindex;
         sorting_t sorting;
         datumspec_t datumspec;
+        boost::optional<datum_t> intersect_geometry;
     };
     struct limit_t {
         range_t range;
