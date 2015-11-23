@@ -1690,7 +1690,16 @@ def main():
     
     # -- parse command line options
     
-    parser = optparse.OptionParser(usage='usage: %prog [options] [patterns]')
+    usage = '''
+usage: %prog [options] [patterns]
+
+Tests by default use the drivers from the appropriate folder in this
+repository. To change this set the appropriate environtmental variable
+from this list: JAVASCRIPT_DRIVER, PYTHON_DRIVER, RUBY_DRIVER. Or use
+`--INSTALLED--` to use the system-installed version.
+'''.strip()
+    
+    parser = optparse.OptionParser(usage=usage)
     
     parser.add_option('-l', '--list', dest='list_mode', default=False, action='store_true', help='list the tests and exit')
     
