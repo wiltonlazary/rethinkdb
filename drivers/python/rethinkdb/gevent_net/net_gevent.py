@@ -246,10 +246,10 @@ class ConnectionInstance(object):
     # TODO: make connection recoverable if interrupted by a user's gevent.Timeout?
     def run_query(self, query, noreply):
         self._write_mutex.acquire()
-        
+
         try:
             self._socket.sendall(query.serialize(self._parent._get_json_encoder(query)))
-        finally:    
+        finally:
             self._write_mutex.release()
 
         if noreply:
