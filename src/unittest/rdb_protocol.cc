@@ -18,7 +18,7 @@
 #include "rdb_protocol/store.hpp"
 #include "rpc/directory/read_manager.hpp"
 #include "rpc/semilattice/semilattice_manager.hpp"
-#include "serializer/config.hpp"
+#include "serializer/log/log_serializer.hpp"
 #include "serializer/merger.hpp"
 #include "serializer/translator.hpp"
 #include "stl_utils.hpp"
@@ -64,13 +64,13 @@ void run_with_namespace_interface(
     scoped_array_t<scoped_ptr_t<serializer_t> > serializers(store_shards.size());
     for (size_t i = 0; i < store_shards.size(); ++i) {
         filepath_file_opener_t file_opener(temp_files[i]->name(), &io_backender);
-        standard_serializer_t::create(&file_opener,
-                                      standard_serializer_t::static_config_t());
-        scoped_ptr_t<standard_serializer_t> standard_ser(
-            new standard_serializer_t(standard_serializer_t::dynamic_config_t(),
-                                      &file_opener,
-                                      &get_global_perfmon_collection()));
-        serializers[i].init(new merger_serializer_t(std::move(standard_ser), 1));
+        log_serializer_t::create(&file_opener,
+                                 log_serializer_t::static_config_t());
+        scoped_ptr_t<log_serializer_t> log_ser(
+            new log_serializer_t(log_serializer_t::dynamic_config_t(),
+                                 &file_opener,
+                                 &get_global_perfmon_collection()));
+        serializers[i].init(new merger_serializer_t(std::move(log_ser), 1));
     }
 
     extproc_pool_t extproc_pool(2);
@@ -84,8 +84,7 @@ void run_with_namespace_interface(
                     make_scoped<store_t>(region_t::universe(), serializers[i].get(),
                         &balancer, temp_files[i]->name().permanent_path(), do_create,
                         &get_global_perfmon_collection(), &ctx, &io_backender,
-                        base_path_t("."),
-                        generate_uuid()));
+                        base_path_t("."), generate_uuid(), update_sindexes_t::UPDATE));
         }
 
         std::vector<scoped_ptr_t<store_view_t> > stores;
@@ -303,9 +302,9 @@ void run_create_drop_sindex_test(
             // Order doesn't matter because streams->size() is 1.
             auto stream = &streams->begin()->second;
             ASSERT_TRUE(stream != NULL);
-            ASSERT_EQ(1u, stream->size());
+            ASSERT_EQ(1u, stream->substreams.size());
             ASSERT_EQ(ql::to_datum(data, limits, reql_version_t::LATEST),
-                      stream->at(0).data);
+                      stream->substreams.begin()->second.stream.at(0).data);
         } else {
             ADD_FAILURE() << "got wrong type of result back";
         }
@@ -568,7 +567,8 @@ void read_sindex(namespace_interface_t *nsi,
         // Order doesn't matter because streams->size() is 1.
         ql::stream_t *stream = &streams->begin()->second;
         ASSERT_TRUE(stream != NULL);
-        ASSERT_EQ(expected_size, stream->size());
+        ASSERT_EQ(1ul, stream->substreams.size());
+        ASSERT_EQ(expected_size, stream->substreams.begin()->second.stream.size());
     } else {
         ADD_FAILURE() << "got wrong type of result back";
     }
@@ -768,7 +768,8 @@ void run_sindex_oversized_keys_test(
                     ASSERT_TRUE(stream != NULL);
                     // There should be results equal to the number of iterations
                     // performed
-                    ASSERT_EQ(i + 1, stream->size());
+                    ASSERT_EQ(1ul, stream->substreams.size());
+                    ASSERT_EQ(i + 1, stream->substreams.begin()->second.stream.size());
                 } else {
                     ADD_FAILURE() << "got wrong type of result back";
                 }
