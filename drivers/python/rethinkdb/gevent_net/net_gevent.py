@@ -248,7 +248,7 @@ class ConnectionInstance(object):
         self._write_mutex.acquire()
         
         try:
-            self._socket.sendall(query.serialize(self._parent._get_json_encoder()))
+            self._socket.sendall(query.serialize(self._parent._get_json_encoder(query)))
         finally:    
             self._write_mutex.release()
 
@@ -278,7 +278,7 @@ class ConnectionInstance(object):
                     # Do not pop the query from the dict until later, so
                     # we don't lose track of it in case of an exception
                     query, async_res = self._user_queries[token]
-                    res = Response(token, buf, self._parent._get_json_decoder(query.global_optargs))
+                    res = Response(token, buf, self._parent._get_json_decoder(query))
                     if res.type == pResponse.SUCCESS_ATOM:
                         async_res.set(maybe_profile(res.data[0], res))
                     elif res.type in (pResponse.SUCCESS_SEQUENCE,
