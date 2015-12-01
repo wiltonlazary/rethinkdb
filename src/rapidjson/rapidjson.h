@@ -311,7 +311,7 @@ RAPIDJSON_NAMESPACE_END
           \ref RAPIDJSON_ERRORS APIs.
 */
 #ifndef RAPIDJSON_ASSERT
-// RethinkDB change: Use `rassert` rather than `assert`
+// RethinkDB: Use `rassert` rather than `assert`
 #include "errors.hpp"
 #define RAPIDJSON_ASSERT(x) rassert(x)
 #endif // RAPIDJSON_ASSERT
