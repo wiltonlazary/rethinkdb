@@ -42,7 +42,7 @@ RAPIDJSON_DIAG_OFF(4127) // conditional expression is constant
 // Notably on ARM, GCC complains about code such as `unsigned(c) < 256` always being
 // true when Ch is instantiated as `char`.
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wswitch-enum"
+#pragma GCC diagnostic ignored "-Wtype-limits"
 
 RAPIDJSON_NAMESPACE_BEGIN
 
