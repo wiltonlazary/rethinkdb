@@ -1972,7 +1972,6 @@ public:
             }
         }
         queue->purge_below(purge_stamps);
-        debugf("start_stamps: %s\n", debug_str(start_stamps).c_str());
         rcheck_datum(start_stamps.size() != 0, base_exc_t::RESUMABLE_OP_FAILED,
                      "Empty start stamps.  Did you just reshard?");
 
@@ -2586,12 +2585,10 @@ private:
         batcher_t batcher = bs.to_batcher();
 
         while (ret.size() == 0) {
-            debugf("LOOP\n");
             r_sanity_check(!batcher.should_send_batch());
             // If there's nothing left to read, behave like a normal feed.  `ready`
             // should only be called after we've confirmed `is_exhausted` returns
             // true.
-            debugf("is_exhausted: %d\n", src->is_exhausted());
             if (src->is_exhausted() && ready()) {
                 // This will send the `ready` state as its first doc.
                 return stream_t::next_stream_batch(env, bs);
@@ -2605,7 +2602,6 @@ private:
             if (read_once) {
                 while (sub->has_change_val() && !batcher.should_send_batch()) {
                     change_val_t cv = sub->pop_change_val();
-                    debugf("cv: %s\n", debug_str(cv).c_str());
                     // Note that `discard` updates the `stamped_ranges`.
                     datum_t el = change_val_to_change(
                         cv,
@@ -2710,7 +2706,6 @@ private:
         }
     }
     void maybe_skip_to_feed() {
-        debugf("!!! maybe_skip_to_feed\n");
         const std::map<uuid_u, uint64_t> *sub_stamps = &sub->get_start_stamps();
         boost::optional<std::map<uuid_u, uint64_t> > feed_range_stamps;
         for (auto &&pair : stamped_ranges) {
@@ -2720,14 +2715,8 @@ private:
             // If we've consumed all the changes that the subscription has seen,
             // we can jump ahead to whatever stamp the parent feed says is the
             // latest it's decided whether or not to pass to the subscription.
-            debugf("considering %s (%lu %lu)\n",
-                   debug_str(pair).c_str(),
-                   pair.second.next_expected_stamp,
-                   sub_stamp);
             if (pair.second.next_expected_stamp >= sub_stamp) {
-                debugf("skipping...\n");
                 if (!feed_range_stamps) {
-                    debugf("fetching feed stamps\n");
                     feed_range_stamps = sub->parent_feed()->get_range_stamps();
                 }
                 auto ft = feed_range_stamps->find(pair.first);
@@ -2740,16 +2729,13 @@ private:
         }
     }
     void update_ranges() {
-        debugf("!!! update_ranges\n");
         active_state = src->truncate_and_get_active_state();
         key_range_t range = last_read_range();
         for (const auto &pair : last_read_stamps()) {
             add_range(pair.first, pair.second, range);
         }
-        debugf("%s\n", debug_str(stamped_ranges).c_str());
     }
     void remove_outdated_ranges() {
-        debugf("!!! remove_outdated_ranges\n");
         for (auto &&pair : stamped_ranges) {
             auto *ranges = &pair.second.ranges;
             while (ranges->size() > 0) {
@@ -2762,7 +2748,6 @@ private:
                 }
             }
         }
-        debugf("%s\n", debug_str(stamped_ranges).c_str());
     }
 
     const key_range_t &last_read_range() const {
@@ -2785,14 +2770,11 @@ private:
             remove_outdated_ranges();
             for (const auto &pair : stamped_ranges) {
                 if (pair.second.ranges.size() != 0) {
-                    debugf("EARLY ready: %d\n", cached_ready);
-                    debugf("%s\n", debug_str(stamped_ranges).c_str());
                     return cached_ready;
                 }
             }
             cached_ready = true;
         }
-        debugf("ready: %d\n", cached_ready);
         return cached_ready;
     }
 
