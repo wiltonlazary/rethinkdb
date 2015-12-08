@@ -1912,9 +1912,9 @@ public:
 
     bool update_stamp(const uuid_u &uuid, uint64_t new_stamp) final {
         guarantee(active());
-        auto it = start_stamps.find(uuid);
-        if (it == start_stamps.end() || new_stamp >= it->second) {
-            start_stamps[uuid] = new_stamp + 1;
+        auto it = next_stamps.find(uuid);
+        if (it == next_stamps.end() || new_stamp >= it->second) {
+            next_stamps[uuid] = new_stamp + 1;
             return true;
         }
         return false;
@@ -1965,14 +1965,14 @@ public:
                      "Unable to retrieve the start stamps.  Did you just reshard?");
         std::map<uuid_u, uint64_t> purge_stamps;
         for (const auto &pair : *resp->stamps) {
-            auto res = start_stamps.insert(pair);
+            auto res = next_stamps.insert(pair);
             // If we already have stamps.
             if (!res.second) {
                 purge_stamps.insert(pair);
             }
         }
         queue->purge_below(purge_stamps);
-        rcheck_datum(start_stamps.size() != 0, base_exc_t::RESUMABLE_OP_FAILED,
+        rcheck_datum(next_stamps.size() != 0, base_exc_t::RESUMABLE_OP_FAILED,
                      "Empty start stamps.  Did you just reshard?");
 
         env = make_env(outer_env);
@@ -2003,7 +2003,7 @@ public:
         artificial_include_initial = include_initial;
 
         env = make_env(outer_env);
-        start_stamps[uuid] = 0;
+        next_stamps[uuid] = 0;
         if (artificial_include_initial) {
             state = state_t::INITIALIZING;
             for (auto it = initial_vals.rbegin(); it != initial_vals.rend(); ++it) {
@@ -2016,7 +2016,7 @@ public:
         }
         return make_counted<stream_t<subscription_t> >(std::move(self), bt);
     }
-    const std::map<uuid_u, uint64_t> &get_start_stamps() { return start_stamps; }
+    const std::map<uuid_u, uint64_t> &get_next_stamps() { return next_stamps; }
 private:
     scoped_ptr_t<env_t> make_env(env_t *outer_env) {
         // This is to support fake environments from the unit tests that don't
@@ -2039,7 +2039,7 @@ private:
     // The stamp (see `stamped_msg_t`) associated with our `changefeed_stamp_t`
     // read.  We use these to make sure we don't see changes from writes before
     // our subscription.
-    std::map<uuid_u, uint64_t> start_stamps;
+    std::map<uuid_u, uint64_t> next_stamps;
     keyspec_t::range_t spec;
     boost::optional<std::map<store_key_t, uint64_t> > store_keys;
     boost::optional<key_range_t> store_key_range;
@@ -2575,7 +2575,7 @@ public:
           cached_ready(false),
           src(std::move(_src)) {
         r_sanity_check(src.has());
-        for (const auto &p : sub->get_start_stamps()) {
+        for (const auto &p : sub->get_next_stamps()) {
             stamped_ranges.insert(std::make_pair(p.first, stamped_range_t(p.second)));
         }
     }
@@ -2706,7 +2706,7 @@ private:
         }
     }
     void maybe_skip_to_feed() {
-        const std::map<uuid_u, uint64_t> *sub_stamps = &sub->get_start_stamps();
+        const std::map<uuid_u, uint64_t> *sub_stamps = &sub->get_next_stamps();
         boost::optional<std::map<uuid_u, uint64_t> > feed_range_stamps;
         for (auto &&pair : stamped_ranges) {
             auto it = sub_stamps->find(pair.first);

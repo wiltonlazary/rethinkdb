@@ -16,7 +16,6 @@ $tbl = r.table('test')
 r.table_drop('test').run rescue nil
 r.table_create('test').run
 $tbl.index_create('a').run
-# $tbl.reconfigure({shards: 2, replicas: 1}).run
 $tbl.wait.run
 
 $init_pop = (0..25000).map {|i|
@@ -24,6 +23,8 @@ $init_pop = (0..25000).map {|i|
 }
 $pop = $init_pop.dup
 PP.pp $tbl.insert($pop).run
+$tbl.reconfigure({shards: 2, replicas: 1}).run
+$tbl.wait().run
 
 def assert(x, *args)
   raise RuntimeError, "Assert failed (#{args})." if !x
