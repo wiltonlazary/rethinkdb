@@ -49,6 +49,7 @@ struct stamped_range_t {
     // `stamped_range_t` before populating `ranges`.)
     // MOVABLE_BUT_NOT_COPYABLE(stamped_range_t);
 };
+
 void debug_print(printf_buffer_t *buf, const stamped_range_t &rng) {
     buf->appendf("stamped_range_t{");
     debug_print(buf, rng.next_expected_stamp);
