@@ -276,27 +276,27 @@ private:
     std::list<store_key_t> queue_order;
 };
 
-class nonsquashing_queue_t : public maybe_squashing_queue_t {
-    virtual void add(change_val_t change_val) {
+class nonsquashing_queue_t final : public maybe_squashing_queue_t {
+    void add(change_val_t change_val) final {
         queue.push_back(std::move(change_val));
     }
-    virtual size_t size() const {
+    size_t size() const final {
         return queue.size();
     }
-    virtual void clear() {
+    void clear() final {
         queue.clear();
     }
-    virtual const change_val_t &peek() {
+    const change_val_t &peek() final {
         guarantee(size() != 0);
         return queue.front();
     }
-    virtual change_val_t pop() {
+    change_val_t pop() final {
         guarantee(size() != 0);
         auto ret = std::move(queue.front());
         queue.pop_front();
         return ret;
     }
-    virtual void purge_below(std::map<uuid_u, uint64_t> stamps) {
+    void purge_below(std::map<uuid_u, uint64_t> stamps) final {
         std::deque<change_val_t> old_queue;
         old_queue.swap(queue);
         guarantee(queue.empty());
