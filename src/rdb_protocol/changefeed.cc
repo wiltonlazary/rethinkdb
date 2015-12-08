@@ -1969,6 +1969,10 @@ public:
             // If we already have stamps.
             if (!res.second) {
                 purge_stamps.insert(pair);
+                // Even though we're purging the early changes, we also need to
+                // make sure we don't get any such changes *after* the purge.
+                next_stamps[pair.first] =
+                    std::max(next_stamps[pair.first], pair.second);
             }
         }
         queue->purge_below(purge_stamps);
