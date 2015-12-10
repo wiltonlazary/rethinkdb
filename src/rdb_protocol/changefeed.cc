@@ -203,7 +203,6 @@ public:
 
 class nonsquashing_queue_t final : public maybe_squashing_queue_t {
     void add(change_val_t change_val) final {
-        // debugf("adding (size %zu)\n", size());
         queue.push_back(std::move(change_val));
     }
     size_t size() const final {
@@ -239,9 +238,6 @@ class nonsquashing_queue_t final : public maybe_squashing_queue_t {
                 add(std::move(cv));
             }
         }
-        // debugf("PURGED\n%s\nTO\n%s\n",
-        //        debug_str(orig).c_str(),
-        //        debug_str(kept).c_str());
     }
     std::deque<change_val_t> queue;
 };
@@ -249,7 +245,6 @@ class nonsquashing_queue_t final : public maybe_squashing_queue_t {
 class squashing_queue_t final : public maybe_squashing_queue_t {
 public:
     void add(change_val_t change_val) final {
-        // debugf("ADDING %s\n", debug_str(change_val).c_str());
         auto it = queue.find(change_val.pkey);
         if (it == queue.end()) {
             auto order_it = queue_order.insert(queue_order.end(), change_val.pkey);
@@ -296,7 +291,6 @@ public:
         auto ret = std::move(it->second.first);
         queue.erase(it);
         queue_order.pop_front();
-        // debugf("POPPING %s\n", debug_str(ret).c_str());
         return ret;
     }
     void purge_below(std::map<uuid_u, uint64_t>) final {
@@ -1920,10 +1914,6 @@ public:
     bool update_stamp(const uuid_u &uuid, uint64_t new_stamp) final {
         guarantee(active());
         auto it = next_stamps.find(uuid);
-        // debugf("update_stamp: %s, %zu vs. %zu\n",
-        //        debug_str(uuid).c_str(),
-        //        new_stamp,
-        //        it != next_stamps.end() ? it->second : 0);
         if (it == next_stamps.end() || new_stamp >= it->second) {
             next_stamps[uuid] = new_stamp + 1;
             return true;
@@ -1996,7 +1986,6 @@ public:
                     std::max(next_stamps[pair.first], pair.second);
             }
         }
-        // debugf("next_stamps: %s\n", debug_str(next_stamps).c_str());
         queue->purge_below(purge_stamps);
         rcheck_datum(next_stamps.size() != 0, base_exc_t::RESUMABLE_OP_FAILED,
                      "Empty start stamps.  Did you just reshard?");
