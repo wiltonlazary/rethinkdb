@@ -279,6 +279,7 @@ private:
 
 class nonsquashing_queue_t final : public maybe_squashing_queue_t {
     void add(change_val_t change_val) final {
+        // debugf("adding (size %zu)\n", size());
         queue.push_back(std::move(change_val));
     }
     size_t size() const final {
@@ -298,18 +299,25 @@ class nonsquashing_queue_t final : public maybe_squashing_queue_t {
         return ret;
     }
     void purge_below(std::map<uuid_u, uint64_t> stamps) final {
+        std::map<uuid_u, uint64_t> orig, kept;
         std::deque<change_val_t> old_queue;
         old_queue.swap(queue);
         guarantee(queue.empty());
         for (auto &&cv : old_queue) {
             auto it = stamps.find(cv.source_stamp.first);
+            orig.insert(std::make_pair(cv.source_stamp.first, 0)).first->second += 1;
             r_sanity_check(it != stamps.end());
             // We want `>=` here because the semantics are that the start stamp
             // is the first stamp we expect.
             if (cv.source_stamp.second >= it->second) {
+                kept.insert(
+                    std::make_pair(cv.source_stamp.first, 0)).first->second += 1;
                 add(std::move(cv));
             }
         }
+        debugf("PURGED\n%s\nTO\n%s\n",
+               debug_str(orig).c_str(),
+               debug_str(kept).c_str());
     }
     std::deque<change_val_t> queue;
 };
@@ -1337,7 +1345,14 @@ public:
         scoped_ptr_t<subscription_t> &&self,
         backtrace_id_t bt) = 0;
     virtual auto_drainer_t *get_drainer() = 0;
-    feed_t *parent_feed() { return feed; }
+    feed_t *parent_feed() {
+        if (feed) {
+            return feed;
+        } else {
+            guarantee(exc);
+            std::rethrow_exception(exc);
+        }
+    }
 protected:
     subscription_t(feed_t *feed,
                    configured_limits_t limits,
@@ -1914,6 +1929,10 @@ public:
     bool update_stamp(const uuid_u &uuid, uint64_t new_stamp) final {
         guarantee(active());
         auto it = next_stamps.find(uuid);
+        // debugf("update_stamp: %s, %zu vs. %zu\n",
+        //        debug_str(uuid).c_str(),
+        //        new_stamp,
+        //        it != next_stamps.end() ? it->second : 0);
         if (it == next_stamps.end() || new_stamp >= it->second) {
             next_stamps[uuid] = new_stamp + 1;
             return true;
@@ -1976,6 +1995,7 @@ public:
                     std::max(next_stamps[pair.first], pair.second);
             }
         }
+        debugf("next_stamps: %s\n", debug_str(next_stamps).c_str());
         queue->purge_below(purge_stamps);
         rcheck_datum(next_stamps.size() != 0, base_exc_t::RESUMABLE_OP_FAILED,
                      "Empty start stamps.  Did you just reshard?");

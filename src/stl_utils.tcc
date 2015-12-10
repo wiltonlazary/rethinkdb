@@ -34,6 +34,7 @@ void debug_print_iterators(printf_buffer_t *buf, It beg, It end) {
         if (it != beg) {
             buf->appendf(", ");
         }
+        buf->appendf("\n");
         debug_print(buf, *it);
     }
 }
