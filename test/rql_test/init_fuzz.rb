@@ -1,9 +1,8 @@
 require 'eventmachine'
-# load 'quickstart3.rb'
-require 'securerandom'
-# $port = 60715
+load 'quickstart3.rb'
+$port = 60715
 require 'eventmachine'
-require_relative './importRethinkDB.rb'
+# require_relative './importRethinkDB.rb'
 
 $port ||= (ARGV[0] || ENV['RDB_DRIVER_PORT'] || raise('driver port not supplied')).to_i
 ARGV.clear
@@ -72,31 +71,33 @@ class Printer < RethinkDB::Handler
   end
 end
 
-$copts = {include_initial: true, include_states: true}
-[{}, {max_batch_rows: 10}, {max_batch_rows: 1}].each {|ropts|
-  $ropts = ropts
-  $seen_end = false
-  $set = {}
-  EM.run {
-    $handler = $tbl.get_all(0, index: 'a').changes($copts).em_run(Printer, $ropts)
-    # $tbl.between(475, 525, index: 'a').changes($opts).em_run(Printer)
-    EM.defer {
-      while !$seen_end
-        printf("X")
-        index = $gen.rand(25000)
-        $tbl.get(index).update({'a' => -1}).run(noreply: true)
-        $pop[index] = $pop[index].merge({'a' => -1})
-        sleep 0.05
+[true, false].each {|squash|
+  $copts = {include_initial: true, include_states: true, squash: squash}
+  [{}, {max_batch_rows: 10}, {max_batch_rows: 1}].each {|ropts|
+    $ropts = ropts
+    $seen_end = false
+    $set = {}
+    EM.run {
+      $handler = $tbl.get_all(0, index: 'a').changes($copts).em_run(Printer, $ropts)
+      # $tbl.between(475, 525, index: 'a').changes($opts).em_run(Printer)
+      EM.defer {
+        while !$seen_end
+          printf("X")
+          index = $gen.rand(25000)
+          $tbl.get(index).update({'a' => -1}).run(noreply: true)
+          $pop[index] = $pop[index].merge({'a' => -1})
+          sleep 0.05
+        end
+      }
+    }
+
+    $pop.each_index {|i|
+      if $pop[i]['a'] == 0
+        assert($set[i] == $pop[i], i)
+      else
+        assert(!$set[i], i)
       end
     }
-  }
-
-  $pop.each_index {|i|
-    if $pop[i]['a'] == 0
-      assert($set[i] == $pop[i], i)
-    else
-      assert(!$set[i], i)
-    end
   }
 }
 "done"

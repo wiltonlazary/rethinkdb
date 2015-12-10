@@ -201,10 +201,55 @@ public:
     virtual void purge_below(std::map<uuid_u, uint64_t> stamps) = 0;
 };
 
+class nonsquashing_queue_t final : public maybe_squashing_queue_t {
+    void add(change_val_t change_val) final {
+        // debugf("adding (size %zu)\n", size());
+        queue.push_back(std::move(change_val));
+    }
+    size_t size() const final {
+        return queue.size();
+    }
+    void clear() final {
+        queue.clear();
+    }
+    const change_val_t &peek() final {
+        guarantee(size() != 0);
+        return queue.front();
+    }
+    change_val_t pop() final {
+        guarantee(size() != 0);
+        auto ret = std::move(queue.front());
+        queue.pop_front();
+        return ret;
+    }
+    void purge_below(std::map<uuid_u, uint64_t> stamps) final {
+        std::map<uuid_u, uint64_t> orig, kept;
+        std::deque<change_val_t> old_queue;
+        old_queue.swap(queue);
+        guarantee(queue.empty());
+        for (auto &&cv : old_queue) {
+            auto it = stamps.find(cv.source_stamp.first);
+            orig.insert(std::make_pair(cv.source_stamp.first, 0)).first->second += 1;
+            r_sanity_check(it != stamps.end());
+            // We want `>=` here because the semantics are that the start stamp
+            // is the first stamp we expect.
+            if (cv.source_stamp.second >= it->second) {
+                kept.insert(
+                    std::make_pair(cv.source_stamp.first, 0)).first->second += 1;
+                add(std::move(cv));
+            }
+        }
+        // debugf("PURGED\n%s\nTO\n%s\n",
+        //        debug_str(orig).c_str(),
+        //        debug_str(kept).c_str());
+    }
+    std::deque<change_val_t> queue;
+};
+
 class squashing_queue_t final : public maybe_squashing_queue_t {
 public:
-    squashing_queue_t() : initial(std::vector<change_val_t>()) { }
     void add(change_val_t change_val) final {
+        // debugf("ADDING %s\n", debug_str(change_val).c_str());
         auto it = queue.find(change_val.pkey);
         if (it == queue.end()) {
             auto order_it = queue_order.insert(queue_order.end(), change_val.pkey);
@@ -251,82 +296,18 @@ public:
         auto ret = std::move(it->second.first);
         queue.erase(it);
         queue_order.pop_front();
+        // debugf("POPPING %s\n", debug_str(ret).c_str());
         return ret;
     }
-    void purge_below(std::map<uuid_u, uint64_t> stamps) {
-        guarantee(initial);
-        std::vector<change_val_t> cvs = std::move(*initial);
-        initial = boost::none;
-        guarantee(!initial);
-        guarantee(queue.empty());
-        guarantee(queue_order.empty());
-        for (auto &&cv : cvs) {
-            auto it = stamps.find(cv.source_stamp.first);
-            r_sanity_check(it != stamps.end());
-            // We want `>=` here because the semantics are that the start stamp
-            // is the first stamp we expect.
-            if (cv.source_stamp.second >= it->second) {
-                add(std::move(cv));
-            }
-        }
+    void purge_below(std::map<uuid_u, uint64_t>) final {
+        // You should never purge a squashing queue.
+        r_sanity_fail();
     }
 private:
-    boost::optional<std::vector<change_val_t> > initial;
     std::map<store_key_t,
              std::pair<change_val_t, std::list<store_key_t>::iterator> > queue;
     std::list<store_key_t> queue_order;
 };
-
-class nonsquashing_queue_t final : public maybe_squashing_queue_t {
-    void add(change_val_t change_val) final {
-        // debugf("adding (size %zu)\n", size());
-        queue.push_back(std::move(change_val));
-    }
-    size_t size() const final {
-        return queue.size();
-    }
-    void clear() final {
-        queue.clear();
-    }
-    const change_val_t &peek() final {
-        guarantee(size() != 0);
-        return queue.front();
-    }
-    change_val_t pop() final {
-        guarantee(size() != 0);
-        auto ret = std::move(queue.front());
-        queue.pop_front();
-        return ret;
-    }
-    void purge_below(std::map<uuid_u, uint64_t> stamps) final {
-        std::map<uuid_u, uint64_t> orig, kept;
-        std::deque<change_val_t> old_queue;
-        old_queue.swap(queue);
-        guarantee(queue.empty());
-        for (auto &&cv : old_queue) {
-            auto it = stamps.find(cv.source_stamp.first);
-            orig.insert(std::make_pair(cv.source_stamp.first, 0)).first->second += 1;
-            r_sanity_check(it != stamps.end());
-            // We want `>=` here because the semantics are that the start stamp
-            // is the first stamp we expect.
-            if (cv.source_stamp.second >= it->second) {
-                kept.insert(
-                    std::make_pair(cv.source_stamp.first, 0)).first->second += 1;
-                add(std::move(cv));
-            }
-        }
-        debugf("PURGED\n%s\nTO\n%s\n",
-               debug_str(orig).c_str(),
-               debug_str(kept).c_str());
-    }
-    std::deque<change_val_t> queue;
-};
-
-scoped_ptr_t<maybe_squashing_queue_t> make_maybe_squashing_queue(bool squash) {
-    return squash
-        ? scoped_ptr_t<maybe_squashing_queue_t>(new squashing_queue_t())
-        : scoped_ptr_t<maybe_squashing_queue_t>(new nonsquashing_queue_t());
-}
 
 boost::optional<datum_t> apply_ops(
     const datum_t &val,
@@ -1389,12 +1370,17 @@ private:
     DISABLE_COPYING(subscription_t);
 };
 
+enum class init_squashing_queue_t { NO, YES };
 class flat_sub_t : public subscription_t {
 public:
     template<class... Args>
-    explicit flat_sub_t(Args &&... args)
+    explicit flat_sub_t(init_squashing_queue_t init_squashing_queue, Args &&... args)
         : subscription_t(std::forward<Args>(args)...),
-          queue(make_maybe_squashing_queue(squash)) { }
+          queue(make_scoped<nonsquashing_queue_t>()) {
+        if (init_squashing_queue == init_squashing_queue_t::YES && squash) {
+            queue = make_scoped<squashing_queue_t>();
+        }
+    }
     virtual void add_el(
         const uuid_u &shard_uuid,
         uint64_t stamp,
@@ -1432,7 +1418,7 @@ public:
     bool active() { return !exc; }
 protected:
     // The queue of changes we've accumulated since the last time we were read from.
-    const scoped_ptr_t<maybe_squashing_queue_t> queue;
+    scoped_ptr_t<maybe_squashing_queue_t> queue;
 private:
     virtual void apply_queued_changes() { } // Changes are never queued.
     virtual bool update_stamp(const uuid_u &uuid, uint64_t new_stamp) = 0;
@@ -1709,7 +1695,9 @@ public:
                 const datum_t &squash,
                 bool include_states,
                 datum_t _pkey)
-        : flat_sub_t(feed, std::move(limits), squash, include_states),
+        // For point changefeeds we start squashing right away.
+        : flat_sub_t(init_squashing_queue_t::YES,
+                     feed, std::move(limits), squash, include_states),
           pkey(std::move(_pkey)),
           stamp(0),
           started(false),
@@ -1873,7 +1861,10 @@ public:
                 const datum_t &squash,
                 bool include_states,
                 keyspec_t::range_t _spec)
-        : flat_sub_t(feed, std::move(limits), squash, include_states),
+        // We don't turn on squashing until later for range subs.  (We need to
+        // wait until we've purged and all the initial values are reconciled.)
+        : flat_sub_t(init_squashing_queue_t::NO,
+                     feed, std::move(limits), squash, include_states),
           spec(std::move(_spec)),
           state(state_t::READY),
           sent_state(state_t::NONE),
@@ -1961,6 +1952,16 @@ public:
             || has_change_val();
     }
 
+    void maybe_enable_squashing() {
+        if (squash) {
+            scoped_ptr_t<maybe_squashing_queue_t> old_queue = std::move(queue);
+            queue = make_scoped<squashing_queue_t>();
+            while (old_queue->size() != 0) {
+                queue->add(old_queue->pop());
+            }
+        }
+    }
+
     counted_t<datum_stream_t> to_stream(
         env_t *outer_env,
         std::string,
@@ -1995,7 +1996,7 @@ public:
                     std::max(next_stamps[pair.first], pair.second);
             }
         }
-        debugf("next_stamps: %s\n", debug_str(next_stamps).c_str());
+        // debugf("next_stamps: %s\n", debug_str(next_stamps).c_str());
         queue->purge_below(purge_stamps);
         rcheck_datum(next_stamps.size() != 0, base_exc_t::RESUMABLE_OP_FAILED,
                      "Empty start stamps.  Did you just reshard?");
@@ -2011,6 +2012,7 @@ public:
                        "Cannot call `include_initial` on an unstampable stream.");
             return make_splice_stream(maybe_src, std::move(sub_self), bt);
         } else {
+            maybe_enable_squashing();
             return make_counted<stream_t<subscription_t> >(std::move(self), bt);
         }
     }
@@ -2615,6 +2617,7 @@ private:
             // should only be called after we've confirmed `is_exhausted` returns
             // true.
             if (src->is_exhausted() && ready()) {
+                sub->maybe_enable_squashing();
                 // This will send the `ready` state as its first doc.
                 return stream_t::next_stream_batch(env, bs);
             }
