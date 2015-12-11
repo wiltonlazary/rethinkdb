@@ -80,7 +80,7 @@ configure () {
 	*w64-mingw32*)
 	    var OS "Mingw"
 	    default_allocator=$default_allocator_mingw
-	    var PTHREAD_LIBS "-pthread" ;
+	    var PTHREAD_LIBS "" ;
             var RT_LIBS "" ;;
         *) error "unsupported operating system: $MACHINE" ;;
     esac

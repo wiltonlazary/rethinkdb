@@ -1,5 +1,5 @@
 
-version=4.6.85.31
+version=4.7.80.23
 # See http://omahaproxy.appspot.com/ for the current stable/beta/dev versions of v8
 
 pkg_fetch () {
@@ -49,11 +49,20 @@ pkg_install-include () {
 pkg_install () {
     pkg_copy_src_to_build
     sed -i.bak '/unittests/d;/cctest/d' "$build_dir/build/all.gyp" # don't build the tests
+    sed -i.bak '/-Wshorten-64-to-32/d' "$build_dir/build/standalone.gyp"
     mkdir -p "$install_dir/lib"
     if [[ "$OS" = Darwin ]]; then
         export CXXFLAGS="-stdlib=libc++ ${CXXFLAGS:-}"
         export LDFLAGS="-stdlib=libc++ -lc++ ${LDFLAGS:-}"
         export GYP_DEFINES='clang=1 mac_deployment_target=10.7'
+    fi
+    if [[ "$OS" = Mingw ]]; then
+        echo ==========
+        echo = MINGW! =
+        echo ==========
+        in_dir "$build_dir" bash tools/mingw-generate-makefiles.sh
+        export GYP_DEFINES='OS=win'
+        sed -i.bak '/#undef RotateRight32/a #undef RotateLeft32\n#undef MemoryBarrier' "$build_dir/src/base/win32-headers.h"
     fi
     arch_gypflags=
     raspberry_pi_gypflags='-Darm_version=6 -Darm_fpu=vfpv2'
@@ -65,7 +74,7 @@ pkg_install () {
         *)      arch=native ;;
     esac
     mode=release
-    pkg_make $arch.$mode CXX=$CXX LINK=$CXX LINK.target=$CXX GYPFLAGS="-Dwerror= $arch_gypflags -Dv8_use_external_startup_data=0" V=1
+    pkg_make $arch.$mode CXX="$CXX" LINK="$CXX" LINK.target="$CXX" GYPFLAGS="-Dwerror= $arch_gypflags -Dv8_use_external_startup_data=0" V=1
     for lib in `find "$build_dir/out/$arch.$mode" -maxdepth 1 -name \*.a` `find "$build_dir/out/$arch.$mode/obj.target" -name \*.a`; do
         name=`basename $lib`
         cp $lib "$install_dir/lib/${name/.$arch/}"
