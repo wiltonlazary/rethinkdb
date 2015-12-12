@@ -1370,10 +1370,11 @@ public:
     template<class... Args>
     explicit flat_sub_t(init_squashing_queue_t init_squashing_queue, Args &&... args)
         : subscription_t(std::forward<Args>(args)...),
-          queue(make_scoped<nonsquashing_queue_t>()),
           last_stamp(std::make_pair(nil_uuid(), std::numeric_limits<uint64_t>::max())) {
         if (init_squashing_queue == init_squashing_queue_t::YES && squash) {
             queue = make_scoped<squashing_queue_t>();
+        } else {
+            queue = make_scoped<nonsquashing_queue_t>();
         }
     }
     virtual void add_el(
