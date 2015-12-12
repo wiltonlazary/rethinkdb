@@ -1370,7 +1370,8 @@ public:
     template<class... Args>
     explicit flat_sub_t(init_squashing_queue_t init_squashing_queue, Args &&... args)
         : subscription_t(std::forward<Args>(args)...),
-          queue(make_scoped<nonsquashing_queue_t>()) {
+          queue(make_scoped<nonsquashing_queue_t>()),
+          last_stamp(std::make_pair(nil_uuid(), std::numeric_limits<uint64_t>::max())) {
         if (init_squashing_queue == init_squashing_queue_t::YES && squash) {
             queue = make_scoped<squashing_queue_t>();
         }
@@ -1383,7 +1384,12 @@ public:
         boost::optional<indexed_datum_t> old_val,
         boost::optional<indexed_datum_t> new_val) {
         if (!active()) return;
-        if (update_stamp(shard_uuid, stamp)) {
+        auto stamp_pair = std::make_pair(shard_uuid, stamp);
+        if (stamp_pair == last_stamp || update_stamp(shard_uuid, stamp)) {
+            // If we get the same stamp multiple times in a row, we skip the
+            // update step and always pass it through.  (This supports cases
+            // like `.get_all(1, 1)`).
+            last_stamp = stamp_pair;
             queue->add(change_val_t(
                 std::make_pair(shard_uuid, stamp),
                 pkey,
@@ -1414,6 +1420,7 @@ protected:
     // The queue of changes we've accumulated since the last time we were read from.
     scoped_ptr_t<maybe_squashing_queue_t> queue;
 private:
+    std::pair<uuid_u, uint64_t> last_stamp;
     virtual void apply_queued_changes() { } // Changes are never queued.
     virtual bool update_stamp(const uuid_u &uuid, uint64_t new_stamp) = 0;
 };
@@ -1976,6 +1983,8 @@ public:
                      "Unable to retrieve the start stamps.  Did you just reshard?");
         std::map<uuid_u, uint64_t> purge_stamps;
         for (const auto &pair : *resp->stamps) {
+            auto orig_res = orig_stamps.insert(pair);
+            guarantee(orig_res.second);
             auto res = next_stamps.insert(pair);
             // If we already have stamps.
             if (!res.second) {
@@ -1987,7 +1996,7 @@ public:
             }
         }
         queue->purge_below(purge_stamps);
-        rcheck_datum(next_stamps.size() != 0, base_exc_t::RESUMABLE_OP_FAILED,
+        rcheck_datum(orig_stamps.size() != 0, base_exc_t::RESUMABLE_OP_FAILED,
                      "Empty start stamps.  Did you just reshard?");
 
         env = make_env(outer_env);
@@ -2019,6 +2028,7 @@ public:
         artificial_include_initial = include_initial;
 
         env = make_env(outer_env);
+        orig_stamps[uuid] = 0;
         next_stamps[uuid] = 0;
         if (artificial_include_initial) {
             state = state_t::INITIALIZING;
@@ -2033,6 +2043,7 @@ public:
         return make_counted<stream_t<subscription_t> >(std::move(self), bt);
     }
     const std::map<uuid_u, uint64_t> &get_next_stamps() { return next_stamps; }
+    const std::map<uuid_u, uint64_t> &get_orig_stamps() { return orig_stamps; }
 private:
     scoped_ptr_t<env_t> make_env(env_t *outer_env) {
         // This is to support fake environments from the unit tests that don't
@@ -2055,7 +2066,7 @@ private:
     // The stamp (see `stamped_msg_t`) associated with our `changefeed_stamp_t`
     // read.  We use these to make sure we don't see changes from writes before
     // our subscription.
-    std::map<uuid_u, uint64_t> next_stamps;
+    std::map<uuid_u, uint64_t> orig_stamps, next_stamps;
     keyspec_t::range_t spec;
     boost::optional<std::map<store_key_t, uint64_t> > store_keys;
     boost::optional<key_range_t> store_key_range;
@@ -2591,7 +2602,7 @@ public:
           cached_ready(false),
           src(std::move(_src)) {
         r_sanity_check(src.has());
-        for (const auto &p : sub->get_next_stamps()) {
+        for (const auto &p : sub->get_orig_stamps()) {
             stamped_ranges.insert(std::make_pair(p.first, stamped_range_t(p.second)));
         }
     }
@@ -2606,7 +2617,6 @@ private:
             // should only be called after we've confirmed `is_exhausted` returns
             // true.
             if (src->is_exhausted() && ready()) {
-                sub->maybe_enable_squashing();
                 // This will send the `ready` state as its first doc.
                 return stream_t::next_stream_batch(env, bs);
             }
@@ -2790,6 +2800,7 @@ private:
                     return cached_ready;
                 }
             }
+            sub->maybe_enable_squashing();
             cached_ready = true;
         }
         return cached_ready;

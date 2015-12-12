@@ -5,7 +5,7 @@ $port ||= (ARGV[0] || ENV['RDB_DRIVER_PORT'] || raise('driver port not supplied'
 ARGV.clear
 $c = r.connect(port: $port).repl
 
-$gen = Random.new(56553150413507693545289417686943944770)
+$gen = Random.new
 puts "Random seed: #{$gen.seed}"
 
 $tbl = r.table('test')
@@ -16,7 +16,7 @@ $tbl.wait.run
 
 $nrows = 1000
 $init_pop = (0..$nrows).map {|i|
-  {'id' => i, 'a' => i % 20}
+  {'id' => i, 'a' => i}
 }
 $pop = $init_pop.dup
 PP.pp $tbl.insert($pop).run
@@ -76,29 +76,35 @@ class Printer < RethinkDB::Handler
 end
 
 $copts = {include_initial: true, include_states: true, squash: true}
-[{}, {max_batch_rows: 10}, {max_batch_rows: 1}].each {|ropts|
-  $ropts = ropts
-  $seen_end = false
-  $set = {}
-  EM.run {
-    $handler = $tbl.changes($copts).em_run(Printer, $ropts)
-    $sleep_dur = 0.005
-    EM.defer {
-      while !$seen_end
-        printf("X")
-        index = $gen.rand($nrows)
-        val = $gen.rand
-        $wopts = {noreply: true}
-        $tbl.get(index).update({'c' => -val}).run($wopts)
-        $tbl.get(index).update({'d' => -val}).run($wopts)
-        $tbl.get(index).update({'c' => val}).run($wopts)
-        $tbl.get(index).update({'d' => val}).run($wopts)
-        sleep $sleep_dur
-        $sleep_dur *= 1.001
-        new_val = $pop[index].merge({'c' => val, 'd' => val})
-        $canon_log[index] << [:change, $pop[index], new_val]
-        $pop[index] = new_val
-      end
+['a', 'id'].each {|index|
+  $index = index
+  [{}, {max_batch_rows: 10}, {max_batch_rows: 1}].each {|ropts|
+    $ropts = ropts
+    puts "\nRUN: #{$index} #{$ropts}"
+    $seen_end = false
+    $set = {}
+    EM.run {
+      $handler = $tbl.between(r.minval, r.maxval, index: $index) \
+        .order_by(index: r.desc($index)) \
+        .changes($copts).em_run(Printer, $ropts)
+      $sleep_dur = 0.005
+      EM.defer {
+        while !$seen_end
+          printf("X")
+          index = $gen.rand($nrows)
+          val = $gen.rand
+          $wopts = {noreply: true}
+          $tbl.get(index).update({'c' => -val}).run($wopts)
+          $tbl.get(index).update({'d' => -val}).run($wopts)
+          $tbl.get(index).update({'c' => val}).run($wopts)
+          $tbl.get(index).update({'d' => val}).run($wopts)
+          sleep $sleep_dur
+          $sleep_dur *= 1.001
+          new_val = $pop[index].merge({'c' => val, 'd' => val})
+          $canon_log[index] << [:change, $pop[index], new_val]
+          $pop[index] = new_val
+        end
+      }
     }
   }
 }
