@@ -12,7 +12,7 @@ $tbl = r.table('test')
 r.table_drop('test').run rescue nil
 r.table_create('test').run
 $tbl.index_create('a').run
-$tbl.wait.run
+$tbl.index_wait.run
 
 $init_pop = (0..25000).map {|i|
   {'id' => i, 'a' => i % 20, 'bloat' => '#'*250}
