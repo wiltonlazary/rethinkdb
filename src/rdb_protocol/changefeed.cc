@@ -1321,7 +1321,7 @@ public:
         backtrace_id_t bt) = 0;
     virtual auto_drainer_t *get_drainer() = 0;
     feed_t *parent_feed() {
-        if (feed) {
+        if (feed != nullptr) {
             return feed;
         } else {
             guarantee(exc);
