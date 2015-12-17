@@ -11,6 +11,8 @@ puts "Random seed: #{$gen.seed}"
 
 puts r.table_create('test').run rescue nil
 $tbl = r.table('test')
+$tbl.reconfigure(:shards => 2, :replicas => 1).run
+$tbl.wait.run
 
 # Use a small number of documents, so that a few hash shards will be
 # initially empty.

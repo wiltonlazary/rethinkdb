@@ -101,8 +101,9 @@ public:
     optimizer_t(const datum_t &_row,
                 const datum_t &_val);
 
-    void swap_if_other_better(optimizer_t *other,
-                              bool (*beats)(const datum_t &val1, const datum_t &val2));
+    void replace_if_other_better(const optimizer_t &other,
+                                 bool (*beats)(const datum_t &val1,
+                                               const datum_t &val2));
     datum_t unpack(const char *name);
     datum_t row, val;
 };
@@ -209,6 +210,10 @@ public:
     // We assume > v1_13 ordering.  We could get fancy and allow any
     // ordering, but usage of grouped_t inside of secondary index functions is the
     // only place where we'd want v1_13 ordering, so let's not bother.
+    explicit grouped_t(T _default_val) :
+        m(optional_datum_less_t()),
+        default_val(std::move(_default_val)) { }
+    // Only for deserialization
     grouped_t() : m(optional_datum_less_t()) { }
     virtual ~grouped_t() { } // See grouped_data_t below.
     template <cluster_version_t W>
@@ -220,6 +225,7 @@ public:
             serialize_grouped<W>(wm, it->first);
             serialize_grouped<W>(wm, it->second);
         }
+        serialize_grouped<W>(wm, g.default_val);
     }
     template <cluster_version_t W>
     friend
@@ -242,6 +248,9 @@ public:
             if (bad(res)) { return res; }
             pos = g->m.insert(pos, std::move(el));
         }
+        res = deserialize_grouped<W>(s, &g->default_val);
+        if (bad(res)) { return res; }
+
         return archive_result_t::SUCCESS;
     }
 
@@ -279,8 +288,19 @@ public:
         return &m;
     }
 
+    const T *get_default_val() const {
+        return &default_val;
+    }
+
 private:
     std::map<datum_t, T, optional_datum_less_t> m;
+    // `include_initial` changefeeds require that we have one entry from each shard in
+    // each group, even if the shard didn't return any results for that group.
+    // Before unsharding, we don't know the overall set of groups yet. So we can't insert
+    // the "dummy" entry into `m` directly. Instead we send an explicit `default_val`
+    // with the `grouped_t`, that will be injected into the final groups during
+    // unsharding.
+    T default_val;
 };
 
 void debug_print(printf_buffer_t *buf, const keyed_stream_t &stream);

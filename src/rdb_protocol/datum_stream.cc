@@ -100,10 +100,22 @@ store_key_t truncate_and_get_left(active_ranges_t *ranges) {
     for (auto &&pair : ranges->ranges) {
         for (auto &&hash_pair : pair.second.hash_ranges) {
             if (hash_pair.second.cache.size() != 0) {
-                // If we truncate the cache for a shard, it's always active.
-                hash_pair.second.state = range_state_t::ACTIVE;
-                // This should only ever be called when iterating left to right.
-                hash_pair.second.key_range.left = hash_pair.second.cache[0].key;
+                // TODO! Why are we getting cached keys that are too large?
+                // TODO! This shouldn't be necessary. And it makes no sense.
+                // (to reproduce: run init.rb, then rebalance the table manually, then
+                //  run it again)
+                if (hash_pair.second.cache[0].key
+                    < hash_pair.second.key_range.right_or_max()) {
+                    // If we truncate the cache for a shard, it's always active.
+                    hash_pair.second.state = range_state_t::ACTIVE;
+
+                    // This should only ever be called when iterating left to right.
+                    hash_pair.second.key_range.is_empty(); // TODO! Debug-check that the range is valid
+                    hash_pair.second.key_range.left = hash_pair.second.cache[0].key;
+                    hash_pair.second.key_range.is_empty(); // TODO! Debug-check that the range is valid
+                } else {
+                    hash_pair.second.state = range_state_t::EXHAUSTED;
+                }
                 hash_pair.second.cache.clear();
             }
             if (hash_pair.second.state == range_state_t::ACTIVE) {
@@ -113,6 +125,36 @@ store_key_t truncate_and_get_left(active_ranges_t *ranges) {
             }
         }
     }
+
+    if (smallest_left != &store_key_max) {
+        // We need to rewind the left bound of all ranges to smallest_left.
+        for (auto &&pair : ranges->ranges) {
+            for (auto &&hash_pair : pair.second.hash_ranges) {
+                guarantee(hash_pair.second.state == range_state_t::EXHAUSTED
+                          || hash_pair.second.state == range_state_t::ACTIVE);
+                // Adjust the left bound if necessary to make the region active again
+                if (*smallest_left < hash_pair.second.key_range.left
+                    && *smallest_left < hash_pair.second.key_range.right_or_max()) {
+                    hash_pair.second.key_range.is_empty(); // TODO! Debug-check that the range is valid
+                    hash_pair.second.key_range.left = *smallest_left;
+                    hash_pair.second.key_range.is_empty(); // TODO! Debug-check that the range is valid
+                    // Make sure we stay within the shard boundaries
+                    if (hash_pair.second.key_range.left < pair.first.left) {
+                        hash_pair.second.key_range.left = pair.first.left;
+                    }
+                    hash_pair.second.key_range.is_empty(); // TODO!*/
+
+                    if (!hash_pair.second.key_range.is_empty()) {
+                        // Truncating an exhausted range means that we have to make it
+                        // active again.
+                        hash_pair.second.state = range_state_t::ACTIVE;
+                    }
+                }
+            }
+        }
+    }
+
+    fprintf(stderr, "New smallest left: %s\n", key_to_debug_str(*smallest_left).c_str());
     return *smallest_left;
 }
 
@@ -192,16 +234,17 @@ active_ranges_t new_active_ranges(
     is_secondary_t is_secondary) {
     active_ranges_t ret;
     for (auto &&pair : stream.substreams) {
-        std::map<hash_range_t, hash_range_with_cache_t> hash_ranges;
         ret.ranges[pair.first.inner]
            .hash_ranges[hash_range_t{pair.first.beg, pair.first.end}]
             = hash_range_with_cache_t{
                 is_secondary == is_secondary_t::YES
-                    ? std::move(original_range)
+                    ? original_range
                     : pair.first.inner.intersection(original_range),
                 raw_stream_t(),
                 range_state_t::ACTIVE};
     }
+
+    fprintf(stderr, "Created new active ranges: %s\n", debug_str(ret).c_str());
     return ret;
 }
 
@@ -332,6 +375,7 @@ raw_stream_t rget_response_reader_t::unshard(
     for (auto &&pair : active_ranges->ranges) {
         bool range_active = pair.second.state() == range_state_t::ACTIVE;
         for (auto &&hash_pair : pair.second.hash_ranges) {
+            hash_pair.second.key_range.is_empty(); // TODO! Debug-check that the range is valid
             if (hash_pair.second.totally_exhausted()) continue;
             keyed_stream_t *fresh = nullptr;
             // Active shards need their bounds updated.
@@ -340,7 +384,8 @@ raw_stream_t rget_response_reader_t::unshard(
                 store_key_t *new_bound = nullptr;
                 auto it = stream.substreams.find(
                     region_t(hash_pair.first.beg, hash_pair.first.end, pair.first));
-                if (it != stream.substreams.end()) {
+                if (it != stream.substreams.end()
+                    && !it->second.stream.empty()) {
                     n_fresh += 1;
                     fresh = &it->second;
                     new_bound = &it->second.last_key;
@@ -350,18 +395,33 @@ raw_stream_t rget_response_reader_t::unshard(
                         hash_pair.second.key_range.left = *new_bound;
                         bool incremented = hash_pair.second.key_range.left.increment();
                         r_sanity_check(incremented); // not max key
+                        if (hash_pair.second.key_range.left >
+                                hash_pair.second.key_range.right.key_or_max()) {
+                            hash_pair.second.key_range.left =
+                                hash_pair.second.key_range.right.key_or_max();
+                        }
+                        hash_pair.second.key_range.is_empty(); // TODO! Debug-check that the range is valid
                     } else {
                         hash_pair.second.key_range.left =
                             hash_pair.second.key_range.right_or_max();
+                        hash_pair.second.key_range.is_empty(); // TODO! Debug-check that the range is valid
                     }
                 } else {
                     // The right bound is open so we don't need to decrement.
                     if (new_bound != nullptr && *new_bound != store_key_min) {
-                        hash_pair.second.key_range.right =
-                            key_range_t::right_bound_t(*new_bound);
+                        if (*new_bound < hash_pair.second.key_range.left) {
+                            hash_pair.second.key_range.right =
+                                key_range_t::right_bound_t(
+                                    hash_pair.second.key_range.left);
+                        } else {
+                            hash_pair.second.key_range.right =
+                                key_range_t::right_bound_t(*new_bound);
+                        }
+                        hash_pair.second.key_range.is_empty(); // TODO! Debug-check that the range is valid
                     } else {
                         hash_pair.second.key_range.right =
                             key_range_t::right_bound_t(hash_pair.second.key_range.left);
+                        hash_pair.second.key_range.is_empty(); // TODO! Debug-check that the range is valid
                     }
                 }
                 if (new_bound) {
@@ -874,8 +934,10 @@ void primary_readgen_t::restrict_active_ranges(
                     }
                     guarantee(hash_pair.second.key_range.is_empty());
                 } else {
+                    hash_pair.second.key_range.is_empty(); // TODO! Debug-check that the range is valid
                     hash_pair.second.key_range.left = new_start;
                     hash_pair.second.key_range.right.internal_key = new_end;
+                    hash_pair.second.key_range.is_empty(); // TODO! Debug-check that the range is valid
                     guarantee(!hash_pair.second.key_range.is_empty()
                               || new_start == new_end);
                 }

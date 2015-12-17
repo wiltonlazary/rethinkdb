@@ -72,11 +72,11 @@ template<class T>
 class grouped_acc_t : public accumulator_t {
 protected:
     explicit grouped_acc_t(T &&_default_val)
-        : default_val(std::move(_default_val)) { }
+        : default_val(std::move(_default_val)), acc(default_val) { }
     virtual ~grouped_acc_t() { }
 
     virtual void finish_impl(continue_bool_t, result_t *out) {
-        *out = grouped_t<T>();
+        *out = grouped_t<T>(default_val);
         boost::get<grouped_t<T> >(*out).swap(acc);
         guarantee(acc.size() == 0);
     }
@@ -109,22 +109,40 @@ private:
 
     virtual void unshard(env_t *env, const std::vector<result_t *> &results) {
         guarantee(acc.size() == 0);
-        std::map<datum_t, std::vector<T *>, optional_datum_less_t> vecs;
+        std::map<datum_t, std::vector<const T *>, optional_datum_less_t> vecs;
         r_sanity_check(results.size() != 0);
-        for (auto res = results.begin(); res != results.end(); ++res) {
-            guarantee(*res);
-            grouped_t<T> *gres = boost::get<grouped_t<T> >(*res);
-            guarantee(gres);
+        const std::vector<const T *> default_vec(results.size(), nullptr);
+        for (size_t res_i = 0; res_i < results.size(); ++res_i) {
+            guarantee(results[res_i] != nullptr);
+            grouped_t<T> *gres = boost::get<grouped_t<T> >(results[res_i]);
+            guarantee(gres != nullptr);
             for (auto kv = gres->begin(); kv != gres->end(); ++kv) {
-                vecs[kv->first].push_back(&kv->second);
+                // Initialize the vector for each group to the full size of `results`,
+                // so we can detect shards that are missing in a given group below.
+                // (if there already is an entry for this group, this will have no
+                // effect)
+                auto v_it = vecs.insert(std::make_pair(kv->first, default_vec)).first;
+                v_it->second[res_i] = &kv->second;
             }
         }
+
         for (auto kv = vecs.begin(); kv != vecs.end(); ++kv) {
+            // Inject default entries for shards that reported no results for a given
+            // group. This is important for include initial changefeeds, since they need
+            // to learn about all shards to keep track of which shards they need to keep
+            // reading from.
+            for (size_t res_i = 0; res_i < results.size(); ++res_i) {
+                if (kv->second[res_i] == nullptr) {
+                    grouped_t<T> *gres = boost::get<grouped_t<T> >(results[res_i]);
+                    kv->second[res_i] = gres->get_default_val();
+                }
+            }
+
             auto t_it = acc.insert(std::make_pair(kv->first, default_val)).first;
             unshard_impl(env, &t_it->second, kv->second);
         }
     }
-    virtual void unshard_impl(env_t *env, T *acc, const std::vector<T *> &ts) = 0;
+    virtual void unshard_impl(env_t *env, T *acc, const std::vector<const T *> &ts) = 0;
 
 protected:
     const T *get_default_val() { return &default_val; }
@@ -203,7 +221,7 @@ protected:
 
     void unshard_impl(env_t *,
                       stream_t *out,
-                      const std::vector<stream_t *> &streams) final {
+                      const std::vector<const stream_t *> &streams) final {
         r_sanity_check(streams.size() > 0);
         for (auto &&stream : streams) {
             r_sanity_check(stream->substreams.size() > 0);
@@ -571,12 +589,12 @@ private:
                             T *t) = 0;
 
     virtual void unshard_impl(
-        env_t *env, T *out, const std::vector<T *> &ts) {
+        env_t *env, T *out, const std::vector<const T *> &ts) {
         for (auto it = ts.begin(); it != ts.end(); ++it) {
             unshard_impl(env, out, *it);
         }
     }
-    virtual void unshard_impl(env_t *env, T *out, T *el) = 0;
+    virtual void unshard_impl(env_t *env, T *out, const T *el) = 0;
     virtual bool should_send_batch() { return false; }
 };
 
@@ -595,7 +613,7 @@ private:
     virtual datum_t unpack(uint64_t *sz) {
         return datum_t(static_cast<double>(*sz));
     }
-    virtual void unshard_impl(env_t *, uint64_t *out, uint64_t *el) {
+    virtual void unshard_impl(env_t *, uint64_t *out, const uint64_t *el) {
         *out += *el;
     }
 };
@@ -658,7 +676,7 @@ private:
     virtual datum_t unpack(double *d) {
         return datum_t(*d);
     }
-    virtual void unshard_impl(env_t *, double *out, double *el) {
+    virtual void unshard_impl(env_t *, double *out, const double *el) {
         *out += *el;
     }
 };
@@ -686,7 +704,7 @@ private:
     }
     virtual void unshard_impl(env_t *,
                               std::pair<double, uint64_t> *out,
-                              std::pair<double, uint64_t> *el) {
+                              const std::pair<double, uint64_t> *el) {
         out->first += el->first;
         out->second += el->second;
     }
@@ -696,15 +714,15 @@ optimizer_t::optimizer_t() { }
 optimizer_t::optimizer_t(const datum_t &_row,
                          const datum_t &_val)
     : row(_row), val(_val) { }
-void optimizer_t::swap_if_other_better(
-    optimizer_t *other,
+void optimizer_t::replace_if_other_better(
+    const optimizer_t &other,
     bool (*beats)(const datum_t &val1, const datum_t &val2)) {
     r_sanity_check(val.has() == row.has());
-    r_sanity_check(other->val.has() == other->row.has());
-    if (other->val.has()) {
-        if (!val.has() || beats(other->val, val)) {
-            std::swap(row, other->row);
-            std::swap(val, other->val);
+    r_sanity_check(other.val.has() == other.row.has());
+    if (other.val.has()) {
+        if (!val.has() || beats(other.val, val)) {
+            row = other.row;
+            val = other.val;
         }
     }
 }
@@ -744,13 +762,13 @@ private:
                            optimizer_t *out,
                            const acc_func_t &f) {
         optimizer_t other(el, f(env, el));
-        out->swap_if_other_better(&other, cmp);
+        out->replace_if_other_better(other, cmp);
     }
     virtual datum_t unpack(optimizer_t *el) {
         return el->unpack(name);
     }
-    virtual void unshard_impl(env_t *, optimizer_t *out, optimizer_t *el) {
-        out->swap_if_other_better(el, cmp);
+    virtual void unshard_impl(env_t *, optimizer_t *out, const optimizer_t *el) {
+        out->replace_if_other_better(*el, cmp);
     }
     const char *name;
     bool (*cmp)(const datum_t &val1, const datum_t &val2);
@@ -781,7 +799,7 @@ private:
     }
     virtual void unshard_impl(env_t *env,
                               datum_t *out,
-                              datum_t *el) {
+                              const datum_t *el) {
         if (el->has()) accumulate(env, *el, out);
     }
 

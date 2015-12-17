@@ -535,9 +535,9 @@ struct rdb_r_shard_visitor_t : public boost::static_visitor<bool> {
             auto it = rg.hints->find(region);
             if (it != rg.hints->end()) {
                 do_read = rangey_read(rg);
-                auto *rr = boost::get<rget_read_t>(payload_out);
-                guarantee(rr);
                 if (do_read) {
+                    auto *rr = boost::get<rget_read_t>(payload_out);
+                    guarantee(rr);
                     // TODO: We could avoid an `std::map` copy by making
                     // `rangey_read` smarter.
                     rr->hints = boost::none;
@@ -910,6 +910,7 @@ void rdb_r_unshard_visitor_t::unshard_range_batch(const query_t &q, sorting_t so
         scoped_ptr_t<ql::accumulator_t> acc(q.terminal
             ? ql::make_terminal(*q.terminal)
             : ql::make_unsharding_append());
+        fprintf(stderr, "Results size is %d\n", (int)results.size());
         acc->unshard(&env, results);
         // The semantics here are that we aborted before ever iterating since no
         // iteration occured (since we don't actually have a btree here).
