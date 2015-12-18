@@ -72,7 +72,7 @@ cancelRun = False
 def setCancelRun(*args):
     global cancelRun
     cancelRun = True
-    print('')
+    print('') # put the ^C on a seperate line
 signal.signal(signal.SIGINT, setCancelRun)
 # ToDo: cover all relevant signals
 # ToDo: allow for double-SIGINT to fast-kill

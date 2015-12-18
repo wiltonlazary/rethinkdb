@@ -798,10 +798,10 @@ class Process(object):
         if self.running:
             if self.process.poll() is None:
                 utils.kill_process_group(self, timeout=20)
-                            self.returncode = self.process.poll()
+                self.returncode = self.process.poll()
                 if self.returncode is None:
                         try:
-                        self.returncode = self.process.wait()
+                            self.returncode = self.process.wait()
                         except OSError:
                             sys.stderr.write('The subprocess module lost the connection to the %s %s, assuming it closed cleanly (2)\n' % (self.server_type, self.name))
                             sys.stderr.flush()
