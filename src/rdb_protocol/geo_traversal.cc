@@ -53,6 +53,7 @@ const unsigned int NEAREST_NUM_VERTICES = 8;
 
 geo_job_data_t::geo_job_data_t(
     ql::env_t *_env,
+    const uuid_u &cfeed_shard_id,
     region_t region,
     store_key_t last_key,
     const ql::batchspec_t &batchspec,
@@ -62,7 +63,8 @@ geo_job_data_t::geo_job_data_t(
       batcher(make_scoped<ql::batcher_t>(batchspec.to_batcher())),
       accumulator(_terminal
                   ? ql::make_terminal(*_terminal)
-                  : ql::make_append(std::move(region),
+                  : ql::make_append(cfeed_shard_id,
+                                    std::move(region),
                                     std::move(last_key),
                                     sorting_t::UNORDERED,
                                     batcher.get())) {

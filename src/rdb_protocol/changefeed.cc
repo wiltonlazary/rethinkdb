@@ -34,6 +34,7 @@ struct indexed_datum_t {
     // MOVABLE_BUT_NOT_COPYABLE(indexed_datum_t);
 };
 
+// TODO! Can we replace this and just use active_state_t?
 struct stamped_range_t {
     explicit stamped_range_t(uint64_t _next_expected_stamp)
         : next_expected_stamp(_next_expected_stamp),
@@ -967,6 +968,7 @@ public:
         }
         rdb_rget_slice(
             ref.btree,
+            nil_uuid(), // TODO! Is this ok?
             region_t(),
             range,
             boost::none,
@@ -1036,6 +1038,7 @@ public:
             ref.sindex_info->mapping_version_info.latest_compatible_reql_version;
         rdb_rget_secondary_slice(
             ref.btree,
+            nil_uuid(), // TODO! Is this ok?
             region_t(),
             ql::datumspec_t(srange),
             srange.to_sindex_keyrange(reql_version),
@@ -2711,8 +2714,18 @@ private:
         }
 
         auto it = stamped_ranges.find(source_stamp.first);
+        // TODO! Should we handle exhausted ranges here? Or in update_ranges?
         r_sanity_check(it != stamped_ranges.end());
         it->second.next_expected_stamp = source_stamp.second + 1;
+
+        // TODO! Quick hack. Probably wrong.
+        /*guarantee(active_state);
+        auto shard_stamp_id = active_state->shard_last_read_stamps.find(it->first);
+        if (shard_stamp_id == active_state->shard_last_read_stamps.end()) {
+            fprintf(stderr, "ID doesn't have an active state\n");
+            return false;
+        }*/
+
         if (key < it->second.left_fencepost) return false;
         if (key >= it->second.get_right_fencepost()) return true;
         // `ranges` should be extremely small
@@ -2724,23 +2737,7 @@ private:
         // If we get here then there's a gap in the ranges.
         r_sanity_fail();
     }
-    void add_range(uuid_u uuid, uint64_t stamp, key_range_t range) {
-        // Safe because we never generate `store_key_t::max()`.
-        if (range.right.unbounded) {
-            range.right.unbounded = false;
-            range.right.internal_key = store_key_t::max();
-        }
-        auto it = stamped_ranges.find(uuid);
-        r_sanity_check(it != stamped_ranges.end());
-        if (it->second.ranges.size() == 0) {
-            it->second.left_fencepost = range.left;
-            it->second.ranges.push_back(std::make_pair(std::move(range), stamp));
-        } else if (it->second.ranges.back().second == stamp) {
-            it->second.ranges.back().first.right = range.right;
-        } else {
-            it->second.ranges.push_back(std::make_pair(std::move(range), stamp));
-        }
-    }
+
     void maybe_skip_to_feed() {
         const std::map<uuid_u, uint64_t> *sub_stamps = &sub->get_next_stamps();
         boost::optional<std::map<uuid_u, uint64_t> > feed_range_stamps;
@@ -2764,13 +2761,48 @@ private:
             }
         }
     }
+
     void update_ranges() {
-        active_state = src->truncate_and_get_active_state();
-        key_range_t range = last_read_range();
-        for (const auto &pair : last_read_stamps()) {
-            add_range(pair.first, pair.second, range);
+        active_state = src->get_active_state();
+        r_sanity_check(active_state);
+        std::set<uuid_u> covered_shards;
+        for (const auto &pair : active_state->shard_last_read_stamps) {
+            add_range(pair.first, pair.second.first, pair.second.second);
+            covered_shards.insert(pair.first);
+        }
+
+        // TODO! This is the wrong way of doing it (and the range is wrong)
+        for (const auto &pair : stamped_ranges) {
+            if (covered_shards.count(pair.first) == 0
+                && pair.second.ranges.empty()) {
+                // TODO! Wrong stamp I assume?
+                add_range(
+                    pair.first,
+                    key_range_t(key_range_t::bound_t::closed, pair.second.left_fencepost,
+                                key_range_t::bound_t::none, store_key_t()),
+                    pair.second.next_expected_stamp);
+            }
         }
     }
+
+    void add_range(uuid_u uuid, key_range_t read_range, uint64_t stamp) {
+        // Safe because we never generate `store_key_t::max()`.
+        if (read_range.right.unbounded) {
+            read_range.right.unbounded = false;
+            read_range.right.internal_key = store_key_t::max();
+        }
+        auto it = stamped_ranges.find(uuid);
+        r_sanity_check(it != stamped_ranges.end());
+        if (it->second.ranges.size() == 0) {
+            it->second.left_fencepost = read_range.left;
+            it->second.ranges.push_back(std::make_pair(std::move(read_range), stamp));
+        } else if (it->second.ranges.back().second == stamp) {
+            it->second.ranges.back().first.right = read_range.right;
+        } else {
+            it->second.ranges.push_back(std::make_pair(std::move(read_range), stamp));
+        }
+    }
+
     void remove_outdated_ranges() {
         for (auto &&pair : stamped_ranges) {
             auto *ranges = &pair.second.ranges;
@@ -2786,13 +2818,9 @@ private:
         }
     }
 
-    const key_range_t &last_read_range() const {
+    const std::map<uuid_u, std::pair<key_range_t, uint64_t> > &last_read_stamps() const {
         r_sanity_check(active_state);
-        return active_state->last_read;
-    }
-    const std::map<uuid_u, uint64_t> &last_read_stamps() const {
-        r_sanity_check(active_state);
-        return active_state->shard_stamps;
+        return active_state->shard_last_read_stamps;
     }
     const reql_version_t &reql_version() const {
         r_sanity_check(active_state);

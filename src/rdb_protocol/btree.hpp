@@ -134,6 +134,7 @@ void rdb_delete(const store_key_t &key, btree_slice_t *slice, repli_timestamp_t
 
 void rdb_rget_slice(
     btree_slice_t *slice,
+    const uuid_u cfeed_shard_id,
     const region_t &shard,
     const key_range_t &range,
     const boost::optional<std::map<store_key_t, uint64_t> > &primary_keys,
@@ -148,6 +149,7 @@ void rdb_rget_slice(
 
 void rdb_rget_secondary_slice(
     btree_slice_t *slice,
+    const uuid_u cfeed_shard_id,
     const region_t &shard,
     const ql::datumspec_t &datumspec,
     const key_range_t &sindex_range,
@@ -164,6 +166,7 @@ void rdb_rget_secondary_slice(
 
 void rdb_get_intersecting_slice(
     btree_slice_t *slice,
+    const uuid_u cfeed_shard_id,
     const region_t &shard,
     const ql::datum_t &query_geometry,
     const key_range_t &sindex_range,

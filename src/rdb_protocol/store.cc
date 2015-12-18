@@ -184,6 +184,7 @@ scoped_ptr_t<sindex_superblock_t> acquire_sindex_for_read(
 void do_read(ql::env_t *env,
              store_t *store,
              btree_slice_t *btree,
+             const uuid_u cfeed_shard_id,
              real_superblock_t *superblock,
              const rget_read_t &rget,
              rget_read_response_t *res,
@@ -193,6 +194,7 @@ void do_read(ql::env_t *env,
         // Normal rget
         rdb_rget_slice(
             btree,
+            cfeed_shard_id,
             *rget.current_shard,
             rget.region.inner,
             rget.primary_keys,
@@ -241,6 +243,7 @@ void do_read(ql::env_t *env,
 
             rdb_rget_secondary_slice(
                 store->get_sindex_slice(sindex_uuid),
+                cfeed_shard_id,
                 *rget.current_shard,
                 rget.sindex->datumspec,
                 sindex_range,
@@ -322,7 +325,14 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
             // The superblock will instead be released in `store_t::read`
             // shortly after this function returns.
             rget_read_response_t resp;
-            do_read(&env, store, btree, superblock, rget, &resp,
+
+            uuid_u cfeed_shard_id = nil_uuid();
+            auto cserver = store->changefeed_server(s.region);
+            if (cserver.first != nullptr) {
+                cfeed_shard_id = cserver.first->get_uuid();
+            }
+
+            do_read(&env, store, btree, cfeed_shard_id, superblock, rget, &resp,
                     release_superblock_t::KEEP);
             auto *gs = boost::get<ql::grouped_t<ql::stream_t> >(&resp.result);
             if (gs == NULL) {
@@ -450,9 +460,16 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
             return;
         }
 
+        uuid_u cfeed_shard_id = nil_uuid();
+        auto cserver = store->changefeed_server(geo_read.region);
+        if (cserver.first != nullptr) {
+            cfeed_shard_id = cserver.first->get_uuid();
+        }
+
         guarantee(geo_read.sindex.region);
         rdb_get_intersecting_slice(
             store->get_sindex_slice(sindex_uuid),
+            cfeed_shard_id,
             geo_read.region, // This happens to always be the shard for geo reads.
             geo_read.query_geometry,
             geo_read.sindex.region->inner,
@@ -538,6 +555,12 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
             superblock->get()->snapshot_subdag();
         }
 
+        uuid_u cfeed_shard_id = nil_uuid();
+        auto cserver = store->changefeed_server(rget.region);
+        if (cserver.first != nullptr) {
+            cfeed_shard_id = cserver.first->get_uuid();
+        }
+
         if (rget.transforms.size() != 0 || rget.terminal) {
             // This asserts that the optargs have been initialized.  (There is always
             // a 'db' optarg.)  We have the same assertion in
@@ -546,7 +569,7 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
         }
         ql::env_t ql_env(ctx, ql::return_empty_normal_batches_t::NO,
                          interruptor, rget.optargs, trace);
-        do_read(&ql_env, store, btree, superblock, rget, res,
+        do_read(&ql_env, store, btree, cfeed_shard_id, superblock, rget, res,
                 release_superblock_t::RELEASE);
     }
 

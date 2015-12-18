@@ -188,16 +188,16 @@ boost::optional<std::map<region_t, store_key_t> > active_ranges_to_hints(
 enum class is_secondary_t { NO, YES };
 active_ranges_t new_active_ranges(
     const stream_t &stream,
-    key_range_t &&original_range,
+    const key_range_t &original_range,
     is_secondary_t is_secondary) {
     active_ranges_t ret;
     for (auto &&pair : stream.substreams) {
-        std::map<hash_range_t, hash_range_with_cache_t> hash_ranges;
         ret.ranges[pair.first.inner]
            .hash_ranges[hash_range_t{pair.first.beg, pair.first.end}]
             = hash_range_with_cache_t{
+                pair.second.cfeed_shard_id,
                 is_secondary == is_secondary_t::YES
-                    ? std::move(original_range)
+                    ? original_range
                     : pair.first.inner.intersection(original_range),
                 raw_stream_t(),
                 range_state_t::ACTIVE};
@@ -474,12 +474,26 @@ bool rget_response_reader_t::add_stamp(changefeed_stamp_t _stamp) {
     return true;
 }
 
-boost::optional<active_state_t> rget_response_reader_t::truncate_and_get_active_state() {
-    if (!stamp || !active_ranges || shard_stamps.size() == 0) return boost::none;
+boost::optional<active_state_t> rget_response_reader_t::get_active_state() {
+    if (!stamp || !active_ranges || shard_stamps.empty()) return boost::none;
+    std::map<uuid_u, std::pair<key_range_t, uint64_t> > shard_last_read_stamps;
+    for (const auto &range_pair : active_ranges->ranges) {
+        for (const auto &hash_pair : range_pair.second.hash_ranges) {
+            const auto stamp_it = shard_stamps.find(hash_pair.second.cfeed_shard_id);
+            r_sanity_check(stamp_it != shard_stamps.end());
+
+            // TODO! Is it actually ok to use the global last_read_start?
+            key_range_t last_read_range(
+                key_range_t::closed, last_read_start,
+                key_range_t::open, std::max(last_read_start,
+                                            hash_pair.second.key_range.left));
+            shard_last_read_stamps.insert(std::make_pair(
+                stamp_it->first,
+                std::make_pair(last_read_range, stamp_it->second)));
+        }
+    }
     return active_state_t{
-        key_range_t(key_range_t::closed, last_read_start,
-                    key_range_t::open, truncate_and_get_left(&*active_ranges)),
-        shard_stamps,
+        std::move(shard_last_read_stamps),
         reql_version,
         DEBUG_ONLY(readgen->sindex_name())};
 }
@@ -1157,7 +1171,7 @@ bool datum_stream_t::add_stamp(changefeed_stamp_t) {
     return false;
 }
 
-boost::optional<active_state_t> datum_stream_t::truncate_and_get_active_state() {
+boost::optional<active_state_t> datum_stream_t::get_active_state() {
     return boost::none;
 }
 

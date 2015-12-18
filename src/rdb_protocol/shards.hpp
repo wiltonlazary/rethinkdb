@@ -12,6 +12,7 @@
 #include "btree/keys.hpp"
 #include "containers/archive/stl_types.hpp"
 #include "containers/archive/varint.hpp"
+#include "containers/uuid.hpp"
 #include "rdb_protocol/batching.hpp"
 #include "rdb_protocol/configured_limits.hpp"
 #include "rdb_protocol/datum.hpp"
@@ -78,16 +79,17 @@ void debug_print(printf_buffer_t *, const rget_item_t &);
 
 typedef std::vector<rget_item_t> raw_stream_t;
 struct keyed_stream_t {
+    uuid_u cfeed_shard_id;
     raw_stream_t stream;
     store_key_t last_key;
 };
 RDB_DECLARE_SERIALIZABLE(keyed_stream_t);
 struct stream_t {
     // When we first construct a `stream_t`, it's always for a single shard.
-    stream_t(region_t region, store_key_t last_key)
+    stream_t(const uuid_u &cfeed_shard_id, region_t region, store_key_t last_key)
         : substreams{{
             std::move(region),
-                keyed_stream_t{raw_stream_t(), std::move(last_key)}}} { }
+                keyed_stream_t{cfeed_shard_id, raw_stream_t(), std::move(last_key)}}} { }
     explicit stream_t(std::map<region_t, keyed_stream_t> &&_substreams)
         : substreams(std::move(_substreams)) { }
     stream_t() { }
@@ -403,12 +405,12 @@ public:
         const ql::configured_limits_t &limits) = 0;
 };
 
-scoped_ptr_t<accumulator_t> make_append(region_t region,
+scoped_ptr_t<accumulator_t> make_append(const uuid_u &cfeed_shard_id,
+                                        region_t region,
                                         store_key_t last_key,
                                         sorting_t sorting,
                                         batcher_t *batcher);
 scoped_ptr_t<accumulator_t> make_unsharding_append();
-scoped_ptr_t<accumulator_t> make_limit_append(size_t n, sorting_t sorting);
 scoped_ptr_t<accumulator_t> make_terminal(const terminal_variant_t &t);
 scoped_ptr_t<eager_acc_t> make_to_array();
 scoped_ptr_t<eager_acc_t> make_eager_terminal(const terminal_variant_t &t);
