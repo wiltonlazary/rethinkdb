@@ -232,7 +232,7 @@ boost::optional<std::map<region_t, store_key_t> > active_ranges_to_hints(
 
 active_ranges_t new_active_ranges(
     const stream_t &stream,
-    key_range_t &&original_range,
+    const key_range_t &original_range,
     is_secondary_t is_secondary) {
     active_ranges_t ret;
     for (auto &&pair : stream.substreams) {
