@@ -688,7 +688,8 @@ void rget_reader_t::accumulate_all(env_t *env, eager_acc_t *acc) {
     r_sanity_check(stream != nullptr);
     for (auto &&pair : *stream) {
         for (auto &&stream_pair : pair.second.substreams) {
-            r_sanity_check(stream_pair.second.last_key == final_key);
+            r_sanity_check(stream_pair.second.stream.empty() ||
+                           stream_pair.second.last_key == final_key);
         }
     }
     mark_shards_exhausted();

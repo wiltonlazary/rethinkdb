@@ -441,7 +441,8 @@ private:
                             is_sindex_sort = is_sindex;
                         }
                     }
-                    r_sanity_check(pair.second.last_key == store_key_max
+                    r_sanity_check(pair.second.stream.empty()
+                                   || pair.second.last_key == store_key_max
                                    || pair.second.last_key == store_key_min);
                     v.push_back(std::make_pair(pair.second.stream.begin(),
                                                pair.second.stream.end()));
@@ -468,7 +469,8 @@ private:
                 }
             } else {
                 for (auto &&pair : stream->substreams) {
-                    r_sanity_check(pair.second.last_key == store_key_max
+                    r_sanity_check(pair.second.stream.empty()
+                                   || pair.second.last_key == store_key_max
                                    || pair.second.last_key == store_key_min);
                     for (auto &&val : pair.second.stream) {
                         lst->push_back(std::move(val.data));
