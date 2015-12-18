@@ -15,6 +15,8 @@
 
 namespace ql {
 
+enum class is_secondary_t { NO, YES };
+
 read_mode_t up_to_date_read_mode(read_mode_t in) {
     switch (in) {
     case read_mode_t::MAJORITY: return in;
@@ -95,7 +97,7 @@ bool active_ranges_t::totally_exhausted() const {
     return true;
 }
 
-store_key_t truncate_and_get_left(active_ranges_t *ranges) {
+store_key_t truncate_and_get_left(active_ranges_t *ranges, is_secondary_t is_secondary) {
     const store_key_t *smallest_left = &store_key_max;
     for (auto &&pair : ranges->ranges) {
         for (auto &&hash_pair : pair.second.hash_ranges) {
@@ -139,10 +141,11 @@ store_key_t truncate_and_get_left(active_ranges_t *ranges) {
                     hash_pair.second.key_range.left = *smallest_left;
                     hash_pair.second.key_range.is_empty(); // TODO! Debug-check that the range is valid
                     // Make sure we stay within the shard boundaries
-                    if (hash_pair.second.key_range.left < pair.first.left) {
+                    if (is_secondary == is_secondary_t::NO
+                        && hash_pair.second.key_range.left < pair.first.left) {
                         hash_pair.second.key_range.left = pair.first.left;
                     }
-                    hash_pair.second.key_range.is_empty(); // TODO!*/
+                    hash_pair.second.key_range.is_empty(); // TODO! Debug-check that the range is valid
 
                     if (!hash_pair.second.key_range.is_empty()) {
                         // Truncating an exhausted range means that we have to make it
@@ -227,7 +230,6 @@ boost::optional<std::map<region_t, store_key_t> > active_ranges_to_hints(
     return std::move(hints);
 }
 
-enum class is_secondary_t { NO, YES };
 active_ranges_t new_active_ranges(
     const stream_t &stream,
     key_range_t &&original_range,
@@ -538,7 +540,11 @@ boost::optional<active_state_t> rget_response_reader_t::truncate_and_get_active_
     if (!stamp || !active_ranges || shard_stamps.size() == 0) return boost::none;
     return active_state_t{
         key_range_t(key_range_t::closed, last_read_start,
-                    key_range_t::open, truncate_and_get_left(&*active_ranges)),
+                    key_range_t::open, truncate_and_get_left(
+                        &*active_ranges,
+                        readgen->sindex_name()
+                        ? is_secondary_t::YES
+                        : is_secondary_t::NO)),
         shard_stamps,
         reql_version,
         DEBUG_ONLY(readgen->sindex_name())};
