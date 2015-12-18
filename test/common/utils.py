@@ -207,7 +207,7 @@ def import_python_driver():
     
     if not all(map(lambda x: os.path.isfile(os.path.join(driverPath, x)), ['__init__.py', 'ast.py', 'docs.py'])):
         raise ValueError('Invalid Python driver: %s' % driverPath)
-        
+    
     # -- load the driver
     
     keptPaths = sys.path[:]
@@ -217,7 +217,7 @@ def import_python_driver():
         loadedDriver = __import__(driverName)
     finally:
         sys.path = keptPaths
-    
+
     
     # -- check that it is from where we assert it to be
     
@@ -610,7 +610,7 @@ def kill_process_group(parent, timeout=20, sigkill_grace=2, only_warn=True):
             try:
                 os.kill(runner.pid, signal.SIGINT)
             except OSError: pass # ToDo: figure out what to do here
-        
+    
     # -- SIGKILL whatever is left - multiple SIGKILLs should not make a difference, but sometimes they do
     while True:
         runningProcesses = processes.list()
@@ -620,7 +620,7 @@ def kill_process_group(parent, timeout=20, sigkill_grace=2, only_warn=True):
             try:
                 os.killpg(runner.pid, signal.SIGKILL)
             except OSError: pass # ToDo: figure out what to do here
-        
+    
         if time.time() < hardDeadline:
             time.sleep(0.2)
         else:
@@ -629,17 +629,17 @@ def kill_process_group(parent, timeout=20, sigkill_grace=2, only_warn=True):
     # -- try to collect the return code/process
     if parentPopen:
         parentPopen.poll()
-    else:
+                else:
         try:
             os.waitpid(parentPid, os.WNOHANG)
         except Exception: pass
-    
+
     # -- return failure if anything still remains
     runningProcesses = processes.list()
     if runningProcesses:
         timeElapesed = time.time() - startTime
         message = 'Unable to kill all of the processes under pid %d after %.2f seconds:\n\t%s\n' % (parentPid, timeElapesed, '\n\t'.join([str(x) for x in runningProcesses]))
-    else:
+        else:
         return
 
 def nonblocking_readline(source, seek=0):

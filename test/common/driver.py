@@ -798,19 +798,21 @@ class Process(object):
         if self.running:
             if self.process.poll() is None:
                 utils.kill_process_group(self, timeout=20)
-                self.returncode = self.process.poll()
+                            self.returncode = self.process.poll()
                 if self.returncode is None:
-                    try:
+                        try:
                         self.returncode = self.process.wait()
-                    except OSError:
-                        warnings.warn('The subprocess module lost the connection to the %s %s, assuming it closed cleanly' % (self.server_type, self.name))
-                        self.returncode = 0
-                assert self.returncode is not None, '%s %s failed to exit!' % (self.server_type.capitalize(), self.name)
+                        except OSError:
+                            sys.stderr.write('The subprocess module lost the connection to the %s %s, assuming it closed cleanly (2)\n' % (self.server_type, self.name))
+                            sys.stderr.flush()
+                            self.returncode = 0
+                            assert self.returncode is not None, '%s %s failed to exit!' % (self.server_type.capitalize(), self.name)
         if self.process:
             try:
                 self.returncode = self.process.wait()
             except OSError:
-                warnings.warn('The subprocess module lost the connection to the %s %s, assuming it closed cleanly' % (self.server_type, self.name))
+                sys.stderr.write('The subprocess module lost the connection to the %s %s, assuming it closed cleanly (3)\n' % (self.server_type, self.name))
+                sys.stderr.flush()
                 self.returncode = 0
         
         if self in runningServers:
