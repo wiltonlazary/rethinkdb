@@ -480,7 +480,7 @@ class RunningProcesses:
         candidateGroups = set()
         if self.parentProcess:
             candidates.add(self.parentProcess)
-            if self.parentProcess.status and self.parentProcess.status[0] in ('I', 'R', 'S'):
+            if self.parentProcess.status and self.parentProcess.status[0] in ('D', 'I', 'R', 'S'):
                 targetProcesses.append(self.parentProcess)
             if self.parentProcess.pid == self.parentProcess.pgid:
                 candidateGroups.add(self.parentProcess.pgid)
@@ -495,7 +495,7 @@ class RunningProcesses:
                 visited.add(candidate)
                 
                 # add this to the target list if it is running
-                if candidate.status and candidate.status[0] in ('I', 'R', 'S') and candidate not in targetProcesses:
+                if candidate.status and candidate.status[0] in ('D', 'I', 'R', 'S') and candidate not in targetProcesses:
                     targetProcesses.append(candidate)
                 
                 # add any children to the list
@@ -629,7 +629,7 @@ def kill_process_group(parent, timeout=20, sigkill_grace=2, only_warn=True):
     # -- try to collect the return code/process
     if parentPopen:
         parentPopen.poll()
-                else:
+    else:
         try:
             os.waitpid(parentPid, os.WNOHANG)
         except Exception: pass
@@ -639,7 +639,7 @@ def kill_process_group(parent, timeout=20, sigkill_grace=2, only_warn=True):
     if runningProcesses:
         timeElapesed = time.time() - startTime
         message = 'Unable to kill all of the processes under pid %d after %.2f seconds:\n\t%s\n' % (parentPid, timeElapesed, '\n\t'.join([str(x) for x in runningProcesses]))
-        else:
+    else:
         return
 
 def nonblocking_readline(source, seek=0):
