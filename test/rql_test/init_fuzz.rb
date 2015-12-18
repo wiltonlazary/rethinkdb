@@ -1,5 +1,5 @@
 require 'eventmachine'
-require_relative './importRethinkDB.rb'
+require_relative '../importRethinkDB.rb'
 
 $port ||= (ARGV[0] || ENV['RDB_DRIVER_PORT'] || raise('driver port not supplied')).to_i
 ARGV.clear
@@ -8,9 +8,9 @@ $c = r.connect(port: $port).repl
 $gen = Random.new
 puts "Random seed: #{$gen.seed}"
 
-$tbl = r.table('test')
 r.table_drop('test').run rescue nil
 r.table_create('test').run
+$tbl = r.table('test')
 $tbl.index_create('a').run
 $tbl.index_wait.run
 

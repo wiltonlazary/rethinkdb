@@ -1,5 +1,5 @@
 require 'eventmachine'
-require_relative './importRethinkDB.rb'
+require_relative '../importRethinkDB.rb'
 
 $state = []
 class H < RethinkDB::Handler

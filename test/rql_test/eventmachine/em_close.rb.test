@@ -2,7 +2,7 @@
 
 import os, sys, subprocess
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir, "common"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir, os.pardir, "common"))
 import driver, utils
 
 executable_path = sys.argv[1] if len(sys.argv) > 1 else utils.find_rethinkdb_executable()

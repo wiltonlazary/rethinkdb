@@ -1,0 +1,122 @@
+desc: Changefeeds with `include_initial` produce all of the expected items
+table_variable_name: tbl
+tests:
+    # -- create secondary index
+    
+    - py: tbl.index_create('a')
+      ot: {'created':1}
+    - py: tbl.index_wait()['ready']
+      ot: [True]
+    
+    # -- insert initial records
+    
+    - py: tbl.insert(r.range(10).map({'id':r.row, 'a':r.expr(20).sub(r.row)}))
+      ot: partial({'errors':0, 'inserted':10})
+    
+    # -- setup feeds
+    
+    # table
+    - py: tblFeed = tbl.changes(include_states=True, include_initial=True)
+      runopts:
+        max_batch_rows: 1
+    
+    # get
+    - py: getFeed = tbl.get(5).changes(include_states=True, include_initial=True)
+      runopts:
+        max_batch_rows: 1
+    
+    # get_all on primary index
+    - py: getAllPrimaryFeed = tbl.get_all(5, 15).changes(include_states=True, include_initial=True)
+      runopts:
+        max_batch_rows: 1
+    
+    # get_all on secondary index
+    - py: getAllSecondaryFeed = tbl.get_all(5, 15, index='a').changes(include_states=True, include_initial=True)
+      runopts:
+        max_batch_rows: 1
+    
+    # between on primary index
+    - py: betweenPrimaryFeed = tbl.between(5, 15).changes(include_states=True, include_initial=True)
+      runopts:
+        max_batch_rows: 1
+    
+    # between on secondard index
+    - py: betweenSecondaryFeed = tbl.between(6, 16, index='a').changes(include_states=True, include_initial=True)
+      runopts:
+        max_batch_rows: 1
+    
+    # -- add additional records
+    
+    - py: tbl.insert(r.range(10, 20).map({'id':r.row, 'a':r.expr(20).sub(r.row)}))
+      ot: partial({'errors':0, 'inserted':10})
+    
+    - py: tbl.get_all(5, 15).update({'updated':True})
+    - py: tbl.get_all(4, 14, index='a').update({'updated':True})
+    
+    # -- ensure that all the expected records are there
+    
+    # - table
+    # inital
+    - py: fetch(tblFeed, 1)
+      ot: [{"state": "initializing"}]
+    - py: fetch(tblFeed, 10)
+      ot: bag([{'new_val': {'id': 0, 'a': 20}}, {'new_val': {'id': 1, 'a': 19}},
+               {'new_val': {'id': 2, 'a': 18}}, {'new_val': {'id': 3, 'a': 17}},
+               {'new_val': {'id': 4, 'a': 16}},
+               {'new_val': {'id': 5, 'a': 15, 'updated':True}},
+               {'new_val': {'id': 6, 'a': 14, 'updated':True}},
+               {'new_val': {'id': 7, 'a': 13}},
+               {'new_val': {'id': 8, 'a': 12}}, {'new_val': {'id': 9, 'a': 11}}])
+    # changes
+    - py: fetch(tblFeed, 1)
+      ot: [{"state": "ready"}]
+    - py: fetch(tblFeed, 12)
+      ot: bag([{'old_val':None, 'new_val': {'id': 10, 'a': 10}}, {'old_val':None, 'new_val': {'id': 11, 'a': 9}},
+               {'old_val':None, 'new_val': {'id': 12, 'a': 8}},  {'old_val':None, 'new_val': {'id': 13, 'a': 7}},
+               {'old_val':None, 'new_val': {'id': 14, 'a': 6}},  {'old_val':None, 'new_val': {'id': 15, 'a': 5}},
+               {'old_val':None, 'new_val': {'id': 16, 'a': 4}},  {'old_val':None, 'new_val': {'id': 17, 'a': 3}},
+               {'old_val':None, 'new_val': {'id': 18, 'a': 2}},  {'old_val':None, 'new_val': {'id': 19, 'a': 1}},
+               {'old_val':{'id':15, 'a':5}, 'new_val':{'id':15, 'a':5, 'updated':True}},
+               {'old_val':{'id':16, 'a':6}, 'new_val':{'id':16, 'a':6, 'updated':True}}])
+    
+#    # - get
+#    # inital
+#    - py: fetch(getFeed, 1)
+#      ot: [{"state": "initializing"}]
+#    - py: fetch(getFeed, 1)
+#      ot: [{'new_val': {'id': 5, 'a': 15}}]
+#    # changes
+#    - py: fetch(getFeed, 1)
+#      ot: [{"state": "ready"}]
+#    - py: fetch(getFeed, 1)
+#      ot: [{'old_val':{'id':5, 'a':15}, 'new_val':{'id':5, 'a':15, 'updated':True}}]
+#    
+#    # - get_all on primary index
+#    # inital
+#    - py: fetch(getAllPrimaryFeed, 1)
+#      ot: [{"state": "initializing"}]
+#    - py: fetch(getAllPrimaryFeed, 2)
+#      ot: [{'new_val': {'id': 5, 'a': 15}}, {'new_val': {'id': 15, 'a': 5}}]
+#    # changes
+#    - py: fetch(getAllPrimaryFeed, 1)
+#      ot: [{"state": "ready"}]
+#    - py: fetch(getAllPrimaryFeed, 2)
+#      ot: [{'old_val':{'id':5, 'a':15}, 'new_val':{'id':5, 'a':15, 'updated':True}},
+#           {'old_val':{'id':15, 'a':5}, 'new_val':{'id':15, 'a':5, 'updated':True}}]
+#    
+#    # - get_all on secondary index
+#    # inital
+#    - py: fetch(getAllSecondaryFeed, 1)
+#      ot: [{"state": "initializing"}]
+#    - py: fetch(getAllSecondaryFeed, 2)
+#      ot: [{'new_val': {'id': 6, 'a': 16}}, {'new_val': {'id':16, 'a': 6}}]
+#    # changes
+#    - py: fetch(getAllSecondaryFeed, 1)
+#      ot: [{"state": "ready"}]
+#    - py: fetch(getAllSecondaryFeed, 2)
+#      ot: [{'old_val':{'id':6, 'a':16}, 'new_val':{'id':6, 'a':16, 'updated':True}},
+#           {'old_val':{'id':16, 'a':6}, 'new_val':{'id':16, 'a':6, 'updated':True}}]
+
+
+
+

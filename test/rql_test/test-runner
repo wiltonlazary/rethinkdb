@@ -99,7 +99,9 @@ class SrcLang(object):
     interpreter_name_exe_names = None
     interpreter_version = None
     interpreter_env_name = None
-    
+    minVersion = None
+    maxVersion = None
+        
     driver_info = None
     
     envVariablesToSet = None
@@ -136,16 +138,21 @@ class SrcLang(object):
         return cls._singletons[singletonName]
     
     def __init__(self, version=None):
+        if self.instance_setup:
+            return
+        
         assert self.language_name is not None, 'SrcLang subclass is not properly setup'
-        assert self.language_name in utils.driverPaths, 'SrcLang %s info not in utils.driverPaths' % self.language_name # ToDo: keep all of this in one file
         
         self.envVariablesToSet = {}
+        self.test_types = []
+        self.interpreter_name_exe_names = []
+        if self.language_name in utils.driverPaths:
+            self.driver_info = utils.driverPaths[self.language_name]
         self.class_setup(version)
-        self.instance_setup = True
-        self.driver_info = utils.driverPaths[self.language_name]
         try:
             self.envVariablesToSet['INTERPRETER_PATH'] = self.interpreter_path
         except Exception: pass
+        self.instance_setup = True
     
     # Translates names from canonical name representation
     # (underscores) to the convention for this language
@@ -199,8 +206,7 @@ class SrcLang(object):
                         self.interpreter_version = self.version_check(candidatePath)
                         executablePath = candidatePath
                         break
-                    except Exception:
-                        pass
+                    except Exception: pass
         else:
             self.interpreter_version = self.version_check(executablePath) # exception on failure
             
@@ -239,11 +245,7 @@ class SrcLang(object):
 
 class PyLang(SrcLang):
     language_name = 'Python'
-    
-    interpreter_name_exe_names = None
     interpreter_env_name = 'PYTHON'
-    minVersion = None
-    maxVersion = None
     
     _polyglot_language_header_path = os.path.join(os.path.dirname(__file__), 'drivers', 'driver.py')
     
@@ -253,12 +255,7 @@ class PyLang(SrcLang):
     }
     
     def class_setup(self, version):
-        if self.instance_setup is True:
-            return
-        
         self.display_name = self.language_name + ' ' + version
-        self.test_types = []
-        self.interpreter_name_exe_names = []
         
         self.minVersion = distutils.version.LooseVersion(version)
         self.maxVersion = distutils.version.LooseVersion(version + '.999')
@@ -294,8 +291,6 @@ class JsLang(SrcLang):
     
     interpreter_name_exe_names = ['node']
     interpreter_env_name = 'NODE'
-    minVersion = None # no version requirements yet
-    maxVersion = None
     
     _polyglot_language_header_path = os.path.join(os.path.dirname(__file__), 'drivers', 'driver.js')
     
@@ -310,12 +305,7 @@ class JsLang(SrcLang):
     nametranslate_regex = re.compile(r"(?P<quoteChar>[\"\'\`]?)\$?\b[a-z$]+(_[a-z$]+)+\b\$?(?P=quoteChar)")
     
     def class_setup(self, version):
-        if self.instance_setup is True:
-            return
-        
         self.display_name = self.language_name + ' ' + version
-        self.test_types = []
-        self.interpreter_name_exe_names = []
         
         self.minVersion = distutils.version.LooseVersion(version)
         self.maxVersion = distutils.version.LooseVersion(version + '.999')
@@ -377,8 +367,6 @@ class RbLang(SrcLang):
     
     interpreter_name_exe_names = None
     interpreter_env_name = 'RUBY'
-    minVersion = None
-    maxVersion = None
     
     lang_replaces = {
         'None': 'nil',
@@ -390,11 +378,7 @@ class RbLang(SrcLang):
     _polyglot_language_header_path = os.path.join(os.path.dirname(__file__), 'drivers', 'driver.rb')
     
     def class_setup(self, version):
-        if self.instance_setup is True:
-            return
-        
         self.display_name = self.language_name + ' ' + version
-        self.test_types = []
         self.interpreter_name_exe_names = []
         
         self.minVersion = distutils.version.LooseVersion(version)
@@ -527,11 +511,7 @@ class JrbLang(RbLang):
     language_name = 'JRuby'
     
     def class_setup(self, version):
-        if self.instance_setup is True:
-            return
-        
         self.display_name = self.language_name + ' ' + version
-        self.test_types = []
         self.interpreter_name_exe_names = []
         
         self.minVersion = distutils.version.LooseVersion(version)
@@ -549,7 +529,19 @@ class JrbLang(RbLang):
         self.test_types.append('jrb')
         self.test_types.append('rb')
         self.interpreter_name_exe_names.append('jruby')
+
+class NoneLang(SrcLang):
+    language_name = 'None'
+    display_name = 'None'
     
+    def class_setup(self, version):
+        assert version is None
+        self.test_types.append('none')
+        self.interpreter_name_exe_names.append('jruby')
+    
+    @property
+    def interpreter_path(self):
+        return None
 
 interpreters = {
     'js':     [JsLang('0.10'), JsLang('0.12'), JsLang('4.0'), JsLang('4.1'), JsLang('4.2')],
@@ -580,7 +572,9 @@ interpreters = {
     'rb2.1':  [RbLang('2.1')],
     'rb2.2':  [RbLang('2.2')],
     
-    'jrb9.0': [JrbLang('9.0')]
+    'jrb9.0': [JrbLang('9.0')],
+    
+    'none':   [NoneLang()]
 }
 
 # Abstracts a set of tests given in a single file
@@ -1228,7 +1222,10 @@ class MochaTest(Test):
     
     @property
     def interpreter_path(self):
-        return self.driverLang.interpreter_path
+        if self.driverLang:
+            return self.driverLang.interpreter_path
+        else:
+            return None
     
     @property
     def command(self):
@@ -1282,20 +1279,16 @@ def getTestList(rootPath, languages, testFilters=None, shards=0):
         groupName = os.path.relpath(root, rootPath)
         if groupName in ('.', './'):
             groupName = ''
-        if groupName == 'src' or groupName.startswith('src/'):
-            groupName = 'polyglot' + groupName.lstrip('src')
+        elif groupName == 'src' or groupName.startswith('src/'):
+            groupName = 'polyglot/' + groupName.lstrip('src').lstrip('/')
         
-        for fileName in [x for x in files if x.count('.') > 0]:
+        for fileName in files:
             
             testName, extension = os.path.splitext(fileName)
             extension = extension.lstrip('.').strip().lower()
             
             testName, testLangExtensions = os.path.splitext(testName)
-            testLangExtensions = testLangExtensions.lstrip('.').strip().lower().replace('_', '.')
-            if testLangExtensions:
-                testLangExtensions = testLangExtensions.split(',')
-            else:
-                testLangExtensions = []
+            testLangExtensions = testLangExtensions.lstrip('.').strip().lower().replace('_', '.').split(',')
             
             testName = os.path.join(groupName, testName.strip())
             
@@ -1306,17 +1299,23 @@ def getTestList(rootPath, languages, testFilters=None, shards=0):
             
             # - default testLangExtensions
             
-            if testLangExtensions == []:
+            if testLangExtensions == ['']:
                 if extension == 'mocha':
                     testLangExtensions = list(itertools.chain.from_iterable((x.test_types for x in interpreters['js']))) # all versions of Node/JavaScript
                 
                 elif extension == 'yaml':
-                    testLangExtensions = list(itertools.chain.from_iterable((x.test_types for x in languages))) # all selected languages
+                    testLangExtensions = list(itertools.chain.from_iterable((x.test_types for x in languages if x.language_name is not 'None'))) # all selected languages
+                
+                else:
+                    testLangExtensions = ['none']
             
             # -- create tests for all language versions that pass the filters
             for language in filter(lambda x: any(y in testLangExtensions for y in x.test_types), languages):
                 
-                subTestName = '%s.%s' % (testName, language.test_types[0])
+                if language.language_name == 'None':
+                    subTestName = testName
+                else:
+                    subTestName = '%s.%s' % (testName, language.test_types[0])
                 
                 # - run the filters
 
@@ -1819,8 +1818,9 @@ from this list: JAVASCRIPT_DRIVER, PYTHON_DRIVER, RUBY_DRIVER. Or use
                     options.languages.append(language)
                     break
                 except Exception: pass
-        if len(options.languages) == 0:
-            parser.error('Unable to find interpreters for any of the default languages')
+            else:
+                parser.error('Unable to find an interpreter for %s' % languageGroup[0].language_name)
+        options.languages.append(NoneLang())
     
     # -- get the list of tests
     
@@ -1896,7 +1896,7 @@ from this list: JAVASCRIPT_DRIVER, PYTHON_DRIVER, RUBY_DRIVER. Or use
     # -- make sure the drivers are built
     
     for language in options.languages:
-        if not language.driver_info['sourcePath']:
+        if not language.driver_info or not language.driver_info['sourcePath']:
             continue
         
         outputFile = tempfile.NamedTemporaryFile(mode='w+')
@@ -1920,9 +1920,10 @@ from this list: JAVASCRIPT_DRIVER, PYTHON_DRIVER, RUBY_DRIVER. Or use
     
     print('Using rethinkdb binary %s' % rethinkdb_exe_path)
     for thisLanguage in options.languages:
-        print('\t%s interpreter: %s, driver: %s' % (thisLanguage.display_name, thisLanguage.interpreter_path, thisLanguage.driver_info['driverPath']))
-        if outputDir not in utils.pathsToClean:
-            print('\toutput folder: %s' % outputDir)
+        if thisLanguage.driver_info:
+            print('\t%s interpreter: %s, driver: %s' % (thisLanguage.display_name, thisLanguage.interpreter_path, thisLanguage.driver_info['driverPath']))
+    if outputDir not in utils.pathsToClean:
+        print('\toutput folder: %s' % outputDir)
     
     startTime = time.time()
     

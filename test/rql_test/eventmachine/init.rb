@@ -1,16 +1,9 @@
 require 'eventmachine'
-require_relative './importRethinkDB.rb'
+require_relative '../importRethinkDB.rb'
 
 $port ||= (ARGV[0] || ENV['RDB_DRIVER_PORT'] || raise('driver port not supplied')).to_i
 ARGV.clear
 $c = r.connect(port: $port).repl
-
-$counts = {init: Hash.new{0}, change: Hash.new{0}}
-def real_id(arr, token)
-  ret = [arr[0], $counts[token][arr[0]]]
-  $counts[token][arr[0]] = ($counts[token][arr[0]] + 1) % 3
-  ret
-end
 
 class H < RethinkDB::Handler
   def initialize(field)
@@ -18,18 +11,17 @@ class H < RethinkDB::Handler
     @field = field
   end
   def on_initial_val(val)
-    id = real_id(val[@field], :init)
+    id = val[@field]
+    raise "Duplicate initial val." if @state[id]
     @state[id] = val['z']
     $statelog << @state.dup
     # PP.pp $statelog
-    if id[1] == 0
-      r.table('test').between([id[0]-1, 11].max, 20, index: @field)['id'].distinct \
-       .foreach{|id| r.table('test').get(id).update {|row| {z: row['z']+1}}} \
-       .run(noreply: true)
-      r.table('test').get_all(10, index: @field).limit(1).update {|row|
-        {z: row['z']+1}
-      }.run(noreply: true)
-    end
+    r.table('test').between([id-1, 11].max, 20, index: @field).update {|row|
+      {z: row['z']+1}
+    }.run(noreply: true)
+    r.table('test').get_all(10, index: @field).update {|row|
+      {z: row['z']+1}
+    }.run(noreply: true)
     # PP.pp val
   end
   def on_change(old_val, new_val)
@@ -39,7 +31,7 @@ class H < RethinkDB::Handler
         sleep 0.1
         $handle.close
         @state.each {|k,v|
-          if k[0] == 10 || k[0] == 19
+          if k == 10 || k == 19
             raise RuntimeError, "#{k} = #{v}" if v != 19
           else
             raise RuntimeError, "#{k} = #{v}" if v != k+1
@@ -48,9 +40,9 @@ class H < RethinkDB::Handler
         EM.stop
       }
     else
-      id = real_id(old_val[@field], :change)
+      id = old_val[@field]
       if @state[id] != old_val['z']
-        raise RuntimeError, "Missed a change (#{id}: #{old_val} -> #{new_val})."
+        raise RuntimeError, "Missed a change (#{old_val} -> #{new_val})."
       end
       @state[id] = new_val['z']
       $statelog << @state.dup
@@ -65,14 +57,15 @@ class H < RethinkDB::Handler
 end
 
 $statelog = []
+
 r.table_create('test').run rescue nil
-r.table('test').index_create('multi').run rescue nil
-r.table('test').index_wait().run
-['multi'].each {|field|
+r.table('test').reconfigure(shards: 2, replicas: 1).run
+r.table('test').wait.run
+r.table('test').index_create('a').run rescue nil
+r.table('test').index_wait('a').run
+['id', 'a'].each {|field|
   r.table('test').delete.run
-  r.table('test').insert((0...100).map{|i| {field => [i, i, i], id: i, z: 9}}).run
-  r.table('test').reconfigure(shards: 2, replicas: 1).run
-  r.table('test').wait.run
+  r.table('test').insert((0...100).map{|i| {field => i, z: 9}}).run
   q = r.table('test').between(10, 20, index: field).changes(include_initial: true)
   EM.run {
     $h = H.new(field)
