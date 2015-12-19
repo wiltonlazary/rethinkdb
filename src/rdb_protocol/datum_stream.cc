@@ -198,7 +198,7 @@ active_ranges_t new_active_ranges(
                 range_state_t::ACTIVE};
     }
 
-    // TODO! Add missing ranges
+    // Add ranges for missing shards (we get this if some shards didn't return any data)
     if (shard_regions) {
         for (const auto &region_pair : *shard_regions) {
             if (covered_shards.count(region_pair.first) > 0) continue;
@@ -211,7 +211,6 @@ active_ranges_t new_active_ranges(
                          ? original_range
                          : region_pair.second.inner.intersection(original_range),
                      raw_stream_t(),
-                    // TODO! ?
                      range_state_t::ACTIVE};
         }
     }
