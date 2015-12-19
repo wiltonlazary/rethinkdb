@@ -111,6 +111,8 @@ struct changefeed_stamp_response_t {
     // means the feed was aborted.
     boost::optional<std::map<uuid_u, uint64_t> > stamps;
     std::map<uuid_u, region_t> shard_regions;
+    // The starting points of the reads (assuming left to right traversal)
+    std::map<uuid_u, store_key_t> last_read_starts;
 };
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(changefeed_stamp_response_t);
 

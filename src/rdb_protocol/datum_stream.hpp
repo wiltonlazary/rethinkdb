@@ -702,9 +702,9 @@ protected:
 
     bool started;
     const scoped_ptr_t<const readgen_t> readgen;
-    store_key_t last_read_start;
     boost::optional<active_ranges_t> active_ranges;
     boost::optional<reql_version_t> reql_version;
+    std::map<uuid_u, store_key_t> last_read_starts;
     std::map<uuid_u, uint64_t> shard_stamps;
     std::map<region_t, uuid_u> shard_cfeed_ids;
 

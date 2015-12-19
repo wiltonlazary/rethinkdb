@@ -95,27 +95,6 @@ bool active_ranges_t::totally_exhausted() const {
     return true;
 }
 
-store_key_t truncate_and_get_left(active_ranges_t *ranges) {
-    const store_key_t *smallest_left = &store_key_max;
-    for (auto &&pair : ranges->ranges) {
-        for (auto &&hash_pair : pair.second.hash_ranges) {
-            if (hash_pair.second.cache.size() != 0) {
-                // If we truncate the cache for a shard, it's always active.
-                hash_pair.second.state = range_state_t::ACTIVE;
-                // This should only ever be called when iterating left to right.
-                hash_pair.second.key_range.left = hash_pair.second.cache[0].key;
-                hash_pair.second.cache.clear();
-            }
-            if (hash_pair.second.state == range_state_t::ACTIVE) {
-                if (hash_pair.second.key_range.left < *smallest_left) {
-                    smallest_left = &hash_pair.second.key_range.left;
-                }
-            }
-        }
-    }
-    return *smallest_left;
-}
-
 key_range_t active_ranges_to_range(const active_ranges_t &ranges) {
     store_key_t start = store_key_t::max();
     store_key_t end = store_key_t::min();
@@ -501,7 +480,6 @@ rget_response_reader_t::rget_response_reader_t(
     : table(_table),
       started(false),
       readgen(std::move(_readgen)),
-      last_read_start(store_key_t::min()),
       items_index(0) { }
 
 void rget_response_reader_t::add_transformation(transform_variant_t &&tv) {
@@ -523,8 +501,15 @@ boost::optional<active_state_t> rget_response_reader_t::get_active_state() {
             r_sanity_check(stamp_it != shard_stamps.end());
 
             // TODO! Is it actually ok to use the global last_read_start?
+            const auto &last_read_start_it =
+                last_read_starts.find(hash_pair.second.cfeed_shard_id);
+            store_key_t last_read_start =
+                last_read_start_it == last_read_starts.end()
+                ? store_key_t::min()
+                : last_read_start_it->second;
             key_range_t last_read_range(
                 key_range_t::closed, last_read_start,
+                    // TODO! Do we still need this max?
                 key_range_t::open, std::max(last_read_start,
                                             hash_pair.second.key_range.left));
             shard_last_read_stamps.insert(std::make_pair(
@@ -631,25 +616,6 @@ bool rget_response_reader_t::is_finished() const {
     return shards_exhausted() && items_index >= items.size();
 }
 
-struct last_read_start_visitor_t : public boost::static_visitor<store_key_t> {
-    store_key_t operator()(const intersecting_geo_read_t &geo) const {
-        return geo.sindex.region ? geo.sindex.region->inner.left : store_key_t::min();
-    }
-    store_key_t operator()(const rget_read_t &rget) const {
-        if (rget.sindex) {
-            return rget.sindex->region
-                ? rget.sindex->region->inner.left
-                : store_key_t::min();
-        } else {
-            return rget.region.inner.left;
-        }
-    }
-    template<class T>
-    store_key_t operator()(const T &) const {
-        r_sanity_fail();
-    }
-};
-
 rget_read_response_t rget_response_reader_t::do_read(env_t *env, const read_t &read) {
     read_response_t res;
     table->read_with_profile(env, read, &res);
@@ -658,7 +624,11 @@ rget_read_response_t rget_response_reader_t::do_read(env_t *env, const read_t &r
     if (auto e = boost::get<exc_t>(&rget_res->result)) {
         throw *e;
     }
-    last_read_start = boost::apply_visitor(last_read_start_visitor_t(), read.read);
+    if (rget_res->stamp_response) {
+        last_read_starts = rget_res->stamp_response->last_read_starts;
+    } else {
+        last_read_starts.clear();
+    }
     return std::move(*rget_res);
 }
 

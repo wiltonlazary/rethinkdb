@@ -2667,7 +2667,7 @@ private:
                 // an increase in latency.  (8 used to be the global default
                 // MIN_ELS value.)
                 batchspec_t new_bs = bs.with_min_els(8);
-                new_bs = new_bs.with_lazy_sorting_override(sorting_t::ASCENDING);
+                new_bs = new_bs.with_lazy_sorting_override(sorting_t::UNORDERED);
                 std::vector<datum_t> batch = src->next_batch(env, new_bs);
                 update_ranges();
                 r_sanity_check(active_state);

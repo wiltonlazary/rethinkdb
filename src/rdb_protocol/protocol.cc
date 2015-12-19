@@ -735,6 +735,7 @@ void unshard_stamps(const std::vector<changefeed_stamp_response_t *> &resps,
         if (!resp->stamps) {
             out->stamps = boost::none;
             out->shard_regions.clear();
+            out->last_read_starts.clear();
             return;
         }
         for (auto &&stamp : *resp->stamps) {
@@ -746,9 +747,12 @@ void unshard_stamps(const std::vector<changefeed_stamp_response_t *> &resps,
             if (!pair.second) {
                 out->stamps = boost::none;
                 out->shard_regions.clear();
+                out->last_read_starts.clear();
                 return;
             }
+            // TODO! Add r_sanity_checks
             out->shard_regions[stamp.first] = resp->shard_regions.at(stamp.first);
+            out->last_read_starts[stamp.first] = resp->last_read_starts.at(stamp.first);
         }
     }
 }
@@ -1370,7 +1374,11 @@ RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(
 RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(
     changefeed_limit_subscribe_response_t, shards, limit_addrs);
 // TODO! Cluster protocol change
-RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(changefeed_stamp_response_t, stamps, shard_regions);
+RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(
+    changefeed_stamp_response_t,
+    stamps,
+    shard_regions,
+    last_read_starts);
 
 RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(
     changefeed_point_stamp_response_t::valid_response_t, stamp, initial_val);

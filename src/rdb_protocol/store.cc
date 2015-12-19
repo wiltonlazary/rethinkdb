@@ -364,7 +364,8 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
     }
 
     changefeed_stamp_response_t do_stamp(const changefeed_stamp_t &s,
-                                         const region_t &current_shard) {
+                                         const region_t &current_shard,
+                                         const store_key_t &read_start) {
         guarantee(!superblock->get()->is_snapshotted());
 
         auto cserver = store->changefeed_server(s.region);
@@ -375,6 +376,7 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
                 out.stamps = std::map<uuid_u, uint64_t>();
                 (*out.stamps)[cserver.first->get_uuid()] = *stamp;
                 out.shard_regions[cserver.first->get_uuid()] = current_shard;
+                out.last_read_starts[cserver.first->get_uuid()] = read_start;
                 return out;
             }
         }
@@ -383,7 +385,7 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
 
     void operator()(const changefeed_stamp_t &s) {
         // TODO! Is this the correct `region`?
-        response->response = do_stamp(s, s.region);
+        response->response = do_stamp(s, s.region, s.region.inner.left);
     }
 
     void operator()(const changefeed_point_stamp_t &s) {
@@ -524,7 +526,20 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
         if (rget.stamp) {
             res->stamp_response = changefeed_stamp_response_t();
             r_sanity_check(rget.current_shard);
-            changefeed_stamp_response_t r = do_stamp(*rget.stamp, *rget.current_shard);
+            // TODO! Probably need to handle non-UNORDERED reads?
+            r_sanity_check(rget.sorting == sorting_t::UNORDERED);
+            store_key_t read_left;
+            if (rget.sindex) {
+                read_left = rget.sindex->region
+                    ? rget.sindex->region->inner.left
+                    : store_key_t::min();
+            } else {
+                read_left = rget.region.inner.left;
+            }
+            changefeed_stamp_response_t r = do_stamp(
+                *rget.stamp,
+                *rget.current_shard,
+                read_left);
             if (r.stamps) {
                 res->stamp_response = r;
             } else {
