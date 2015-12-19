@@ -368,6 +368,8 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
                                          const store_key_t &read_start) {
         guarantee(!superblock->get()->is_snapshotted());
 
+        superblock->get()->read_acq_signal()->wait_lazily_unordered();
+
         auto cserver = store->changefeed_server(s.region);
         if (cserver.first != nullptr) {
             if (boost::optional<uint64_t> stamp

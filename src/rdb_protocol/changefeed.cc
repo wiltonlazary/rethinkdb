@@ -2748,10 +2748,8 @@ private:
     void update_ranges() {
         active_state = src->get_active_state();
         r_sanity_check(active_state);
-        std::set<uuid_u> covered_shards;
         for (const auto &pair : active_state->shard_last_read_stamps) {
             add_range(pair.first, pair.second.first, pair.second.second);
-            covered_shards.insert(pair.first);
         }
     }
 

@@ -76,4 +76,5 @@ r.table_create('test').run rescue nil
     $h = H.new
     $handle = q.em_run($h, max_batch_rows: 1)
   }
+  $c.noreply_wait
 }
