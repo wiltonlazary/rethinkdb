@@ -53,8 +53,6 @@ inline feed_type_t union_of(feed_type_t a, feed_type_t b) {
 }
 
 struct active_state_t {
-    // TODO! Make sure traversal is UNORDERED for splice streams
-    // EXHAUSTED shards will not have any entry in this map
     std::map<uuid_u, std::pair<key_range_t, uint64_t> > shard_last_read_stamps;
     boost::optional<reql_version_t> reql_version; // none for pkey
     DEBUG_ONLY(boost::optional<std::string> sindex;)
@@ -404,7 +402,6 @@ enum class range_state_t { ACTIVE, SATURATED, EXHAUSTED };
 
 void debug_print(printf_buffer_t *buf, const range_state_t &rs);
 struct hash_range_with_cache_t {
-    // TODO! Store the stamp in here as well, instead of in the separate `shard_stamps`
     uuid_u cfeed_shard_id;
     // This is the range of values that we have yet to read from the shard.  We
     // store a range instead of just a `store_key_t` because this range is only
@@ -704,9 +701,7 @@ protected:
     const scoped_ptr_t<const readgen_t> readgen;
     boost::optional<active_ranges_t> active_ranges;
     boost::optional<reql_version_t> reql_version;
-    std::map<uuid_u, store_key_t> last_read_starts;
-    std::map<uuid_u, uint64_t> shard_stamps;
-    std::map<region_t, uuid_u> shard_cfeed_ids;
+    std::map<uuid_u, shard_stamp_info_t> shard_stamp_infos;
 
     // We need this to handle the SINDEX_CONSTANT case.
     std::vector<rget_item_t> items;

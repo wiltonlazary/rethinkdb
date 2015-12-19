@@ -168,22 +168,16 @@ enum class is_secondary_t { NO, YES };
 active_ranges_t new_active_ranges(
     const stream_t &stream,
     const key_range_t &original_range,
-    const boost::optional<std::map<uuid_u, region_t> > &shard_regions,
+    const boost::optional<std::map<region_t, uuid_u> > &shard_ids,
     is_secondary_t is_secondary) {
     active_ranges_t ret;
     std::set<uuid_u> covered_shards;
     for (auto &&pair : stream.substreams) {
-        // TODO! Inefficient, make this better.
         uuid_u cfeed_shard_id = nil_uuid();
-        if (shard_regions) {
-            fprintf(stderr, "Got %d regions\n", (int)shard_regions->size());
-            for (const auto &region_pair : *shard_regions) {
-                if (region_pair.second == pair.first) {
-                    fprintf(stderr, "Found region\n");
-                    cfeed_shard_id = region_pair.first;
-                }
-            }
-            r_sanity_check(!cfeed_shard_id.is_nil());
+        if (shard_ids) {
+            auto shard_id_it = shard_ids->find(pair.first);
+            r_sanity_check(shard_id_it != shard_ids->end());
+            cfeed_shard_id = shard_id_it->second;
             covered_shards.insert(cfeed_shard_id);
         }
 
@@ -199,17 +193,19 @@ active_ranges_t new_active_ranges(
     }
 
     // Add ranges for missing shards (we get this if some shards didn't return any data)
-    if (shard_regions) {
-        for (const auto &region_pair : *shard_regions) {
-            if (covered_shards.count(region_pair.first) > 0) continue;
+    if (shard_ids) {
+        for (const auto &shard_pair : *shard_ids) {
+            if (covered_shards.count(shard_pair.second) > 0) {
+                continue;
+            }
 
-            ret.ranges[region_pair.second.inner]
-                .hash_ranges[hash_range_t{region_pair.second.beg, region_pair.second.end}]
+            ret.ranges[shard_pair.first.inner]
+                .hash_ranges[hash_range_t{shard_pair.first.beg, shard_pair.first.end}]
                  = hash_range_with_cache_t{
-                     region_pair.first,
+                     shard_pair.second,
                      is_secondary == is_secondary_t::YES
                          ? original_range
-                         : region_pair.second.inner.intersection(original_range),
+                         : shard_pair.first.inner.intersection(original_range),
                      raw_stream_t(),
                      range_state_t::ACTIVE};
         }
@@ -326,13 +322,16 @@ raw_stream_t rget_response_reader_t::unshard(
     r_sanity_check(gs != nullptr);
     auto stream = groups_to_batch(gs->get_underlying_map());
     if (!active_ranges) {
-        boost::optional<std::map<uuid_u, region_t> > opt_shard_regions;
+        boost::optional<std::map<region_t, uuid_u> > opt_shard_ids;
         if (res.stamp_response) {
-            // TODO! Can we move this instead?
-            opt_shard_regions = res.stamp_response->shard_regions;
+            opt_shard_ids = std::map<region_t, uuid_u>();
+            for (const auto &pair : *res.stamp_response->stamp_infos) {
+                opt_shard_ids->insert(
+                    std::make_pair(pair.second.shard_region, pair.first));
+            }
         }
         active_ranges = new_active_ranges(
-            stream, readgen->original_keyrange(res.reql_version), opt_shard_regions,
+            stream, readgen->original_keyrange(res.reql_version), opt_shard_ids,
             readgen->sindex_name() ? is_secondary_t::YES : is_secondary_t::NO);
         readgen->restrict_active_ranges(sorting, &*active_ranges);
         reql_version = res.reql_version;
@@ -492,28 +491,20 @@ bool rget_response_reader_t::add_stamp(changefeed_stamp_t _stamp) {
 }
 
 boost::optional<active_state_t> rget_response_reader_t::get_active_state() {
-    if (!stamp || !active_ranges || shard_stamps.empty()) return boost::none;
+    if (!stamp || !active_ranges || shard_stamp_infos.empty()) return boost::none;
     std::map<uuid_u, std::pair<key_range_t, uint64_t> > shard_last_read_stamps;
     for (const auto &range_pair : active_ranges->ranges) {
         for (const auto &hash_pair : range_pair.second.hash_ranges) {
-            const auto stamp_it = shard_stamps.find(hash_pair.second.cfeed_shard_id);
-            r_sanity_check(stamp_it != shard_stamps.end());
+            const auto stamp_it = shard_stamp_infos.find(hash_pair.second.cfeed_shard_id);
+            r_sanity_check(stamp_it != shard_stamp_infos.end());
 
-            // TODO! Is it actually ok to use the global last_read_start?
-            const auto &last_read_start_it =
-                last_read_starts.find(hash_pair.second.cfeed_shard_id);
-            store_key_t last_read_start =
-                last_read_start_it == last_read_starts.end()
-                ? store_key_t::min()
-                : last_read_start_it->second;
             key_range_t last_read_range(
-                key_range_t::closed, last_read_start,
-                    // TODO! Do we still need this max?
-                key_range_t::open, std::max(last_read_start,
+                key_range_t::closed, stamp_it->second.last_read_start,
+                key_range_t::open, std::max(stamp_it->second.last_read_start,
                                             hash_pair.second.key_range.left));
             shard_last_read_stamps.insert(std::make_pair(
                 stamp_it->first,
-                std::make_pair(last_read_range, stamp_it->second)));
+                std::make_pair(last_read_range, stamp_it->second.stamp)));
         }
     }
     return active_state_t{
@@ -623,11 +614,6 @@ rget_read_response_t rget_response_reader_t::do_read(env_t *env, const read_t &r
     if (auto e = boost::get<exc_t>(&rget_res->result)) {
         throw *e;
     }
-    if (rget_res->stamp_response) {
-        last_read_starts = rget_res->stamp_response->last_read_starts;
-    } else {
-        last_read_starts.clear();
-    }
     return std::move(*rget_res);
 }
 
@@ -668,21 +654,14 @@ rget_reader_t::do_range_read(env_t *env, const read_t &read) {
     r_sanity_check(static_cast<bool>(stamp) == static_cast<bool>(rr->stamp));
     if (stamp) {
         r_sanity_check(res.stamp_response);
-        rcheck_datum(res.stamp_response->stamps, base_exc_t::RESUMABLE_OP_FAILED,
+        rcheck_datum(res.stamp_response->stamp_infos, base_exc_t::RESUMABLE_OP_FAILED,
                      "Unable to retrieve start stamps.  (Did you just reshard?)");
-        rcheck_datum(res.stamp_response->stamps->size() != 0,
+        rcheck_datum(res.stamp_response->stamp_infos->size() != 0,
                      base_exc_t::RESUMABLE_OP_FAILED,
                      "Empty start stamps.  Did you just reshard?");
-        for (const auto &pair : *res.stamp_response->stamps) {
+        for (const auto &pair : *res.stamp_response->stamp_infos) {
             // It's OK to blow away old values.
-            shard_stamps[pair.first] = pair.second;
-        }
-        for (const auto &pair : res.stamp_response->shard_regions) {
-            auto it = shard_cfeed_ids.find(pair.second);
-            if (it != shard_cfeed_ids.end()) {
-                r_sanity_check(it->second == pair.first);
-            }
-            shard_cfeed_ids.insert(it, std::make_pair(pair.second, pair.first));
+            shard_stamp_infos[pair.first] = pair.second;
         }
     }
 

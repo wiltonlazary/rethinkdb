@@ -34,7 +34,6 @@ struct indexed_datum_t {
     // MOVABLE_BUT_NOT_COPYABLE(indexed_datum_t);
 };
 
-// TODO! Can we replace this and just use active_state_t?
 struct stamped_range_t {
     explicit stamped_range_t(uint64_t _next_expected_stamp)
         : next_expected_stamp(_next_expected_stamp),
@@ -1989,20 +1988,21 @@ public:
             &read_resp, order_token_t::ignore, outer_env->interruptor);
         auto *resp = boost::get<changefeed_stamp_response_t>(&read_resp.response);
         guarantee(resp != nullptr);
-        rcheck_datum(resp->stamps, base_exc_t::RESUMABLE_OP_FAILED,
+        rcheck_datum(resp->stamp_infos, base_exc_t::RESUMABLE_OP_FAILED,
                      "Unable to retrieve the start stamps.  Did you just reshard?");
         std::map<uuid_u, uint64_t> purge_stamps;
-        for (const auto &pair : *resp->stamps) {
-            auto orig_res = orig_stamps.insert(pair);
+        for (const auto &pair : *resp->stamp_infos) {
+            const auto id_stamp_pair = std::make_pair(pair.first, pair.second.stamp);
+            auto orig_res = orig_stamps.insert(id_stamp_pair);
             guarantee(orig_res.second);
-            auto res = next_stamps.insert(pair);
+            auto res = next_stamps.insert(id_stamp_pair);
             // If we already have stamps.
             if (!res.second) {
-                purge_stamps.insert(pair);
+                purge_stamps.insert(id_stamp_pair);
                 // Even though we're purging the early changes, we also need to
                 // make sure we don't get any such changes *after* the purge.
-                next_stamps[pair.first] =
-                    std::max(next_stamps[pair.first], pair.second);
+                next_stamps[id_stamp_pair.first] =
+                    std::max(next_stamps[id_stamp_pair.first], id_stamp_pair.second);
             }
         }
         queue->purge_below(purge_stamps);
@@ -2661,13 +2661,8 @@ private:
                 }
             }
             if (!src->is_exhausted() && !batcher.should_send_batch()) {
-                // We set `MIN_ELS` to 8 here because we're still doing
-                // inefficient unsharding for changefeed reads, and this
-                // improves the worst-case performance by a lot in exchange for
-                // an increase in latency.  (8 used to be the global default
-                // MIN_ELS value.)
-                batchspec_t new_bs = bs.with_min_els(8);
-                new_bs = new_bs.with_lazy_sorting_override(sorting_t::UNORDERED);
+                // Sorting must be UNORDERED for our last_read range calculation to work.
+                batchspec_t new_bs = bs.with_lazy_sorting_override(sorting_t::UNORDERED);
                 std::vector<datum_t> batch = src->next_batch(env, new_bs);
                 update_ranges();
                 r_sanity_check(active_state);

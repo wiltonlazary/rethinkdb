@@ -373,10 +373,11 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
             if (boost::optional<uint64_t> stamp
                     = cserver.first->get_stamp(s.addr, cserver.second)) {
                 changefeed_stamp_response_t out;
-                out.stamps = std::map<uuid_u, uint64_t>();
-                (*out.stamps)[cserver.first->get_uuid()] = *stamp;
-                out.shard_regions[cserver.first->get_uuid()] = current_shard;
-                out.last_read_starts[cserver.first->get_uuid()] = read_start;
+                out.stamp_infos = std::map<uuid_u, shard_stamp_info_t>();
+                (*out.stamp_infos)[cserver.first->get_uuid()] = shard_stamp_info_t{
+                    *stamp,
+                    current_shard,
+                    read_start};
                 return out;
             }
         }
@@ -384,7 +385,6 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
     }
 
     void operator()(const changefeed_stamp_t &s) {
-        // TODO! Is this the correct `region`?
         response->response = do_stamp(s, s.region, s.region.inner.left);
     }
 
@@ -526,7 +526,6 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
         if (rget.stamp) {
             res->stamp_response = changefeed_stamp_response_t();
             r_sanity_check(rget.current_shard);
-            // TODO! Probably need to handle non-UNORDERED reads?
             r_sanity_check(rget.sorting == sorting_t::UNORDERED);
             store_key_t read_left;
             if (rget.sindex) {
@@ -540,7 +539,7 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
                 *rget.stamp,
                 *rget.current_shard,
                 read_left);
-            if (r.stamps) {
+            if (r.stamp_infos) {
                 res->stamp_response = r;
             } else {
                 res->result = ql::exc_t(
