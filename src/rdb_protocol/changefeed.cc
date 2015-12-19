@@ -968,7 +968,6 @@ public:
         }
         rdb_rget_slice(
             ref.btree,
-            nil_uuid(), // TODO! Is this ok?
             region_t(),
             range,
             boost::none,
@@ -1038,7 +1037,6 @@ public:
             ref.sindex_info->mapping_version_info.latest_compatible_reql_version;
         rdb_rget_secondary_slice(
             ref.btree,
-            nil_uuid(), // TODO! Is this ok?
             region_t(),
             ql::datumspec_t(srange),
             srange.to_sindex_keyrange(reql_version),
@@ -2714,18 +2712,8 @@ private:
         }
 
         auto it = stamped_ranges.find(source_stamp.first);
-        // TODO! Should we handle exhausted ranges here? Or in update_ranges?
         r_sanity_check(it != stamped_ranges.end());
         it->second.next_expected_stamp = source_stamp.second + 1;
-
-        // TODO! Quick hack. Probably wrong.
-        /*guarantee(active_state);
-        auto shard_stamp_id = active_state->shard_last_read_stamps.find(it->first);
-        if (shard_stamp_id == active_state->shard_last_read_stamps.end()) {
-            fprintf(stderr, "ID doesn't have an active state\n");
-            return false;
-        }*/
-
         if (key < it->second.left_fencepost) return false;
         if (key >= it->second.get_right_fencepost()) return true;
         // `ranges` should be extremely small
@@ -2769,19 +2757,6 @@ private:
         for (const auto &pair : active_state->shard_last_read_stamps) {
             add_range(pair.first, pair.second.first, pair.second.second);
             covered_shards.insert(pair.first);
-        }
-
-        // TODO! This is the wrong way of doing it (and the range is wrong)
-        for (const auto &pair : stamped_ranges) {
-            if (covered_shards.count(pair.first) == 0
-                && pair.second.ranges.empty()) {
-                // TODO! Wrong stamp I assume?
-                add_range(
-                    pair.first,
-                    key_range_t(key_range_t::bound_t::closed, pair.second.left_fencepost,
-                                key_range_t::bound_t::none, store_key_t()),
-                    pair.second.next_expected_stamp);
-            }
         }
     }
 

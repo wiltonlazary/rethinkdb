@@ -38,7 +38,6 @@ class sampler_t;
 class geo_job_data_t {
 public:
     geo_job_data_t(ql::env_t *_env,
-                   const uuid_u &cfeed_shard_id,
                    region_t region,
                    store_key_t last_key,
                    const ql::batchspec_t &batchspec,

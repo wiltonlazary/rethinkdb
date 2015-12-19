@@ -189,19 +189,54 @@ enum class is_secondary_t { NO, YES };
 active_ranges_t new_active_ranges(
     const stream_t &stream,
     const key_range_t &original_range,
+    const boost::optional<std::map<uuid_u, region_t> > &shard_regions,
     is_secondary_t is_secondary) {
     active_ranges_t ret;
+    std::set<uuid_u> covered_shards;
     for (auto &&pair : stream.substreams) {
+        // TODO! Inefficient, make this better.
+        uuid_u cfeed_shard_id = nil_uuid();
+        if (shard_regions) {
+            fprintf(stderr, "Got %d regions\n", (int)shard_regions->size());
+            for (const auto &region_pair : *shard_regions) {
+                if (region_pair.second == pair.first) {
+                    fprintf(stderr, "Found region\n");
+                    cfeed_shard_id = region_pair.first;
+                }
+            }
+            r_sanity_check(!cfeed_shard_id.is_nil());
+            covered_shards.insert(cfeed_shard_id);
+        }
+
         ret.ranges[pair.first.inner]
            .hash_ranges[hash_range_t{pair.first.beg, pair.first.end}]
             = hash_range_with_cache_t{
-                pair.second.cfeed_shard_id,
+                cfeed_shard_id,
                 is_secondary == is_secondary_t::YES
                     ? original_range
                     : pair.first.inner.intersection(original_range),
                 raw_stream_t(),
                 range_state_t::ACTIVE};
     }
+
+    // TODO! Add missing ranges
+    if (shard_regions) {
+        for (const auto &region_pair : *shard_regions) {
+            if (covered_shards.count(region_pair.first) > 0) continue;
+
+            ret.ranges[region_pair.second.inner]
+                .hash_ranges[hash_range_t{region_pair.second.beg, region_pair.second.end}]
+                 = hash_range_with_cache_t{
+                     region_pair.first,
+                     is_secondary == is_secondary_t::YES
+                         ? original_range
+                         : region_pair.second.inner.intersection(original_range),
+                     raw_stream_t(),
+                    // TODO! ?
+                     range_state_t::ACTIVE};
+        }
+    }
+
     return ret;
 }
 
@@ -313,8 +348,13 @@ raw_stream_t rget_response_reader_t::unshard(
     r_sanity_check(gs != nullptr);
     auto stream = groups_to_batch(gs->get_underlying_map());
     if (!active_ranges) {
+        boost::optional<std::map<uuid_u, region_t> > opt_shard_regions;
+        if (res.stamp_response) {
+            // TODO! Can we move this instead?
+            opt_shard_regions = res.stamp_response->shard_regions;
+        }
         active_ranges = new_active_ranges(
-            stream, readgen->original_keyrange(res.reql_version),
+            stream, readgen->original_keyrange(res.reql_version), opt_shard_regions,
             readgen->sindex_name() ? is_secondary_t::YES : is_secondary_t::NO);
         readgen->restrict_active_ranges(sorting, &*active_ranges);
         reql_version = res.reql_version;
@@ -667,6 +707,13 @@ rget_reader_t::do_range_read(env_t *env, const read_t &read) {
         for (const auto &pair : *res.stamp_response->stamps) {
             // It's OK to blow away old values.
             shard_stamps[pair.first] = pair.second;
+        }
+        for (const auto &pair : res.stamp_response->shard_regions) {
+            auto it = shard_cfeed_ids.find(pair.second);
+            if (it != shard_cfeed_ids.end()) {
+                r_sanity_check(it->second == pair.first);
+            }
+            shard_cfeed_ids.insert(it, std::make_pair(pair.second, pair.first));
         }
     }
 

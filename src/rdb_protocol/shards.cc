@@ -29,8 +29,6 @@ void debug_print(printf_buffer_t *buf, const rget_item_t &item) {
 
 void debug_print(printf_buffer_t *buf, const keyed_stream_t &stream) {
     buf->appendf("keyed_stream_t(");
-    debug_print(buf, stream.cfeed_shard_id);
-    buf->appendf(", ");
     debug_print(buf, stream.stream);
     buf->appendf(", ");
     debug_print(buf, stream.last_key);
@@ -138,13 +136,12 @@ private:
 
 class append_t : public grouped_acc_t<stream_t> {
 public:
-    append_t(const uuid_u &cfeed_shard_id,
-             region_t region,
+    append_t(region_t region,
              store_key_t last_key,
              sorting_t _sorting,
              batcher_t *_batcher)
         : grouped_acc_t<stream_t>(
-              stream_t(cfeed_shard_id, std::move(region), std::move(last_key))),
+              stream_t(std::move(region), std::move(last_key))),
           sorting(_sorting), key_le(sorting), batcher(_batcher) { }
     append_t() // Only use this for unsharding.
         : grouped_acc_t<stream_t>(stream_t()),
@@ -223,13 +220,12 @@ private:
     batcher_t *const batcher;
 };
 
-scoped_ptr_t<accumulator_t> make_append(const uuid_u &cfeed_shard_id,
-                                        region_t region,
+scoped_ptr_t<accumulator_t> make_append(region_t region,
                                         store_key_t last_key,
                                         sorting_t sorting,
                                         batcher_t *batcher) {
     return make_scoped<append_t>(
-        cfeed_shard_id, std::move(region), std::move(last_key), sorting, batcher);
+        std::move(region), std::move(last_key), sorting, batcher);
 }
 scoped_ptr_t<accumulator_t> make_unsharding_append() {
     return make_scoped<append_t>();
@@ -243,12 +239,11 @@ public:
     limit_append_t(
         is_primary_t _is_primary,
         size_t _n,
-        const uuid_u &cfeed_shard_id,
         region_t region,
         store_key_t last_key,
         sorting_t sorting,
         std::vector<scoped_ptr_t<op_t> > *_ops)
-        : append_t(cfeed_shard_id, region, last_key, sorting, &batcher),
+        : append_t(region, last_key, sorting, &batcher),
           is_primary(_is_primary),
           seen_distinct(false),
           seen(0),
@@ -819,7 +814,6 @@ public:
         return new limit_append_t(
             lr.is_primary,
             lr.n,
-            nil_uuid(), // TODO! Ok?
             lr.shard,
             lr.last_key,
             lr.sorting,
@@ -1119,8 +1113,7 @@ scoped_ptr_t<op_t> make_op(const transform_variant_t &tv) {
 }
 
 RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(rget_item_t, key, sindex_key, data);
-// TODO! We broke the cluster protocol
-RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(keyed_stream_t, cfeed_shard_id, stream, last_key);
+RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(keyed_stream_t, stream, last_key);
 RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(stream_t, substreams);
 
 ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(

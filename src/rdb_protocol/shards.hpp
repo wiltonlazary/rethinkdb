@@ -79,17 +79,16 @@ void debug_print(printf_buffer_t *, const rget_item_t &);
 
 typedef std::vector<rget_item_t> raw_stream_t;
 struct keyed_stream_t {
-    uuid_u cfeed_shard_id;
     raw_stream_t stream;
     store_key_t last_key;
 };
 RDB_DECLARE_SERIALIZABLE(keyed_stream_t);
 struct stream_t {
     // When we first construct a `stream_t`, it's always for a single shard.
-    stream_t(const uuid_u &cfeed_shard_id, region_t region, store_key_t last_key)
+    stream_t(region_t region, store_key_t last_key)
         : substreams{{
             std::move(region),
-                keyed_stream_t{cfeed_shard_id, raw_stream_t(), std::move(last_key)}}} { }
+                keyed_stream_t{raw_stream_t(), std::move(last_key)}}} { }
     explicit stream_t(std::map<region_t, keyed_stream_t> &&_substreams)
         : substreams(std::move(_substreams)) { }
     stream_t() { }
@@ -405,8 +404,7 @@ public:
         const ql::configured_limits_t &limits) = 0;
 };
 
-scoped_ptr_t<accumulator_t> make_append(const uuid_u &cfeed_shard_id,
-                                        region_t region,
+scoped_ptr_t<accumulator_t> make_append(region_t region,
                                         store_key_t last_key,
                                         sorting_t sorting,
                                         batcher_t *batcher);

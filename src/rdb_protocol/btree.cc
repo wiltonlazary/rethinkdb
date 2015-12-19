@@ -576,7 +576,6 @@ public:
                const ql::batchspec_t &batchspec,
                const std::vector<transform_variant_t> &_transforms,
                const boost::optional<terminal_variant_t> &_terminal,
-               const uuid_u &cfeed_shard_id,
                region_t region,
                store_key_t last_key,
                sorting_t _sorting)
@@ -585,8 +584,7 @@ public:
           sorting(_sorting),
           accumulator(_terminal
                       ? ql::make_terminal(*_terminal)
-                      : ql::make_append(cfeed_shard_id,
-                                        std::move(region),
+                      : ql::make_append(std::move(region),
                                         std::move(last_key),
                                         sorting,
                                         batcher.get())) {
@@ -950,7 +948,6 @@ continue_bool_t rget_cb_t::handle_pair(
 // TODO: Having two functions which are 99% the same sucks.
 void rdb_rget_slice(
         btree_slice_t *slice,
-        const uuid_u cfeed_shard_id,
         const region_t &shard,
         const key_range_t &range,
         const boost::optional<std::map<store_key_t, uint64_t> > &primary_keys,
@@ -971,7 +968,6 @@ void rdb_rget_slice(
                    batchspec,
                    transforms,
                    terminal,
-                   cfeed_shard_id,
                    shard,
                    !reversed(sorting)
                        ? range.left
@@ -1020,7 +1016,6 @@ void rdb_rget_slice(
 
 void rdb_rget_secondary_slice(
         btree_slice_t *slice,
-        const uuid_u cfeed_shard_id,
         const region_t &shard,
         const ql::datumspec_t &datumspec,
         const key_range_t &sindex_region_range,
@@ -1048,7 +1043,6 @@ void rdb_rget_secondary_slice(
                    batchspec,
                    transforms,
                    terminal,
-                   cfeed_shard_id,
                    shard,
                    !reversed(sorting)
                        ? sindex_region_range.left
@@ -1086,7 +1080,6 @@ void rdb_rget_secondary_slice(
 
 void rdb_get_intersecting_slice(
         btree_slice_t *slice,
-        const uuid_u cfeed_shard_id,
         const region_t &shard,
         const ql::datum_t &query_geometry,
         const key_range_t &sindex_range,
@@ -1109,7 +1102,6 @@ void rdb_get_intersecting_slice(
     collect_all_geo_intersecting_cb_t callback(
         slice,
         geo_job_data_t(ql_env,
-                       cfeed_shard_id,
                        shard,
                        // The sorting is always `UNORDERED`, so this is always right.
                        sindex_range.left,

@@ -734,6 +734,7 @@ void unshard_stamps(const std::vector<changefeed_stamp_response_t *> &resps,
         // In the error case abort early.
         if (!resp->stamps) {
             out->stamps = boost::none;
+            out->shard_regions.clear();
             return;
         }
         for (auto &&stamp : *resp->stamps) {
@@ -744,8 +745,10 @@ void unshard_stamps(const std::vector<changefeed_stamp_response_t *> &resps,
             auto pair = out->stamps->insert(std::make_pair(stamp.first, stamp.second));
             if (!pair.second) {
                 out->stamps = boost::none;
+                out->shard_regions.clear();
                 return;
             }
+            out->shard_regions[stamp.first] = resp->shard_regions.at(stamp.first);
         }
     }
 }
@@ -1366,7 +1369,8 @@ RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(
     changefeed_subscribe_response_t, server_uuids, addrs);
 RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(
     changefeed_limit_subscribe_response_t, shards, limit_addrs);
-RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(changefeed_stamp_response_t, stamps);
+// TODO! Cluster protocol change
+RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(changefeed_stamp_response_t, stamps, shard_regions);
 
 RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(
     changefeed_point_stamp_response_t::valid_response_t, stamp, initial_val);

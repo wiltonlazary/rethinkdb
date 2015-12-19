@@ -110,6 +110,7 @@ struct changefeed_stamp_response_t {
     // servers and don't synchronize with each other.)  If this is empty it
     // means the feed was aborted.
     boost::optional<std::map<uuid_u, uint64_t> > stamps;
+    std::map<uuid_u, region_t> shard_regions;
 };
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(changefeed_stamp_response_t);
 

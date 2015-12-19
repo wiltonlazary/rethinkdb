@@ -706,6 +706,7 @@ protected:
     boost::optional<active_ranges_t> active_ranges;
     boost::optional<reql_version_t> reql_version;
     std::map<uuid_u, uint64_t> shard_stamps;
+    std::map<region_t, uuid_u> shard_cfeed_ids;
 
     // We need this to handle the SINDEX_CONSTANT case.
     std::vector<rget_item_t> items;
