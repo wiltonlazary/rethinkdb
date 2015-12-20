@@ -2616,6 +2616,7 @@ public:
             stamped_ranges.insert(std::make_pair(p.first, stamped_range_t(p.second)));
         }
     }
+
 private:
     std::vector<datum_t> next_stream_batch(env_t *env, const batchspec_t &bs) final {
         std::vector<datum_t> ret;
@@ -2786,15 +2787,12 @@ private:
         }
     }
 
-    const std::map<uuid_u, std::pair<key_range_t, uint64_t> > &last_read_stamps() const {
-        r_sanity_check(active_state);
-        return active_state->shard_last_read_stamps;
-    }
     const reql_version_t &reql_version() const {
         r_sanity_check(active_state);
         r_sanity_check(active_state->reql_version);
         return *(active_state->reql_version);
     }
+
     bool ready() {
         // It's OK to cache this because we only ever call `ready` once we're
         // done doing reads.

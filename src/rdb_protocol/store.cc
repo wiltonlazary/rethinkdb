@@ -535,6 +535,9 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
             r_sanity_check(rget.sorting == sorting_t::UNORDERED);
             store_key_t read_left;
             if (rget.sindex) {
+                // We're over-conservative with he `read_left` if we don't have an
+                // sindex region yet (usually on the first read). This should be ok
+                // for our current requirements and simplifies the code.
                 read_left = rget.sindex->region
                     ? rget.sindex->region->inner.left
                     : store_key_t::min();
