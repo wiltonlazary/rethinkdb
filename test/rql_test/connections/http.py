@@ -14,7 +14,7 @@ r = utils.import_python_driver()
 
 _httpbin_server = None
 def closeServer():
-    global __httpbin_server
+    global _httpbin_server
     _httpbin_server.endServer()
     _httpbin_server = None
 
