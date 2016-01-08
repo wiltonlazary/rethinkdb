@@ -118,9 +118,9 @@ for nshards in [1, 2, 5]
             actual = actual.sort_by{|x| "#{x["id"]}"}
             state = h.state.values.sort_by{|x| "#{x["id"]}"}
             if "#{actual}" != "#{state}"
-              print "Failed log:\n"
+              print "Failed changefeed log:\n"
               PP.pp h.log
-              print "Failed write log:\n"
+              print "\nFailed write log:\n"
               PP.pp $wlog
               raise RuntimeError, "State did not match query result.\n Query: #{h.query.pp}\n State: #{state}\n Actual: #{actual}"
             end
