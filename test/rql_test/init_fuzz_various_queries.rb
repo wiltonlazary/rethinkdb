@@ -19,8 +19,7 @@ $ntries = 3;
 
 $queries = [
   $tbl,
-  # This makes the test get stuck. Investigate. (#5247)
-  #$tbl.order_by(index: :id).limit(5),
+  $tbl.order_by(index: :id).limit(5),
   $tbl.order_by(index: :id),
   $tbl.map{|x| x.merge({'foo' => 'bar'})},
   $tbl.filter{|x| false},
@@ -75,6 +74,7 @@ for nshards in [1, 2, 5]
         @state[v['new_val']['id']] = v['new_val'] if v['new_val']
       end
       def on_state(s)
+        @log << s
         if s == 'ready'
           $num_running = $num_running - 1
         end
@@ -92,16 +92,16 @@ for nshards in [1, 2, 5]
       EM.defer {
         while $num_running != 0
           id = $gen.rand($ndocs)
-          res = $tbl.get(id).delete.run
+          res = $tbl.get(id).delete(:return_changes => true).run
           $wlog << [id, res]
-          res = $tbl.insert({ts: 1}).run
+          res = $tbl.insert({ts: 1}, :return_changes => true).run
           $wlog << [id, res]
 
           id = $gen.rand($ndocs)
-          res = $tbl.get(id).update({ts: 0.5}).run
+          res = $tbl.get(id).update({ts: 0.5}, :return_changes => true).run
           $wlog << [id, res]
           id = $gen.rand($ndocs)
-          res = $tbl.get(id).update({ts: 3}).run
+          res = $tbl.get(id).update({ts: 3}, :return_changes => true).run
           $wlog << [id, res]
         end
         # Wait an extra 2 seconds to make sure that any pending changes have
@@ -120,6 +120,8 @@ for nshards in [1, 2, 5]
             if "#{actual}" != "#{state}"
               print "Failed log:\n"
               PP.pp h.log
+              print "Failed write log:\n"
+              PP.pp $wlog
               raise RuntimeError, "State did not match query result.\n Query: #{h.query.pp}\n State: #{state}\n Actual: #{actual}"
             end
           end
