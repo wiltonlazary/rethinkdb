@@ -9,8 +9,16 @@ $c = r.connect(port: $port).repl
 $gen = Random.new
 puts "Random seed: #{$gen.seed}"
 
-puts r.table_create('test').run rescue nil
-$tbl = r.table('test')
+dbName = 'test'
+tableName = File.basename(__FILE__).gsub('.', '_')
+
+puts "Creating table #{dbName}.#{tableName}"
+r.expr([dbName]).set_difference(r.db_list()) \
+ .for_each{|row| r.db_create(row)}.run
+r.expr([tableName]).set_difference(r.db(dbName).table_list()) \
+ .for_each{|row| r.db(dbName).table_create(row)}.run
+$tbl = r.db(dbName).table(tableName)
+
 $tbl.index_create('ts').run rescue nil
 $tbl.index_wait.run
 
