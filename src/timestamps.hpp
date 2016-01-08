@@ -76,6 +76,10 @@ public:
         return num - since.num;
     }
 
+    std::string print_sortable() const {
+        return strprintf("%016" PRIx64, num);
+    }
+
 private:
     friend void debug_print(printf_buffer_t *buf, state_timestamp_t ts);
     friend state_timestamp_t unittest::make_state_timestamp(int);

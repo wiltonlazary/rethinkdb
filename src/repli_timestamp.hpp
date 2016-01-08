@@ -2,9 +2,12 @@
 #ifndef REPLI_TIMESTAMP_HPP_
 #define REPLI_TIMESTAMP_HPP_
 
+#include <inttypes.h>
 #include <stdint.h>
 
 #include "containers/archive/archive.hpp"
+#include "containers/uuid.hpp"
+#include "utils.hpp"
 
 class printf_buffer_t;
 

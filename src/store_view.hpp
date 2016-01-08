@@ -1,6 +1,7 @@
 #ifndef STORE_VIEW_HPP_
 #define STORE_VIEW_HPP_
 
+#include "clustering/immediate_consistency/history.hpp"
 #include "protocol_api.hpp"
 #include "region/region_map.hpp"
 
@@ -88,7 +89,7 @@ public:
             const write_t &write,
             write_response_t *response,
             write_durability_t durability,
-            state_timestamp_t timestamp,
+            version_t version,
             order_token_t order_token,
             write_token_t *token,
             signal_t *interruptor)

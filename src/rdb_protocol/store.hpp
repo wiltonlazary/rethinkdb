@@ -141,7 +141,7 @@ public:
             const write_t &write,
             write_response_t *response,
             write_durability_t durability,
-            state_timestamp_t timestamp,
+            version_t version,
             order_token_t order_token,
             write_token_t *token,
             signal_t *interruptor)
@@ -305,7 +305,7 @@ public:
 
     void protocol_write(const write_t &write,
                         write_response_t *response,
-                        state_timestamp_t timestamp,
+                        version_t version,
                         scoped_ptr_t<real_superblock_t> *superblock,
                         signal_t *interruptor);
 

@@ -89,7 +89,7 @@ void replica_t::do_write(
         write,
         response_out,
         durability,
-        timestamp,
+        version_t(branch_id, timestamp),
         order_token,
         &write_token,
         interruptor);

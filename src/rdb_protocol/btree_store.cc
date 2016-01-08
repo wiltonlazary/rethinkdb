@@ -202,7 +202,7 @@ void store_t::write(
         const write_t &write,
         write_response_t *response,
         const write_durability_t durability,
-        state_timestamp_t timestamp,
+        version_t version,
         UNUSED order_token_t order_token,  // TODO
         write_token_t *token,
         signal_t *interruptor)
@@ -218,7 +218,7 @@ void store_t::write(
     DEBUG_ONLY_CODE(metainfo->visit(
         real_superblock.get(), metainfo_checker.region, metainfo_checker.callback));
     metainfo->update(real_superblock.get(), new_metainfo);
-    protocol_write(write, response, timestamp, &real_superblock, interruptor);
+    protocol_write(write, response, version, &real_superblock, interruptor);
 }
 
 void store_t::reset_data(

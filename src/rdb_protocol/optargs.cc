@@ -91,7 +91,7 @@ static const std::set<std::string> acceptable_optargs({
     "result_format",
     "return_changes",
     "return_vals",
-    "return_write_stamp",
+    "return_write_stamps",
     "right_bound",
     "shards",
     "squash",

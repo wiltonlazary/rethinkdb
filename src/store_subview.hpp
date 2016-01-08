@@ -111,7 +111,7 @@ public:
             const write_t &write,
             write_response_t *response,
             write_durability_t durability,
-            state_timestamp_t timestamp,
+            version_t version,
             order_token_t order_token,
             write_token_t *token,
             signal_t *interruptor)
@@ -121,7 +121,7 @@ public:
         rassert(region_is_superset(get_region(), new_metainfo.get_domain()));
 
         store_view->write(DEBUG_ONLY(metainfo_checker, ) new_metainfo, write, response,
-            durability, timestamp, order_token, token, interruptor);
+            durability, version, order_token, token, interruptor);
     }
 
     continue_bool_t send_backfill_pre(

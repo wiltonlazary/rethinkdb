@@ -84,7 +84,7 @@ public:
     insert_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(2),
                     optargspec_t({"conflict", "durability", "return_vals",
-                                  "return_write_stamp", "return_changes"})) { }
+                                  "return_write_stamps", "return_changes"})) { }
 
 private:
     static void maybe_generate_key(counted_t<table_t> tbl,
@@ -245,7 +245,7 @@ class replace_term_t : public op_term_t {
 public:
     replace_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(2),
-                    optargspec_t({"non_atomic", "durability", "return_write_stamp",
+                    optargspec_t({"non_atomic", "durability", "return_write_stamps",
                                   "return_vals", "return_write_stamps",
                                   "return_changes"})) { }
 

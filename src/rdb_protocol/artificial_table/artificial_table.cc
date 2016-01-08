@@ -180,7 +180,6 @@ ql::datum_t artificial_table_t::write_batched_replace(
     return std::move(obj_builder).to_datum();
 }
 
-// RSI: pick up here, push through `return_write_stamps`.
 ql::datum_t artificial_table_t::write_batched_insert(
         ql::env_t *env,
         std::vector<ql::datum_t> &&inserts,

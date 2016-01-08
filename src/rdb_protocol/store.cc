@@ -684,7 +684,7 @@ struct rdb_write_visitor_t : public boost::static_visitor<void> {
 
         response->response =
             rdb_batched_replace(
-                btree_info_t(btree, timestamp, datum_string_t(br.pkey)),
+                btree_info_t(btree, version, datum_string_t(br.pkey)),
                 superblock,
                 br.keys,
                 &replacer,
@@ -706,7 +706,7 @@ struct rdb_write_visitor_t : public boost::static_visitor<void> {
         }
         response->response =
             rdb_batched_replace(
-                btree_info_t(btree, timestamp, datum_string_t(bi.pkey)),
+                btree_info_t(btree, version, datum_string_t(bi.pkey)),
                 superblock,
                 keys,
                 &replacer,
@@ -722,6 +722,7 @@ struct rdb_write_visitor_t : public boost::static_visitor<void> {
         point_write_response_t *res =
             boost::get<point_write_response_t>(&response->response);
 
+        repli_timestamp_t timestamp = version.timestamp.to_repli_timestamp();
         backfill_debug_key(w.key, strprintf("upsert %" PRIu64, timestamp.longtime));
 
         rdb_live_deletion_context_t deletion_context;
@@ -738,6 +739,7 @@ struct rdb_write_visitor_t : public boost::static_visitor<void> {
         point_delete_response_t *res =
             boost::get<point_delete_response_t>(&response->response);
 
+        repli_timestamp_t timestamp = version.timestamp.to_repli_timestamp();
         backfill_debug_key(d.key, strprintf("delete %" PRIu64, timestamp.longtime));
 
         rdb_live_deletion_context_t deletion_context;
@@ -767,7 +769,7 @@ struct rdb_write_visitor_t : public boost::static_visitor<void> {
                         store_t *_store,
                         txn_t *_txn,
                         scoped_ptr_t<real_superblock_t> *_superblock,
-                        repli_timestamp_t _timestamp,
+                        version_t _version,
                         rdb_context_t *_ctx,
                         profile::sampler_t *_sampler,
                         profile::trace_t *_trace,
@@ -780,7 +782,7 @@ struct rdb_write_visitor_t : public boost::static_visitor<void> {
         ctx(_ctx),
         interruptor(_interruptor),
         superblock(_superblock),
-        timestamp(_timestamp),
+        version(_version),
         sampler(_sampler),
         trace(_trace),
         sindex_block((*superblock)->expose_buf(),
@@ -805,7 +807,7 @@ private:
     rdb_context_t *const ctx;
     signal_t *const interruptor;
     scoped_ptr_t<real_superblock_t> *const superblock;
-    const repli_timestamp_t timestamp;
+    const version_t version;
     profile::sampler_t *const sampler;
     profile::trace_t *const trace;
     buf_lock_t sindex_block;
@@ -816,7 +818,7 @@ private:
 
 void store_t::protocol_write(const write_t &write,
                              write_response_t *response,
-                             state_timestamp_t timestamp,
+                             version_t version,
                              scoped_ptr_t<real_superblock_t> *superblock,
                              signal_t *interruptor) {
     scoped_ptr_t<profile::trace_t> trace = ql::maybe_make_profile_trace(write.profile);
@@ -827,7 +829,7 @@ void store_t::protocol_write(const write_t &write,
                               this,
                               (*superblock)->expose_buf().txn(),
                               superblock,
-                              timestamp.to_repli_timestamp(),
+                              version,
                               ctx,
                               &start_write,
                               trace.get_or_null(),

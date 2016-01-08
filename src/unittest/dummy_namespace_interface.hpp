@@ -5,6 +5,7 @@
 #include <set>
 #include <vector>
 
+#include "clustering/immediate_consistency/history.hpp"
 #include "containers/scoped.hpp"
 #include "protocol_api.hpp"
 #include "timestamps.hpp"
@@ -30,7 +31,7 @@ public:
 
     void write(const write_t &write,
                write_response_t *response,
-               state_timestamp_t timestamp,
+               version_t version,
                order_token_t order_token) THROWS_NOTHING;
 
     order_source_t bs_outdated_read_source;

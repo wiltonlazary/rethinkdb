@@ -1,6 +1,6 @@
 // Copyright 2010-2014 RethinkDB, all rights reserved.
-#include "clustering/immediate_consistency/backfiller.hpp"
 #include "clustering/immediate_consistency/backfillee.hpp"
+#include "clustering/immediate_consistency/backfiller.hpp"
 #include "clustering/table_manager/backfill_progress_tracker.hpp"
 #include "containers/uuid.hpp"
 #include "rpc/semilattice/view/field.hpp"
@@ -77,7 +77,7 @@ TPTEST(ClusteringBackfill, BackfillTest) {
                 ),
                 w,
                 &response, write_durability_t::SOFT,
-                timestamp,
+                version_t(nil_uuid(), timestamp),
                 order_source.check_in(strprintf("backfiller_store.write(j=%d)", j)),
                 &token,
                 &non_interruptor);

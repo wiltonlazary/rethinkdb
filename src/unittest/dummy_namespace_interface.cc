@@ -40,7 +40,7 @@ void dummy_performer_t::read_outdated(const read_t &read,
 
 void dummy_performer_t::write(const write_t &write,
                               write_response_t *response,
-                              state_timestamp_t timestamp,
+                              version_t version,
                               order_token_t order_token) THROWS_NOTHING {
     cond_t non_interruptor;
 
@@ -53,9 +53,12 @@ void dummy_performer_t::write(const write_t &write,
     store->new_write_token(&token);
 
     store->write(
-            DEBUG_ONLY(metainfo_checker, )
-            region_map_t<binary_blob_t>(store->get_region(), binary_blob_t(timestamp)),
-            write, response, write_durability_t::SOFT, timestamp, order_token, &token, &non_interruptor);
+        DEBUG_ONLY(metainfo_checker, )
+        region_map_t<binary_blob_t>(
+            store->get_region(),
+            binary_blob_t(version.timestamp.to_repli_timestamp())),
+        write, response, write_durability_t::SOFT, version,
+        order_token, &token, &non_interruptor);
 }
 
 
@@ -89,7 +92,7 @@ void dummy_timestamper_t::read(const read_t &read, read_response_t *response, or
 void dummy_timestamper_t::write(const write_t &write, write_response_t *response, order_token_t otok) THROWS_NOTHING {
     order_sink.check_out(otok);
     current_timestamp = current_timestamp.next();
-    next->write(write, response, current_timestamp, otok);
+    next->write(write, response, version_t(nil_uuid(), current_timestamp), otok);
 }
 
 void dummy_sharder_t::read(const read_t &read, read_response_t *response, order_token_t tok, signal_t *interruptor) {

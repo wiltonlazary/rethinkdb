@@ -225,13 +225,15 @@ batched_replace_response_t rdb_replace_and_return_superblock(
     try {
         keyvalue_location_t kv_location;
         rdb_value_sizer_t sizer(info.superblock->cache()->max_block_size());
-        find_keyvalue_location_for_write(&sizer, info.superblock,
-                                         info.key->btree_key(),
-                                         info.btree->timestamp,
-                                         deletion_context->balancing_detacher(),
-                                         &kv_location,
-                                         trace,
-                                         superblock_promise);
+        find_keyvalue_location_for_write(
+            &sizer,
+            info.superblock,
+            info.key->btree_key(),
+            info.btree->version.timestamp.to_repli_timestamp(),
+            deletion_context->balancing_detacher(),
+            &kv_location,
+            trace,
+            superblock_promise);
         info.btree->slice->stats.pm_keys_set.record();
         info.btree->slice->stats.pm_total_keys_set += 1;
 
@@ -265,14 +267,20 @@ batched_replace_response_t rdb_replace_and_return_superblock(
 
             /* Now that the change has passed validation, write it to disk */
             if (new_val.get_type() == ql::datum_t::R_NULL) {
-                kv_location_delete(&kv_location, *info.key, info.btree->timestamp,
-                                   deletion_context, delete_mode_t::REGULAR_QUERY,
+                kv_location_delete(&kv_location,
+                                   *info.key,
+                                   info.btree->version.timestamp.to_repli_timestamp(),
+                                   deletion_context,
+                                   delete_mode_t::REGULAR_QUERY,
                                    mod_info_out);
             } else {
                 r_sanity_check(new_val.get_field(primary_key, ql::NOTHROW).has());
                 ql::serialization_result_t res =
-                    kv_location_set(&kv_location, *info.key, new_val,
-                                    info.btree->timestamp, deletion_context,
+                    kv_location_set(&kv_location,
+                                    *info.key,
+                                    new_val,
+                                    info.btree->version.timestamp.to_repli_timestamp(),
+                                    deletion_context,
                                     mod_info_out);
                 if (res & ql::serialization_result_t::ARRAY_TOO_BIG) {
                     rfail_typed_target(&new_val, "Array too large for disk writes "
@@ -316,6 +324,7 @@ batched_replace_response_t rdb_replace_and_return_superblock(
 }
 
 
+// RSI: remove should_return_write_stamps on this?
 class one_replace_t final : public btree_point_replacer_t {
 public:
     one_replace_t(const btree_batched_replacer_t *_replacer, size_t _index)
@@ -445,8 +454,27 @@ batched_replace_response_t rdb_batched_replace(
         }
     }
 
+    bool include_stamps = false;
+    if (replacer->should_return_write_stamps() == return_write_stamps_t::YES) {
+        for (auto s : {"inserted", "deleted", "replaced"}) {
+            ql::datum_t d = stats.get_field(s, ql::NOTHROW);
+            r_sanity_check(d.has() && d.get_type() == ql::datum_t::R_NUM);
+            if (d.as_num() > 0) {
+                include_stamps = true;
+                break;
+            }
+        }
+    }
     ql::datum_object_builder_t out(stats);
     out.add_warnings(conditions, limits);
+    if (include_stamps) {
+        datum_string_t branch_id(uuid_to_str(info.version.branch));
+        datum_string_t stamp(info.version.timestamp.print_sortable());
+        std::vector<std::pair<datum_string_t, ql::datum_t> > stamps{
+            std::make_pair(std::move(branch_id), std::move(stamp))};
+        bool conflict = out.add("stamps", ql::datum_t(std::move(stamps)));
+        r_sanity_check(!conflict);
+    }
     return std::move(out).to_datum();
 }
 

@@ -66,5 +66,4 @@ typedef uuid_u backfill_session_id_t;
 typedef uuid_u branch_id_t;
 typedef uuid_u issue_id_t;
 
-
 #endif  // CONTAINERS_UUID_HPP_

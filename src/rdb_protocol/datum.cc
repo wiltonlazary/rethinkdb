@@ -1901,13 +1901,19 @@ datum_t stats_merge(UNUSED const datum_string_t &key,
         const size_t l_sz = l.arr_size();
         const size_t r_sz = r.arr_size();
         if (l_sz + r_sz > limits.array_size_limit()) {
-            conditions->insert(strprintf("Too many changes, array truncated to %zu.", limits.array_size_limit()));
+            conditions->insert(
+                strprintf("Too many changes, array truncated to %zu.",
+                          limits.array_size_limit()));
             datum_array_builder_t arr(limits);
             size_t so_far = 0;
-            for (size_t i = 0; i < l_sz && so_far < limits.array_size_limit(); ++i, ++so_far) {
+            for (size_t i = 0;
+                 i < l_sz && so_far < limits.array_size_limit();
+                 ++i, ++so_far) {
                 arr.add(l.get(i));
             }
-            for (size_t i = 0; i < r_sz && so_far < limits.array_size_limit(); ++i, ++so_far) {
+            for (size_t i = 0;
+                 i < r_sz && so_far < limits.array_size_limit();
+                 ++i, ++so_far) {
                 arr.add(r.get(i));
             }
             return std::move(arr).to_datum();
@@ -1921,16 +1927,20 @@ datum_t stats_merge(UNUSED const datum_string_t &key,
             }
             return std::move(arr).to_datum();
         }
+    } else if (l.get_type() == datum_t::R_OBJECT && r.get_type() == datum_t::R_OBJECT) {
+        return l.merge(r, &stats_merge, limits, conditions);
     }
 
-    // Merging a string is left-preferential, which is just a no-op.
+    // Merging two strings takes the larger one.
+    // **DO NOT CHANGE THIS**: we rely on it for the correctness of write
+    // timestamps.
     rcheck_datum(
         l.get_type() == datum_t::R_STR && r.get_type() == datum_t::R_STR,
         base_exc_t::LOGIC,
         strprintf("Cannot merge statistics `%s` (type %s) and `%s` (type %s).",
                   l.trunc_print().c_str(), l.get_type_name().c_str(),
                   r.trunc_print().c_str(), r.get_type_name().c_str()));
-    return l;
+    return std::max(l, r);
 }
 
 datum_object_builder_t::datum_object_builder_t(const datum_t &copy_from) {
