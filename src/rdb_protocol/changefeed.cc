@@ -243,6 +243,11 @@ class nonsquashing_queue_t final : public maybe_squashing_queue_t {
     std::deque<change_val_t> queue;
 };
 
+// RSI: only send stamps when squashing queue is empty.
+// RSI: what about when changes are squashed down to nothing?
+// RSI: squash to min, maintain separate "latest seen" stamps used when empty,
+// should solve both.
+// RSI: maybe track emptiness on a per-shard basis to avoid starvation.
 class squashing_queue_t final : public maybe_squashing_queue_t {
 public:
     void add(change_val_t change_val) final {
@@ -1347,6 +1352,10 @@ protected:
     const bool include_states; // Whether or not to include notes about the state.
     // Whether we're in the middle of one logical batch (only matters for squashing).
     bool mid_batch;
+
+    // These are used to implement `include_stamps` and do not otherwise affect
+    // the logic.  `pop_el` is responsible for populating it.
+    std::map<branch_id_t, state_timestamp_t> branch_stamps;
 private:
     friend class splice_stream_t;
     const double min_interval;
@@ -1411,7 +1420,13 @@ public:
         }
     }
     bool has_change_val() { return queue->size() != 0; }
-    change_val_t pop_change_val() { return queue->pop(); }
+    change_val_t pop_change_val() {
+        change_val_t cv =  queue->pop();
+        state_timestamp_t st = cv.version.timestamp;
+        std::swap(branch_stamps[cv.version.branch], st);
+        r_sanity_check(cv.version.timestamp >= st);
+        return cv;
+    }
     const change_val_t &peek_change_val() { return queue->peek(); }
     bool active() { return !exc; }
 protected:
@@ -2137,6 +2152,8 @@ public:
 
     // For limit changefeeds, the easiest way to effectively squash changes is
     // to delay applying them to the active data set until our timer is up.
+
+    // RSI: make sure to use the same cheating logic as for squashing flat subs.
     virtual void apply_queued_changes() {
         ASSERT_NO_CORO_WAITING;
         if (queued_changes.size() != 0 && need_init == got_init) {
@@ -2319,6 +2336,7 @@ public:
     }
 
     virtual bool has_el() { return els.size() != 0; }
+    // RSI: make this actually update the stamps.
     virtual datum_t pop_el() {
         guarantee(has_el());
         datum_t ret = std::move(els.front());
@@ -2928,6 +2946,13 @@ subscription_t::get_els(batcher_t *batcher,
             batcher->note_el(el);
             ret.push_back(std::move(el));
         }
+        // RSI: PICK UP HERE!  We need to:
+        // * Pass down the include_stamps option.
+        // * If true, examine the `branch_stamps` and send them at the end of the batch.
+
+        // RSI: update stamps based on state of queue (it might be an empty
+        // squashing queue).
+
         // We're in the middle of one logical batch if we stopped early because
         // of the batcher rather than because we ran out of elements.  (This
         // matters for squashing.)

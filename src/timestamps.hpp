@@ -27,6 +27,8 @@ said write is applied. */
 
 class state_timestamp_t {
 public:
+    state_timestamp_t() : num(0) { }
+
     bool operator==(state_timestamp_t t) const { return num == t.num; }
     bool operator!=(state_timestamp_t t) const { return num != t.num; }
     bool operator<(state_timestamp_t t) const { return num < t.num; }
