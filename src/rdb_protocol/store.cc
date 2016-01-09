@@ -726,7 +726,7 @@ struct rdb_write_visitor_t : public boost::static_visitor<void> {
         backfill_debug_key(w.key, strprintf("upsert %" PRIu64, timestamp.longtime));
 
         rdb_live_deletion_context_t deletion_context;
-        rdb_modification_report_t mod_report(w.key);
+        rdb_modification_report_t mod_report(w.key, version);
         rdb_set(w.key, w.data, w.overwrite, btree, timestamp, superblock->get(),
                 &deletion_context, res, &mod_report.info, trace);
 
@@ -743,7 +743,7 @@ struct rdb_write_visitor_t : public boost::static_visitor<void> {
         backfill_debug_key(d.key, strprintf("delete %" PRIu64, timestamp.longtime));
 
         rdb_live_deletion_context_t deletion_context;
-        rdb_modification_report_t mod_report(d.key);
+        rdb_modification_report_t mod_report(d.key, version);
         rdb_delete(d.key, btree, timestamp, superblock->get(), &deletion_context,
                 delete_mode_t::REGULAR_QUERY, res, &mod_report.info, trace);
 

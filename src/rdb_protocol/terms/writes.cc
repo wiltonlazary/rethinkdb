@@ -84,7 +84,7 @@ public:
     insert_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(2),
                     optargspec_t({"conflict", "durability", "return_vals",
-                                  "return_write_stamps", "return_changes"})) { }
+                                  "return_stamps", "return_changes"})) { }
 
 private:
     static void maybe_generate_key(counted_t<table_t> tbl,
@@ -129,7 +129,7 @@ private:
         return_changes_t return_changes = parse_return_changes(env, args, backtrace());
 
         return_write_stamps_t return_write_stamps = return_write_stamps_t::NO;
-        if (scoped_ptr_t<val_t> v = args->optarg(env, "return_write_stamps")) {
+        if (scoped_ptr_t<val_t> v = args->optarg(env, "return_stamps")) {
             return_write_stamps = v->as_bool()
                 ? return_write_stamps_t::YES
                 : return_write_stamps_t::NO;
@@ -245,9 +245,8 @@ class replace_term_t : public op_term_t {
 public:
     replace_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(2),
-                    optargspec_t({"non_atomic", "durability", "return_write_stamps",
-                                  "return_vals", "return_write_stamps",
-                                  "return_changes"})) { }
+                    optargspec_t({"non_atomic", "durability", "return_stamps",
+                                  "return_vals", "return_changes"})) { }
 
 private:
     virtual scoped_ptr_t<val_t> eval_impl(
@@ -258,7 +257,7 @@ private:
         }
         return_changes_t return_changes = parse_return_changes(env, args, backtrace());
         return_write_stamps_t return_write_stamps = return_write_stamps_t::NO;
-        if (scoped_ptr_t<val_t> v = args->optarg(env, "return_write_stamps")) {
+        if (scoped_ptr_t<val_t> v = args->optarg(env, "return_stamps")) {
             return_write_stamps = v->as_bool()
                 ? return_write_stamps_t::YES
                 : return_write_stamps_t::NO;

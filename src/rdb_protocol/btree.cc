@@ -365,7 +365,7 @@ void do_a_replace_from_batched_replace(
     rwlock_in_line_t stamp_spot = mod_cb->get_in_line_for_cfeed_stamp();
 
     rdb_live_deletion_context_t deletion_context;
-    rdb_modification_report_t mod_report(*info.key);
+    rdb_modification_report_t mod_report(*info.key, info.btree->version);
     ql::datum_t res = rdb_replace_and_return_superblock(
         info, &one_replace, &deletion_context, superblock_promise, &mod_report.info,
         trace);
@@ -1278,9 +1278,9 @@ archive_result_t deserialize(read_stream_t *s, rdb_modification_info_t *info) {
     return archive_result_t::SUCCESS;
 }
 
-INSTANTIATE_SERIALIZABLE_SINCE_v1_13(rdb_modification_info_t);
-
-RDB_IMPL_SERIALIZABLE_2_SINCE_v1_13(rdb_modification_report_t, primary_key, info);
+INSTANTIATE_SERIALIZABLE_FOR_CLUSTER(rdb_modification_info_t);
+RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(
+    rdb_modification_report_t, primary_key, version, info);
 
 rdb_modification_report_cb_t::rdb_modification_report_cb_t(
         store_t *store,
@@ -1394,11 +1394,12 @@ void rdb_modification_report_cb_t::on_mod_report(
             cserver.first->send_all(
                 ql::changefeed::msg_t(
                     ql::changefeed::msg_t::change_t{
+                        report.version,
                         old_keys,
-                            new_keys,
-                            report.primary_key,
-                            report.info.deleted.first,
-                            report.info.added.first}),
+                        new_keys,
+                        report.primary_key,
+                        report.info.deleted.first,
+                        report.info.added.first}),
                 report.primary_key,
                 cfeed_stamp_spot,
                 cserver.second);
@@ -1971,7 +1972,7 @@ public:
         const store_key_t primary_key(keyvalue.key());
         const rdb_value_t *rdb_value =
             static_cast<const rdb_value_t *>(keyvalue.value());
-        rdb_modification_report_t mod_report(primary_key);
+        rdb_modification_report_t mod_report(primary_key, version_t::zero());
         const max_block_size_t block_size =
             keyvalue.expose_buf().cache()->max_block_size();
         mod_report.info.added

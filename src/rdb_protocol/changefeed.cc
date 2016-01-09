@@ -478,11 +478,7 @@ void server_t::add_client_cb(
 }
 
 struct stamped_msg_t {
-    stamped_msg_t() { }
-    stamped_msg_t(uuid_u _server_uuid, uint64_t _stamp, msg_t _submsg)
-        : server_uuid(std::move(_server_uuid)),
-          stamp(_stamp),
-          submsg(std::move(_submsg)) { }
+    // RSI: remove server_uuid?
     uuid_u server_uuid;
     uint64_t stamp;
     msg_t submsg;
@@ -506,7 +502,8 @@ void server_t::send_one_with_lock(
         ASSERT_NO_CORO_WAITING;
         stamp = client->second.stamp++;
     }
-    send(manager, client->first, stamped_msg_t(uuid, stamp, std::move(msg)));
+    send(manager, client->first,
+         stamped_msg_t{uuid, stamp, std::move(msg)});
 }
 
 void server_t::send_all(
@@ -533,7 +530,7 @@ void server_t::send_all(
     acq.reset();
     stamp_spot->reset(); // Done stamping, no need to hold onto it while we send.
     for (const auto &pair : stamps) {
-        send(manager, pair.first, stamped_msg_t(uuid, pair.second, msg));
+        send(manager, pair.first, stamped_msg_t{uuid, pair.second, msg});
     }
 }
 
@@ -1188,13 +1185,13 @@ void limit_manager_t::abort(exc_t e) {
 RDB_IMPL_SERIALIZABLE_1_SINCE_v1_13(msg_t, op);
 RDB_IMPL_SERIALIZABLE_2(msg_t::limit_start_t, sub, start_data);
 INSTANTIATE_SERIALIZABLE_FOR_CLUSTER(msg_t::limit_start_t);
-RDB_IMPL_SERIALIZABLE_3(msg_t::limit_change_t, sub, old_key, new_val);
+RDB_IMPL_SERIALIZABLE_4(msg_t::limit_change_t, version, sub, old_key, new_val);
 INSTANTIATE_SERIALIZABLE_FOR_CLUSTER(msg_t::limit_change_t);
 RDB_IMPL_SERIALIZABLE_2(msg_t::limit_stop_t, sub, exc);
 INSTANTIATE_SERIALIZABLE_FOR_CLUSTER(msg_t::limit_stop_t);
-RDB_IMPL_SERIALIZABLE_5(
+RDB_IMPL_SERIALIZABLE_6(
     msg_t::change_t,
-    old_indexes, new_indexes, pkey, old_val, new_val);
+    version, old_indexes, new_indexes, pkey, old_val, new_val);
 INSTANTIATE_SERIALIZABLE_FOR_CLUSTER(msg_t::change_t);
 RDB_IMPL_SERIALIZABLE_0_SINCE_v1_13(msg_t::stop_t);
 
@@ -1545,10 +1542,10 @@ real_feed_t::real_feed_t(auto_drainer_t::lock_t _client_lock,
 #ifndef NDEBUG
             for (size_t i = 0; i < queues.size()-1; ++i) {
                 res.first->second->map.push(
-                    stamped_msg_t(
+                    stamped_msg_t{
                         server_uuid,
                         std::numeric_limits<uint64_t>::max() - i,
-                        msg_t()));
+                        msg_t()});
             }
 #endif
         }

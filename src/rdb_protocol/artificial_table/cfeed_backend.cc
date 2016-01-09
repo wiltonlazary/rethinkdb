@@ -7,6 +7,7 @@
 /* We destroy the machinery if there have been no changefeeds for this many seconds */
 static const int machinery_expiration_secs = 60;
 
+// RSI: what happens when you do `return_stamps` on a write to an artificial table?
 void cfeed_artificial_table_backend_t::machinery_t::send_all_change(
         const new_mutex_acq_t *proof,
         const store_key_t &pkey,
@@ -16,6 +17,7 @@ void cfeed_artificial_table_backend_t::machinery_t::send_all_change(
     send_all(
         ql::changefeed::msg_t(
             ql::changefeed::msg_t::change_t{
+                version_t::zero(),
                 index_vals_t(),
                 index_vals_t(),
                 pkey,

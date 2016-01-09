@@ -49,7 +49,8 @@ void insert_rows(int start, int finish, store_t *store) {
         point_write_response_t response;
 
         store_key_t pk(ql::datum_t(static_cast<double>(i)).print_primary());
-        rdb_modification_report_t mod_report(pk);
+        rdb_modification_report_t mod_report(
+            pk, version_t{nil_uuid(), state_timestamp_t::zero()});
         rdb_live_deletion_context_t deletion_context;
         rapidjson::Document doc;
         doc.Parse(data.c_str());

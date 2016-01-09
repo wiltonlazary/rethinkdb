@@ -208,10 +208,15 @@ RDB_DECLARE_SERIALIZABLE(rdb_modification_info_t);
 
 struct rdb_modification_report_t {
     rdb_modification_report_t() { }
-    explicit rdb_modification_report_t(const store_key_t &_primary_key)
-        : primary_key(_primary_key) { }
+
+    explicit rdb_modification_report_t(
+        store_key_t _primary_key,
+        version_t _version)
+        : primary_key(std::move(_primary_key)),
+          version(std::move(_version)) { }
 
     store_key_t primary_key;
+    version_t version;
     rdb_modification_info_t info;
 };
 

@@ -14,6 +14,7 @@
 #include <boost/variant.hpp>
 
 #include "btree/keys.hpp"
+#include "clustering/immediate_consistency/history.hpp"
 #include "concurrency/promise.hpp"
 #include "concurrency/rwlock.hpp"
 #include "containers/counted.hpp"
@@ -77,6 +78,7 @@ struct msg_t {
         RDB_DECLARE_ME_SERIALIZABLE(limit_start_t);
     };
     struct limit_change_t {
+        version_t version;
         uuid_u sub;
         boost::optional<std::string> old_key;
         boost::optional<std::pair<std::string, std::pair<datum_t, datum_t> > > new_val;
@@ -88,6 +90,7 @@ struct msg_t {
         RDB_DECLARE_ME_SERIALIZABLE(limit_stop_t);
     };
     struct change_t {
+        version_t version;
         index_vals_t old_indexes, new_indexes;
         store_key_t pkey;
         /* For a newly-created row, `old_val` is an empty `datum_t`. For a deleted row,
@@ -513,8 +516,7 @@ private:
         size_t offset);
 
     void send_one_with_lock(std::pair<const client_t::addr_t, client_info_t> *client,
-                            msg_t msg,
-                            const auto_drainer_t::lock_t &lock);
+                            msg_t msg, const auto_drainer_t::lock_t &lock);
 
     // Controls access to `clients`.  A `server_t` needs to read `clients` when:
     // * `send_all` is called

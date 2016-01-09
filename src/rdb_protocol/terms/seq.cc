@@ -393,7 +393,8 @@ public:
             optargspec_t({"squash",
                           "changefeed_queue_size",
                           "include_initial",
-                          "include_states"})) { }
+                          "include_states",
+                          "include_stamps"})) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(
         scope_env_t *env, args_t *args, eval_flags_t) const {
@@ -418,6 +419,12 @@ private:
         bool include_initial = false;
         if (scoped_ptr_t<val_t> v = args->optarg(env, "include_initial")) {
             include_initial = v->as_bool();
+        }
+
+        // RSI: use
+        bool include_stamps = false;
+        if (scoped_ptr_t<val_t> v = args->optarg(env, "include_stamps")) {
+            include_stamps = v->as_bool();
         }
 
         scoped_ptr_t<val_t> v = args->arg(env, 0);
