@@ -13,6 +13,7 @@
 #include "rdb_protocol/geo/geojson.hpp"
 #include "rdb_protocol/geo/geo_visitor.hpp"
 #include "rdb_protocol/geo/s2/s2cellid.h"
+#include "rdb_protocol/geo/s2/s2latlngrect.h"
 #include "rdb_protocol/geo/s2/s2polygon.h"
 #include "rdb_protocol/geo/s2/s2polyline.h"
 #include "rdb_protocol/geo/s2/s2regioncoverer.h"
@@ -21,6 +22,7 @@
 #include "rdb_protocol/pseudo_geometry.hpp"
 
 using geo::S2CellId;
+using geo::S2LatLngRect;
 using geo::S2Point;
 using geo::S2Polygon;
 using geo::S2Polyline;
@@ -50,6 +52,11 @@ public:
     scoped_ptr_t<std::vector<S2CellId> > on_polygon(const S2Polygon &polygon) {
         scoped_ptr_t<std::vector<S2CellId> > result(new std::vector<S2CellId>());
         coverer_.GetCovering(polygon, result.get());
+        return result;
+    }
+    scoped_ptr_t<std::vector<S2CellId> > on_latlngrect(const S2LatLngRect &rect) {
+        scoped_ptr_t<std::vector<S2CellId> > result(new std::vector<S2CellId>());
+        coverer_.GetCovering(rect, result.get());
         return result;
     }
 

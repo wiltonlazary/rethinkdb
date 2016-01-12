@@ -743,6 +743,10 @@ class bounding_box_visitor_t : public s2_geo_visitor_t<geo::S2LatLngRect> {
         return from_region(poly);
     }
 
+    geo::S2LatLngRect on_latlngrect(const geo::S2LatLngRect &rect) {
+        return expand(rect);
+    }
+
     geo::S2LatLngRect from_region(const geo::S2Region &region) {
         return expand(region.GetRectBound());
     }
@@ -786,13 +790,8 @@ bool intersecting_reader_t::load_items(env_t *env, const batchspec_t &batchspec)
             geo::S2LatLngRect bounding_box = visit_geojson(
                     &visitor, gr->query_geometry);
 
-            lon_lat_line_t shell(4);
-            for (int i = 0; i < 4; i++) {
-                geo::S2LatLng point = bounding_box.GetVertex(i);
-                shell[i] = lon_lat_point_t(point.lng().degrees(), point.lat().degrees());
-            }
-
-            gr->query_geometry = construct_geo_polygon(shell, configured_limits_t());
+            gr->query_geometry = construct_geo_latlngrect(
+                    bounding_box, configured_limits_t());
         }
 
         std::vector<rget_item_t> unfiltered_items = do_intersecting_read(

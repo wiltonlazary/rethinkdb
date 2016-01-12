@@ -158,7 +158,7 @@ class DatasetTracker(object):
         start_timestamp = self.last_timestamp
 
         have = dict()
-        cur = r.table(table).get_intersecting(self.query_geo, index='g').run(conn)
+        cur = yield r.table(self.table).get_intersecting(self.query_geo, index='g').run(self.conn)
         while (yield cur.fetch_next()):
             value = yield cur.next()
             have[value['id']] = value
@@ -166,7 +166,7 @@ class DatasetTracker(object):
         if start_timestamp != self.last_timestamp:
             raise Exception("Got values in changefeed after it had supposedly quiesced")
 
-        if not deep_equal(have, self.known_objects):
+        if have != self.known_objects:
             raise Exception("Invalid objects. Got %r from query, %r from changefeed" % (have, self.known_objects))
 
 @gen.coroutine
@@ -198,17 +198,21 @@ def make_changes(conn, table, change_count):
             if len(ids) == 0:
                 break
 
-            delete_id = random.choice(ids)
+            delete_id = random.sample(ids, 1)[0]
             res = yield r.table(table).get(delete_id).delete().run(conn)
-            if res['deleted'] != 1:
+            if res['deleted'] != 1 and res['skipped'] != 1:
                 raise Exception("wanted deleted=1, got %r" % res)
 
         else:
             # update existing
+            if len(ids) == 0:
+                break
             g = yield random_geo(conn)
-            update_id = random.choice(ids)
+            # We want to do an atomic update, so we evaluate the geometry first.
+            g = yield g.run(conn)
+            update_id = random.sample(ids, 1)[0]
             res = yield r.table(table).get(update_id).update({"g": g}).run(conn)
-            if res['replaced'] != 1:
+            if res['replaced'] != 1 and res['skipped'] != 1:
                 raise Exception("wanted replaced=1, got %r" % res)
 
 @gen.coroutine
@@ -219,6 +223,7 @@ def main():
         yield r.table_drop("test").run(conn)
     yield r.table_create("test").run(conn)
     yield r.table("test").index_create("g", geo=True).run(conn)
+    yield r.table("test").index_wait("g").run(conn)
 
     print "Starting validators"
 

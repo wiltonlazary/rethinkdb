@@ -11,6 +11,7 @@
 #include "rdb_protocol/geo/s2/s1angle.h"
 #include "rdb_protocol/geo/s2/s2.h"
 #include "rdb_protocol/geo/s2/s2latlng.h"
+#include "rdb_protocol/geo/s2/s2latlngrect.h"
 #include "rdb_protocol/geo/s2/s2loop.h"
 #include "rdb_protocol/geo/s2/s2polygon.h"
 #include "rdb_protocol/geo/s2/s2polygonbuilder.h"
@@ -26,6 +27,7 @@ using geo::S2PolygonBuilder;
 using geo::S2PolygonBuilderOptions;
 using geo::S2Polyline;
 using geo::S2LatLng;
+using geo::S2LatLngRect;
 using geo::S2Loop;
 using ql::datum_t;
 using ql::datum_object_builder_t;
@@ -136,6 +138,36 @@ ql::datum_t construct_geo_polygon(
     return std::move(result).to_datum();
 }
 
+ql::datum_t construct_geo_latlngrect(
+        const S2LatLngRect &rect,
+        const ql::configured_limits_t &limits) {
+    datum_object_builder_t result;
+    bool dup;
+    dup = result.add(datum_t::reql_type_string,
+        datum_t(ql::pseudo::geometry_string));
+    r_sanity_check(!dup);
+    dup = result.add("type", datum_t("$reql_LatLngRect$"));
+    r_sanity_check(!dup);
+
+    std::vector<datum_t> lo_coordinates;
+    lo_coordinates.reserve(2);
+    lo_coordinates.push_back(datum_t(rect.lo().lng().degrees()));
+    lo_coordinates.push_back(datum_t(rect.lo().lat().degrees()));
+    std::vector<datum_t> hi_coordinates;
+    hi_coordinates.reserve(2);
+    hi_coordinates.push_back(datum_t(rect.hi().lng().degrees()));
+    hi_coordinates.push_back(datum_t(rect.hi().lat().degrees()));
+    std::vector<datum_t> coordinates;
+    coordinates.push_back(datum_t(std::move(lo_coordinates), limits));
+    coordinates.push_back(datum_t(std::move(hi_coordinates), limits));
+
+    dup = result.add("coordinates",
+        datum_t(std::move(coordinates), limits));
+    r_sanity_check(!dup);
+
+    return std::move(result).to_datum();
+}
+
 // Parses a GeoJSON "Position" array
 lon_lat_point_t position_to_lon_lat_point(const datum_t &position) {
     // This assumes the default spherical GeoJSON coordinate reference system,
@@ -215,7 +247,7 @@ lon_lat_line_t extract_lon_lat_shell(const ql::datum_t &geojson) {
 }
 
 // Parses a GeoJSON "Position" array
-S2Point position_to_s2point(const datum_t &position) {
+S2LatLng position_to_s2latlng(const datum_t &position) {
     lon_lat_point_t p = position_to_lon_lat_point(position);
 
     // Range checks (or S2 will terminate the process in debug mode).
@@ -234,7 +266,11 @@ S2Point position_to_s2point(const datum_t &position) {
     }
 
     S2LatLng lat_lng(S1Angle::Degrees(p.latitude), S1Angle::Degrees(p.longitude));
-    return lat_lng.ToPoint();
+    return lat_lng;
+}
+
+S2Point position_to_s2point(const datum_t &position) {
+    return position_to_s2latlng(position).ToPoint();
 }
 
 scoped_ptr_t<S2Point> coordinates_to_s2point(const datum_t &coords) {
@@ -345,6 +381,25 @@ scoped_ptr_t<S2Polygon> coordinates_to_s2polygon(const datum_t &coords) {
     return result;
 }
 
+scoped_ptr_t<S2LatLngRect> coordinates_to_s2latlngrect(const datum_t &coords) {
+    /* This is our custom type to allow for intersection queries with a lat/lng
+    rectangle. It's not part of the GeoJSON standard.
+    The format for `coords` is an array of two points. */
+    if (coords.arr_size() != 2) {
+        throw geo_exception_t(
+            "LatLngRect must have two points in its coordinates field.");
+    }
+    S2LatLng lo = position_to_s2latlng(coords.get(0));
+    S2LatLng hi = position_to_s2latlng(coords.get(1));
+
+    scoped_ptr_t<S2LatLngRect> result(new S2LatLngRect(lo, hi));
+    if(!result->is_valid()) {
+        throw geo_exception_t("Invalid LatLngRect.");
+    }
+
+    return result;
+}
+
 void ensure_no_crs(const ql::datum_t &geojson) {
     const ql::datum_t &crs_field =
         geojson.get_field("crs", ql::throw_bool_t::NOTHROW);
@@ -407,6 +462,9 @@ void validate_geojson(const ql::datum_t &geojson) {
         }
         void on_line(UNUSED const S2Polyline &) { }
         void on_polygon(UNUSED const S2Polygon &) { }
+        void on_latlngrect(UNUSED const S2LatLngRect &) {
+            // TODO! Throw here to make sure we don't get these from users?
+        }
     };
     validator_t validator;
     visit_geojson(&validator, geojson);
