@@ -1427,6 +1427,7 @@ private:
 };
 
 class range_sub_t;
+class empty_sub_t;
 class point_sub_t;
 class limit_sub_t;
 
@@ -1440,6 +1441,9 @@ public:
 
     void add_range_sub(range_sub_t *sub) THROWS_NOTHING;
     void del_range_sub(range_sub_t *sub) THROWS_NOTHING;
+
+    void add_empty_sub(empty_sub_t *sub) THROWS_NOTHING;
+    void del_empty_sub(empty_sub_t *sub) THROWS_NOTHING;
 
     void add_limit_sub(limit_sub_t *sub, const uuid_u &uuid) THROWS_NOTHING;
     void del_limit_sub(limit_sub_t *sub, const uuid_u &uuid) THROWS_NOTHING;
@@ -1499,6 +1503,8 @@ private:
 
     std::map<store_key_t, std::vector<std::set<point_sub_t *> > > point_subs;
     rwlock_t point_subs_lock;
+    std::vector<std::set<empty_sub_t *> > empty_subs;
+    rwlock_t empty_subs_lock;
     std::vector<std::set<range_sub_t *> > range_subs;
     rwlock_t range_subs_lock;
     std::map<uuid_u, std::vector<std::set<limit_sub_t *> > > limit_subs;
@@ -1701,8 +1707,12 @@ public:
                  feed, std::move(limits), squash, include_states),
     state(state_t::INITIALIZING),
     sent_state(state_t::NONE),
-    include_initial(false) {}
-    virtual ~empty_sub_t() {}
+    include_initial(false) {
+        feed->add_empty_sub(this);
+    }
+    virtual ~empty_sub_t() {
+        destructor_cleanup(std::bind(&feed_t::del_empty_sub, feed, this));
+    }
     feed_type_t cfeed_type() const final { return feed_type_t::stream; }
     bool update_stamp(const uuid_u &, uint64_t) final {
         unreachable();
@@ -3160,6 +3170,20 @@ void feed_t::del_range_sub(range_sub_t *sub) THROWS_NOTHING {
 }
 
 // If this throws we might leak the increment to `num_subs`.
+void feed_t::add_empty_sub(empty_sub_t *sub) THROWS_NOTHING {
+    add_sub_with_lock(&empty_subs_lock, [this, sub]() {
+        empty_subs[sub->home_thread().threadnum].insert(sub);
+    });
+}
+
+// Can't throw because it's called in a destructor.
+void feed_t::del_empty_sub(empty_sub_t *sub) THROWS_NOTHING {
+    del_sub_with_lock(&empty_subs_lock, [this, sub]() {
+        return empty_subs[sub->home_thread().threadnum].erase(sub);
+    });
+}
+
+// If this throws we might leak the increment to `num_subs`.
 void feed_t::add_limit_sub(limit_sub_t *sub, const uuid_u &sub_uuid) THROWS_NOTHING {
     add_sub_with_lock(&limit_subs_lock, [this, sub, &sub_uuid]() {
             map_add_sub(&limit_subs, sub_uuid, sub);
@@ -3316,6 +3340,15 @@ void feed_t::stop_subs(const auto_drainer_t::lock_t &lock) {
         }
     }
     {
+        rwlock_in_line_t spot(&empty_subs_lock, access_t::write);
+        spot.write_signal()->wait_lazily_unordered();
+        each_sub_in_vec<empty_sub_t>(empty_subs, &spot, lock, f);
+        for (auto &&set : empty_subs) {
+            num_subs -= set.size();
+            set.clear();
+        }
+    }
+    {
         rwlock_in_line_t spot(&point_subs_lock, access_t::write);
         spot.write_signal()->wait_lazily_unordered();
         each_point_sub_with_lock(&spot, f);
@@ -3340,7 +3373,11 @@ void feed_t::stop_subs(const auto_drainer_t::lock_t &lock) {
     r_sanity_check(num_subs == 0);
 }
 
-feed_t::feed_t() : detached(false), num_subs(0), range_subs(get_num_threads()) { }
+feed_t::feed_t() :
+    detached(false),
+    num_subs(0),
+    empty_subs(get_num_threads()),
+    range_subs(get_num_threads()) { }
 
 feed_t::~feed_t() {
     guarantee(num_subs == 0);
