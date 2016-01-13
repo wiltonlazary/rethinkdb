@@ -1690,6 +1690,73 @@ void real_feed_t::constructor_cb() {
     }
 }
 
+class empty_sub_t : public flat_sub_t {
+public:
+    empty_sub_t(feed_t *feed,
+                configured_limits_t limits,
+                const datum_t &squash,
+                bool include_states)
+    // For point changefeeds we start squashing right away.
+    : flat_sub_t(init_squashing_queue_t::YES,
+                 feed, std::move(limits), squash, include_states),
+    state(state_t::INITIALIZING),
+    sent_state(state_t::NONE),
+    include_initial(false) {}
+    virtual ~empty_sub_t() {}
+    feed_type_t cfeed_type() const final { return feed_type_t::stream; }
+    bool update_stamp(const uuid_u &, uint64_t) final {
+        unreachable();
+    }
+    datum_t pop_el() final {
+        if (state != sent_state && include_states) {
+            sent_state = state;
+            state = state_t::READY;
+            return state_datum(sent_state);
+        }
+        unreachable();
+    }
+    bool has_el() final {
+        return (include_states && state != sent_state);
+    }
+    counted_t<datum_stream_t> to_stream(
+        env_t *,
+        std::string,
+        namespace_interface_t *,
+        const client_t::addr_t &,
+        counted_t<datum_stream_t> maybe_src,
+        scoped_ptr_t<subscription_t> &&self,
+        backtrace_id_t bt) final {
+        assert_thread();
+        r_sanity_check(self.get() == this);
+        include_initial = maybe_src.has();
+        if (!include_initial) {
+            state = state_t::READY;
+        }
+        return make_counted<stream_t<subscription_t> >(std::move(self), bt);
+    }
+    virtual counted_t<datum_stream_t> to_artificial_stream(
+       const uuid_u &,
+       const std::string &,
+       const std::vector<datum_t> &,
+       bool _include_initial,
+       scoped_ptr_t<subscription_t> &&self,
+       backtrace_id_t bt) {
+        assert_thread();
+        r_sanity_check(self.get() == this);
+        include_initial = _include_initial;
+        if (!include_initial) {
+            state = state_t::READY;
+        }
+        return make_counted<stream_t<subscription_t> >(std::move(self), bt);
+    }
+
+private:
+    state_t state, sent_state;
+    bool include_initial;
+    auto_drainer_t *get_drainer() final { return &drainer; }
+    auto_drainer_t drainer;
+};
+
 class point_sub_t : public flat_sub_t {
 public:
     // Throws QL exceptions.
@@ -2990,6 +3057,7 @@ keyspec_t::~keyspec_t() { }
 
 RDB_MAKE_SERIALIZABLE_4_FOR_CLUSTER(
     keyspec_t::range_t, transforms, sindex, sorting, datumspec);
+RDB_MAKE_SERIALIZABLE_0_FOR_CLUSTER(keyspec_t::empty_t);
 RDB_MAKE_SERIALIZABLE_2_FOR_CLUSTER(keyspec_t::limit_t, range, limit);
 RDB_MAKE_SERIALIZABLE_1_FOR_CLUSTER(keyspec_t::point_t, key);
 
@@ -3315,6 +3383,9 @@ scoped_ptr_t<subscription_t> new_sub(
               env(_env) { }
         subscription_t *operator()(const keyspec_t::range_t &range) const {
             return new range_sub_t(feed, limits, *squash, include_states, env, range);
+        }
+        subscription_t *operator()(const keyspec_t::empty_t &) const {
+            return new empty_sub_t(feed, limits, *squash, include_states);
         }
         subscription_t *operator()(const keyspec_t::limit_t &limit) const {
             return new limit_sub_t(feed, limits, *squash, include_states, limit);

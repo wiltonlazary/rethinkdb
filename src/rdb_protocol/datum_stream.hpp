@@ -657,6 +657,34 @@ public:
     virtual changefeed::keyspec_t get_changespec() const = 0;
 };
 
+// To handle empty range on getAll
+class empty_reader_t : public reader_t {
+public:
+    explicit empty_reader_t(counted_t<real_table_t> t, std::string tn) :
+        table(std::move(t)), table_name(std::move(tn)) {}
+    virtual ~empty_reader_t() {}
+    virtual void add_transformation(transform_variant_t &&) {}
+    virtual bool add_stamp(changefeed_stamp_t) {
+        return false;
+    }
+    virtual boost::optional<active_state_t> get_active_state() {
+        return boost::optional<active_state_t>();
+    }
+    virtual void accumulate(env_t *, eager_acc_t *, const terminal_variant_t &) {}
+    virtual void accumulate_all(env_t *, eager_acc_t *) {}
+    virtual std::vector<datum_t> next_batch(env_t *, const batchspec_t &) {
+        return std::vector<datum_t>();
+    }
+    virtual bool is_finished() const {
+        return true;
+    }
+    virtual changefeed::keyspec_t get_changespec() const;
+
+private:
+    counted_t<real_table_t> table;
+    std::string table_name;
+};
+
 // For reads that generate read_response_t results.
 class rget_response_reader_t : public reader_t {
 public:
