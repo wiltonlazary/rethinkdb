@@ -539,19 +539,43 @@ def partial(expected):
     else:
         raise ValueError('partial can only work on dicts or iterables, got: %s (%s)' % (type(expected).__name__, str(expected)))
 
-def fetch(cursor, limit=None):
+def fetch(cursor, limit=None, timeout=1):
     '''Pull items from a cursor'''
+
+    # -- input validation
+
     if limit is not None:
         try:
             limit = int(limit)
             assert limit > 0
         except Exception:
-            "On fetch limit must be None or > 0, got: %s" % str(limit)
+            raise ValueError('invalid value for limit: %r' % limit)
+
+    if timeout not in (None, 0):
+        try:
+            timeout = float(timeout)
+            assert timeout > 0
+        except Exception:
+            raise ValueError('invalid value for timeout: %r' % timeout)
+
+    # -- collect results
+
     result = []
-    for i, value in enumerate(cursor, start=1):
-        result.append(value)
-        if limit and i >= limit:
+    deadline = time.time() + timeout if timeout else None
+    while (deadline is None) or (time.time() < deadline):
+        try:
+            if deadline:
+                result.append(cursor.next(wait=deadline - time.time()))
+            else:
+                result.append(cursor.next())
+            if limit and len(result) >= limit:
+                break
+        except r.ReqlTimeoutError:
+            if limit is not None:
+                result.append(r.ReqlTimeoutError())
             break
+    else:
+        result.append(r.ReqlTimeoutError())
     return result
 
 def wait(seconds):
