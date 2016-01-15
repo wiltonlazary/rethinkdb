@@ -132,7 +132,7 @@ struct keyspec_t {
         sorting_t sorting;
         datumspec_t datumspec;
     };
-    struct empty_t {};
+    struct empty_t { };
     struct limit_t {
         range_t range;
         size_t limit;

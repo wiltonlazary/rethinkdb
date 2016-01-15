@@ -1702,12 +1702,12 @@ public:
                 configured_limits_t limits,
                 const datum_t &squash,
                 bool include_states)
-    // For point changefeeds we start squashing right away.
+    // There will never be any changes, safe to start squashing right away.
     : flat_sub_t(init_squashing_queue_t::YES,
-                 feed, std::move(limits), squash, include_states),
-    state(state_t::INITIALIZING),
-    sent_state(state_t::NONE),
-    include_initial(false) {
+		 feed, std::move(limits), squash, include_states),
+      state(state_t::INITIALIZING),
+      sent_state(state_t::NONE),
+      include_initial(false) {
         feed->add_empty_sub(this);
     }
     virtual ~empty_sub_t() {
@@ -1715,7 +1715,7 @@ public:
     }
     feed_type_t cfeed_type() const final { return feed_type_t::stream; }
     bool update_stamp(const uuid_u &, uint64_t) final {
-        unreachable();
+        r_sanity_fail();
     }
     datum_t pop_el() final {
         if (state != sent_state && include_states) {
@@ -1723,7 +1723,7 @@ public:
             state = state_t::READY;
             return state_datum(sent_state);
         }
-        unreachable();
+        r_sanity_fail();
     }
     bool has_el() final {
         return (include_states && state != sent_state);
@@ -1745,12 +1745,12 @@ public:
         return make_counted<stream_t<subscription_t> >(std::move(self), bt);
     }
     virtual counted_t<datum_stream_t> to_artificial_stream(
-       const uuid_u &,
-       const std::string &,
-       const std::vector<datum_t> &,
-       bool _include_initial,
-       scoped_ptr_t<subscription_t> &&self,
-       backtrace_id_t bt) {
+	const uuid_u &,
+        const std::string &,
+        const std::vector<datum_t> &,
+        bool _include_initial,
+        scoped_ptr_t<subscription_t> &&self,
+        backtrace_id_t bt) {
         assert_thread();
         r_sanity_check(self.get() == this);
         include_initial = _include_initial;
@@ -3373,8 +3373,8 @@ void feed_t::stop_subs(const auto_drainer_t::lock_t &lock) {
     r_sanity_check(num_subs == 0);
 }
 
-feed_t::feed_t() :
-    detached(false),
+feed_t::feed_t()
+  : detached(false),
     num_subs(0),
     empty_subs(get_num_threads()),
     range_subs(get_num_threads()) { }

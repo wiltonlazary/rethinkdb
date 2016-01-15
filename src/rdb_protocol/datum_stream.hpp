@@ -660,8 +660,8 @@ public:
 // To handle empty range on getAll
 class empty_reader_t : public reader_t {
 public:
-    explicit empty_reader_t(counted_t<real_table_t> t, std::string tn) :
-        table(std::move(t)), table_name(std::move(tn)) {}
+    explicit empty_reader_t(counted_t<real_table_t> _table, std::string _table_name)
+      : table(std::move(_table)), table_name(std::move(_table_name)) {}
     virtual ~empty_reader_t() {}
     virtual void add_transformation(transform_variant_t &&) {}
     virtual bool add_stamp(changefeed_stamp_t) {
