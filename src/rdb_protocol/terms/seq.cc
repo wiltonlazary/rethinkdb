@@ -206,6 +206,36 @@ private:
     virtual const char *name() const { return "map"; }
 };
 
+class fold_term_t : public grouped_seq_op_term_t {
+public:
+    fold_term_t(compile_env_t *env, const raw_term_t &term)
+        : grouped_seq_op_term_t(env, term, argspec_t(3, -1) { }
+private:
+    virtual_scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
+        counted_t<datum_stream_t>> stream = args->arg(env, 0)->as_seq(env->env);
+
+        counted_t<datum_t> base = args->arg(env, 1)->as_datum();
+
+        counted_t<const funct_t> acc_func =
+            args->arg(env, args->2)->as_func();
+        boost::optional<std::size_t> acc_func_arity = acc_func->arity();
+
+        if (!!acc_func_arity) {
+            rcheck(func_arity.get() == 0 || func_arity.get() == 2,
+                   base_exc_t::LOGIC,
+                   strprintf("The accumulator function passed to `fold`"
+                             " should expect 2 arguments");
+        }
+        // Handle case without emit function
+        if (args->optarg->num_args == 0) {
+            
+        } else {
+            crash("TODO");
+        }
+    }
+    virtual const char *name() const { return "fold"; }
+}
+
 class concatmap_term_t : public grouped_seq_op_term_t {
 public:
     concatmap_term_t(compile_env_t *env, const raw_term_t &term)
@@ -652,6 +682,10 @@ counted_t<term_t> make_map_term(
     return make_counted<map_term_t>(env, term);
 }
 
+counted_t<term_t> make_fold_term(
+        compile_env_t *env, const raw_term_t &term) {
+    return make_counted<fold_term_t>(env, term);
+}
 counted_t<term_t> make_filter_term(
         compile_env_t *env, const raw_term_t &term) {
     return make_counted<filter_term_t>(env, term);
