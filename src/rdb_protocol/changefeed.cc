@@ -18,6 +18,11 @@
 
 #include "debug.hpp"
 
+// RSI: pick up here:
+// * Squashing unimplemented.
+// * Splice streams unimplemented.
+// * Orderby Limit unimplemented.
+
 namespace ql {
 
 namespace changefeed {
@@ -116,6 +121,11 @@ template<class A, class B>
 std::string print(const std::pair<A, B> &p) {
     return strprintf("pair(%s, %s)", print(p.first).c_str(), print(p.second).c_str());
 }
+std::string print(const version_t &v) {
+    return strprintf("version_t(%s, %lu)",
+                     print(v.branch).c_str(),
+                     v.timestamp.to_repli_timestamp().longtime);
+}
 template<class T>
 std::string print(const boost::optional<T> &t) {
     return strprintf("opt(%s)\n", t ? print(*t).c_str() : "");
@@ -148,8 +158,9 @@ std::string print(const stamped_range_t &srng) {
                      print(srng.ranges).c_str());
 }
 std::string print(const change_val_t &cv) {
-    return strprintf("change_val_t(%s, %s, %s, %s)\n",
+    return strprintf("change_val_t(%s, %s, %s, %s, %s)\n",
                      print(cv.source_stamp).c_str(),
+                     print(cv.version).c_str(),
                      print(cv.pkey).c_str(),
                      print(cv.old_val).c_str(),
                      print(cv.new_val).c_str());
@@ -581,8 +592,8 @@ void server_t::send_all(
             // RSI: how confident are we in these guarantees?
             guarantee(msg_version->branch == write_version->branch);
             guarantee(msg_version->timestamp >= write_version->timestamp);
-            write_version = msg_version;
         }
+        write_version = msg_version;
     }
 
     rwlock_acq_t acq(&clients_lock, access_t::read);
@@ -1341,6 +1352,7 @@ public:
         batcher_t *batcher,
         return_empty_normal_batches_t return_empty_normal_batches,
         const signal_t *interruptor);
+    datum_t branch_stamps_doc() const;
     void stop(std::exception_ptr exc, detach_t should_detach);
     virtual counted_t<datum_stream_t> to_stream(
         env_t *env,
@@ -1460,13 +1472,16 @@ public:
         }
     }
     bool has_change_val() { return queue->size() != 0; }
-    change_val_t pop_change_val() {
-        change_val_t cv =  queue->pop();
+    void note_change_val(const change_val_t &cv) {
         if (cv.version) {
             state_timestamp_t st = cv.version->timestamp;
             std::swap(branch_stamps[cv.version->branch], st);
             r_sanity_check(cv.version->timestamp >= st);
         }
+    }
+    change_val_t pop_change_val() {
+        change_val_t cv =  queue->pop();
+        note_change_val(cv);
         return cv;
     }
     const change_val_t &peek_change_val() { return queue->peek(); }
@@ -1786,6 +1801,7 @@ public:
         datum_t ret;
         if (state != state_t::READY && include_initial) {
             r_sanity_check(initial_val);
+            note_change_val(*initial_val);
             ret = change_val_to_change(*initial_val, true);
             if (!ret.has()) {
                 // This is the one place where it's legal to have a document
@@ -2734,6 +2750,7 @@ private:
             if (!src->is_exhausted() && !batcher.should_send_batch()) {
                 // Sorting must be UNORDERED for our last_read range calculation to work.
                 batchspec_t new_bs = bs.with_lazy_sorting_override(sorting_t::UNORDERED);
+                // RSI: need to read versions here.
                 std::vector<datum_t> batch = src->next_batch(env, new_bs);
                 update_ranges();
                 r_sanity_check(active_state);
@@ -2982,6 +2999,7 @@ subscription_t::get_els(batcher_t *batcher,
     if (exc) {
         std::rethrow_exception(exc);
     } else if (skipped != 0) {
+        // RSI: maybe skipping should update the timestamps when it truncates.
         ret.push_back(
             datum_t(
                 std::map<datum_string_t, datum_t>{
@@ -3011,7 +3029,19 @@ subscription_t::get_els(batcher_t *batcher,
         r_sanity_check(false);
     }
     r_sanity_check(ret.size() != 0);
+    ret.push_back(branch_stamps_doc());
     return ret;
+}
+
+datum_t subscription_t::branch_stamps_doc() const {
+    std::map<datum_string_t, datum_t> stamps;
+    for (const auto &pair : branch_stamps) {
+        stamps[datum_string_t(uuid_to_str(pair.first))] =
+            datum_t(datum_string_t(pair.second.print_sortable()));
+    }
+    std::map<datum_string_t, datum_t> ret{{
+            datum_string_t("stamps"), datum_t(std::move(stamps))}};
+    return datum_t(std::move(ret));
 }
 
 void subscription_t::stop(std::exception_ptr _exc, detach_t detach) {
