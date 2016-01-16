@@ -114,6 +114,7 @@ counted_t<ql::datum_stream_t> real_table_t::read_changes(
     ql::configured_limits_t limits,
     const ql::datum_t &squash,
     bool include_states,
+    bool include_stamps,
     ql::changefeed::keyspec_t::spec_t &&spec,
     ql::backtrace_id_t bt,
     const std::string &table_name) {
@@ -123,6 +124,7 @@ counted_t<ql::datum_stream_t> real_table_t::read_changes(
         std::move(limits),
         squash,
         include_states,
+        include_stamps,
         uuid,
         bt,
         table_name,

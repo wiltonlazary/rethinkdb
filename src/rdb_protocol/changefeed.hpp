@@ -200,6 +200,7 @@ public:
         configured_limits_t limits,
         const datum_t &squash,
         bool include_states,
+        bool include_stamps,
         const namespace_id_t &table,
         backtrace_id_t bt,
         const std::string &table_name,
@@ -464,6 +465,7 @@ public:
     boost::optional<uint64_t> get_stamp(
         const client_t::addr_t &addr,
         const auto_drainer_t::lock_t &keepalive);
+    boost::optional<version_t> get_write_version();
     uuid_u get_uuid();
     // `f` will be called with a read lock on `clients` and a write lock on the
     // limit manager.
@@ -512,6 +514,8 @@ private:
         scoped_ptr_t<rwlock_t> limit_clients_lock;
     };
     std::map<client_t::addr_t, client_info_t> clients;
+    // Might not be set if no writes have occured yet.
+    boost::optional<version_t> write_version;
 
     void prune_dead_limit(
         auto_drainer_t::lock_t *stealable_lock,
@@ -563,6 +567,7 @@ public:
         env_t *env,
         bool include_initial,
         bool include_states,
+        bool include_stamps,
         configured_limits_t limits,
         const keyspec_t::spec_t &spec,
         const std::string &primary_key_name,

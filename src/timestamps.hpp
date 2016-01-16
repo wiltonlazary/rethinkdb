@@ -28,6 +28,7 @@ said write is applied. */
 class state_timestamp_t {
 public:
     state_timestamp_t() : num(0) { }
+    explicit state_timestamp_t(const repli_timestamp_t &repli) : num(repli.longtime) { }
 
     bool operator==(state_timestamp_t t) const { return num == t.num; }
     bool operator!=(state_timestamp_t t) const { return num != t.num; }

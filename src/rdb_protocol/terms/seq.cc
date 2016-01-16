@@ -431,7 +431,6 @@ private:
             include_initial = v->as_bool();
         }
 
-        // RSI: use
         bool include_stamps = false;
         if (scoped_ptr_t<val_t> v = args->optarg(env, "include_stamps")) {
             include_stamps = v->as_bool();
@@ -459,6 +458,7 @@ private:
                         limits,
                         squash,
                         include_states,
+                        include_stamps,
                         std::move(changespec.keyspec.spec),
                         backtrace(),
                         changespec.keyspec.table_name));
@@ -481,7 +481,8 @@ private:
                     include_initial,
                     limits,
                     squash,
-                    include_states));
+                    include_states,
+                    include_stamps));
         }
         auto selection = v->as_selection(env->env);
         rfail(base_exc_t::LOGIC,

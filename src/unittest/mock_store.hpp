@@ -47,12 +47,11 @@ public:
                       write_durability_t durability,
                       signal_t *interruptor) THROWS_ONLY(interrupted_exc_t);
 
-    void read(
-            DEBUG_ONLY(const metainfo_checker_t &metainfo_checker, )
-            const read_t &read,
-            read_response_t *response,
-            read_token_t *token,
-            signal_t *interruptor)
+    void read(DEBUG_ONLY(const metainfo_checker_t &metainfo_checker, )
+              const read_t &read,
+              read_response_t *response,
+              read_token_t *token,
+              signal_t *interruptor)
         THROWS_ONLY(interrupted_exc_t);
 
     void write(

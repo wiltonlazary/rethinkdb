@@ -158,7 +158,8 @@ public:
         bool include_initial,
         configured_limits_t limits,
         const datum_t &squash,
-        bool include_states) = 0;
+        bool include_states,
+        bool include_stamps) = 0;
     virtual datum_t replace(
         counted_t<const func_t> f,
         bool nondet_ok,

@@ -853,6 +853,7 @@ TPTEST(RDBProtocol, ArtificialChangefeeds) {
                           env,
                           true,
                           false,
+                          false,
                           ql::configured_limits_t(),
                           keyspec_t::point_t{ql::datum_t(0.0)},
                           "id",
@@ -862,6 +863,7 @@ TPTEST(RDBProtocol, ArtificialChangefeeds) {
                            env,
                            true,
                            false,
+                           false,
                            ql::configured_limits_t(),
                            keyspec_t::point_t{ql::datum_t(10.0)},
                            "id",
@@ -870,6 +872,7 @@ TPTEST(RDBProtocol, ArtificialChangefeeds) {
               range(a->subscribe(
                         env,
                         true,
+                        false,
                         false,
                         ql::configured_limits_t(),
                         keyspec_t::range_t{

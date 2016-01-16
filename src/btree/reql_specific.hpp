@@ -20,7 +20,8 @@ class binary_blob_t;
 class real_superblock_t : public superblock_t {
 public:
     explicit real_superblock_t(buf_lock_t &&sb_buf);
-    real_superblock_t(buf_lock_t &&sb_buf, new_semaphore_in_line_t &&write_semaphore_acq);
+    real_superblock_t(
+        buf_lock_t &&sb_buf, new_semaphore_in_line_t &&write_semaphore_acq);
 
     void release();
     buf_lock_t *get() { return &sb_buf_; }
@@ -35,11 +36,10 @@ public:
     buf_parent_t expose_buf() { return buf_parent_t(&sb_buf_); }
 
 private:
-    /* The write_semaphore_acq_ is empty for reads.
-    For writes it locks the write superblock acquisition semaphore until the
-    sb_buf_ is released.
-    Note that this is used to throttle writes compared to reads, but not required
-    for correctness. */    
+    /* The write_semaphore_acq_ is empty for reads.  For writes it locks the
+    write superblock acquisition semaphore until the sb_buf_ is released.  Note
+    that this is used to throttle writes compared to reads, but not required for
+    correctness. */
     new_semaphore_in_line_t write_semaphore_acq_;
 
     buf_lock_t sb_buf_;

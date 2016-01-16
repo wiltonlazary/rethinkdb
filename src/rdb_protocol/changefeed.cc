@@ -62,11 +62,13 @@ void debug_print(printf_buffer_t *buf, const stamped_range_t &rng) {
 
 struct change_val_t {
     change_val_t(std::pair<uuid_u, uint64_t> _source_stamp,
+                 boost::optional<version_t> _version,
                  store_key_t _pkey,
                  boost::optional<indexed_datum_t> _old_val,
                  boost::optional<indexed_datum_t> _new_val
                  DEBUG_ONLY(, boost::optional<std::string> _sindex))
         : source_stamp(std::move(_source_stamp)),
+          version(std::move(_version)),
           pkey(std::move(_pkey)),
           old_val(std::move(_old_val)),
           new_val(std::move(_new_val))
@@ -78,6 +80,7 @@ struct change_val_t {
         }
     }
     std::pair<uuid_u, uint64_t> source_stamp;
+    boost::optional<version_t> version;
     store_key_t pkey;
     boost::optional<indexed_datum_t> old_val, new_val;
     DEBUG_ONLY(boost::optional<std::string> sindex;);
@@ -544,6 +547,25 @@ void server_t::send_one_with_lock(
          stamped_msg_t{uuid, stamp, std::move(msg)});
 }
 
+struct msg_version_visitor_t
+    : public boost::static_visitor<boost::optional<version_t> > {
+    boost::optional<version_t> operator()(const msg_t::limit_start_t &) const {
+        return boost::none;
+    }
+    boost::optional<version_t> operator()(const msg_t::limit_change_t &lc) const {
+        return lc.version;
+    }
+    boost::optional<version_t> operator()(const msg_t::limit_stop_t &) const {
+        return boost::none;
+    }
+    boost::optional<version_t> operator()(const msg_t::change_t &c) const {
+        return c.version;
+    }
+    boost::optional<version_t> operator()(const msg_t::stop_t &) const {
+        return boost::none;
+    }
+};
+
 void server_t::send_all(
         const msg_t &msg,
         const store_key_t &key,
@@ -552,6 +574,16 @@ void server_t::send_all(
     keepalive.assert_is_holding(&drainer);
     stamp_spot->guarantee_is_for_lock(&parent->cfeed_stamp_lock);
     stamp_spot->write_signal()->wait_lazily_unordered();
+
+    if (boost::optional<version_t> msg_version = boost::apply_visitor(
+            msg_version_visitor_t(), msg.op)) {
+        if (write_version) {
+            // RSI: how confident are we in these guarantees?
+            guarantee(msg_version->branch == write_version->branch);
+            guarantee(msg_version->timestamp >= write_version->timestamp);
+            write_version = msg_version;
+        }
+    }
 
     rwlock_acq_t acq(&clients_lock, access_t::read);
     std::map<client_t::addr_t, uint64_t> stamps;
@@ -592,6 +624,10 @@ boost::optional<uint64_t> server_t::get_stamp(
     } else {
         return it->second.stamp;
     }
+}
+
+boost::optional<version_t> server_t::get_write_version() {
+    return write_version;
 }
 
 uuid_u server_t::get_uuid() {
@@ -1334,7 +1370,8 @@ protected:
     subscription_t(feed_t *feed,
                    configured_limits_t limits,
                    const datum_t &squash,
-                   bool include_states);
+                   bool include_states,
+                   bool include_stamps);
     void maybe_signal_cond() THROWS_NOTHING;
     void maybe_signal_queue_nearly_full_cond() THROWS_NOTHING;
     void destructor_cleanup(std::function<void()> del_sub) THROWS_NOTHING;
@@ -1350,6 +1387,7 @@ protected:
     const configured_limits_t limits;
     const bool squash; // Whether or not to squash changes.
     const bool include_states; // Whether or not to include notes about the state.
+    const bool include_stamps; // Whether or not to include write timestamps.
     // Whether we're in the middle of one logical batch (only matters for squashing).
     bool mid_batch;
 
@@ -1386,6 +1424,7 @@ public:
     virtual void add_el(
         const uuid_u &shard_uuid,
         uint64_t stamp,
+        version_t version,
         const store_key_t &pkey,
         const boost::optional<std::string> &DEBUG_ONLY(sindex),
         boost::optional<indexed_datum_t> old_val,
@@ -1399,6 +1438,7 @@ public:
             last_stamp = stamp_pair;
             queue->add(change_val_t(
                 std::make_pair(shard_uuid, stamp),
+                version,
                 pkey,
                 old_val,
                 new_val
@@ -1422,9 +1462,11 @@ public:
     bool has_change_val() { return queue->size() != 0; }
     change_val_t pop_change_val() {
         change_val_t cv =  queue->pop();
-        state_timestamp_t st = cv.version.timestamp;
-        std::swap(branch_stamps[cv.version.branch], st);
-        r_sanity_check(cv.version.timestamp >= st);
+        if (cv.version) {
+            state_timestamp_t st = cv.version->timestamp;
+            std::swap(branch_stamps[cv.version->branch], st);
+            r_sanity_check(cv.version->timestamp >= st);
+        }
         return cv;
     }
     const change_val_t &peek_change_val() { return queue->peek(); }
@@ -1709,10 +1751,11 @@ public:
                 configured_limits_t limits,
                 const datum_t &squash,
                 bool include_states,
+                bool include_stamps,
                 datum_t _pkey)
         // For point changefeeds we start squashing right away.
         : flat_sub_t(init_squashing_queue_t::YES,
-                     feed, std::move(limits), squash, include_states),
+                     feed, std::move(limits), squash, include_states, include_stamps),
           pkey(std::move(_pkey)),
           stamp(0),
           started(false),
@@ -1794,6 +1837,7 @@ public:
         uint64_t start_stamp = resp->stamp.second;
         initial_val = change_val_t(
                resp->stamp,
+               resp->version,
                store_key_t(pkey.print_primary()),
                boost::none,
                indexed_datum_t(resp->initial_val, datum_t(), boost::none)
@@ -1845,6 +1889,7 @@ public:
         }
         initial_val = change_val_t(
             std::make_pair(nil_uuid(), 0),
+            version_t(),
             store_key_t(pkey.print_primary()),
             boost::none,
             indexed_datum_t(initial, datum_t(), boost::none)
@@ -1881,12 +1926,13 @@ public:
                 configured_limits_t limits,
                 const datum_t &squash,
                 bool include_states,
+                bool include_stamps,
                 env_t *outer_env,
                 keyspec_t::range_t _spec)
         // We don't turn on squashing until later for range subs.  (We need to
         // wait until we've purged and all the initial values are reconciled.)
         : flat_sub_t(init_squashing_queue_t::NO,
-                     feed, std::move(limits), squash, include_states),
+                     feed, std::move(limits), squash, include_states, include_stamps),
           spec(std::move(_spec)),
           state(state_t::READY),
           sent_state(state_t::NONE),
@@ -2105,8 +2151,9 @@ public:
                 configured_limits_t limits,
                 const datum_t &squash,
                 bool include_states,
+                bool include_stamps,
                 keyspec_t::limit_t _spec)
-        : subscription_t(feed, limits, squash, include_states),
+        : subscription_t(feed, limits, squash, include_states, include_stamps),
           uuid(generate_uuid()),
           need_init(-1),
           got_init(0),
@@ -2508,7 +2555,7 @@ public:
                     }
                 }
                 while (old_idxs.size() > 0 && new_idxs.size() > 0) {
-                    sub->add_el(server_uuid, stamp, change.pkey, sindex,
+                    sub->add_el(server_uuid, stamp, change.version, change.pkey, sindex,
                                 indexed_datum_t(old_val,
                                                 std::move(old_idxs.back().first),
                                                 std::move(old_idxs.back().second)),
@@ -2520,7 +2567,7 @@ public:
                 }
                 while (old_idxs.size() > 0) {
                     guarantee(new_idxs.size() == 0);
-                    sub->add_el(server_uuid, stamp, change.pkey, sindex,
+                    sub->add_el(server_uuid, stamp, change.version, change.pkey, sindex,
                                 indexed_datum_t(old_val,
                                                 std::move(old_idxs.back().first),
                                                 std::move(old_idxs.back().second)),
@@ -2529,7 +2576,7 @@ public:
                 }
                 while (new_idxs.size() > 0) {
                     guarantee(old_idxs.size() == 0);
-                    sub->add_el(server_uuid, stamp, change.pkey, sindex,
+                    sub->add_el(server_uuid, stamp, change.version, change.pkey, sindex,
                                 boost::none,
                                 indexed_datum_t(new_val,
                                                 std::move(new_idxs.back().first),
@@ -2538,7 +2585,7 @@ public:
                 }
             } else {
                 for (size_t i = 0; i < sub->copies(change.pkey); ++i) {
-                    sub->add_el(server_uuid, stamp, change.pkey, sindex,
+                    sub->add_el(server_uuid, stamp, change.version, change.pkey, sindex,
                                 indexed_datum_t(old_val, datum_t(), boost::none),
                                 indexed_datum_t(new_val, datum_t(), boost::none));
                 }
@@ -2551,6 +2598,7 @@ public:
                       ph::_1,
                       std::cref(server_uuid),
                       stamp,
+                      change.version,
                       change.pkey,
                       boost::none,
                       change.old_val.has()
@@ -2841,12 +2889,14 @@ subscription_t::subscription_t(
     feed_t *_feed,
     configured_limits_t _limits,
     const datum_t &_squash,
-    bool _include_states)
+    bool _include_states,
+    bool _include_stamps)
     : skipped(0),
       feed(_feed),
       limits(std::move(_limits)),
       squash(_squash.as_bool()),
       include_states(_include_states),
+      include_stamps(_include_stamps),
       mid_batch(false),
       min_interval(_squash.get_type() == datum_t::R_NUM ? _squash.as_num() : 0.0),
       cond(NULL),
@@ -3320,6 +3370,7 @@ scoped_ptr_t<subscription_t> new_sub(
     configured_limits_t limits,
     const datum_t &squash,
     bool include_states,
+    bool include_stamps,
     env_t *env,
     const keyspec_t::spec_t &spec) {
 
@@ -3329,30 +3380,37 @@ scoped_ptr_t<subscription_t> new_sub(
             configured_limits_t _limits,
             const datum_t *_squash,
             bool _include_states,
+            bool _include_stamps,
             env_t *_env)
             : feed(_feed),
               limits(std::move(_limits)),
               squash(_squash),
               include_states(_include_states),
+              include_stamps(_include_stamps),
               env(_env) { }
         subscription_t *operator()(const keyspec_t::range_t &range) const {
-            return new range_sub_t(feed, limits, *squash, include_states, env, range);
+            return new range_sub_t(
+                feed, limits, *squash, include_states, include_stamps, env, range);
         }
         subscription_t *operator()(const keyspec_t::limit_t &limit) const {
-            return new limit_sub_t(feed, limits, *squash, include_states, limit);
+            return new limit_sub_t(
+                feed, limits, *squash, include_states, include_stamps, limit);
         }
         subscription_t *operator()(const keyspec_t::point_t &point) const {
-            return new point_sub_t(feed, limits, *squash, include_states, point.key);
+            return new point_sub_t(
+                feed, limits, *squash, include_stamps, include_states, point.key);
         }
         feed_t *feed;
         configured_limits_t limits;
         const datum_t *squash;
         bool include_states;
+        bool include_stamps;
         env_t *env;
     };
     return scoped_ptr_t<subscription_t>(
         boost::apply_visitor(
-            spec_visitor_t(feed, std::move(limits), &squash, include_states, env),
+            spec_visitor_t(
+                feed, std::move(limits), &squash, include_states, include_stamps, env),
             spec));
 }
 
@@ -3362,6 +3420,7 @@ counted_t<datum_stream_t> client_t::new_stream(
     configured_limits_t limits,
     const datum_t &squash,
     bool include_states,
+    bool include_stamps,
     const namespace_id_t &uuid,
     backtrace_id_t bt,
     const std::string &table_name,
@@ -3426,7 +3485,8 @@ counted_t<datum_stream_t> client_t::new_stream(
                 // want to change this behavior to make it more efficient, make
                 // sure `feed_t::stop_subs` remains correct.
                 on_thread_t th2(old_thread);
-                sub = new_sub(feed, std::move(limits), squash, include_states, env, spec);
+                sub = new_sub(feed, std::move(limits), squash,
+                              include_states, include_stamps, env, spec);
             }
             namespace_interface_access_t access =
                 namespace_source(uuid, env->interruptor);
@@ -3518,6 +3578,7 @@ counted_t<datum_stream_t> artificial_t::subscribe(
     env_t *env,
     bool include_initial,
     bool include_states,
+    bool include_stamps,
     configured_limits_t limits,
     const keyspec_t::spec_t &spec,
     const std::string &primary_key_name,
@@ -3534,6 +3595,7 @@ counted_t<datum_stream_t> artificial_t::subscribe(
         std::move(limits),
         datum_t::boolean(false),
         include_states,
+        include_stamps,
         env,
         spec);
     return sub->to_artificial_stream(

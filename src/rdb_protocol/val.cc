@@ -34,7 +34,8 @@ public:
         bool include_initial,
         configured_limits_t limits,
         const datum_t &squash,
-        bool include_states) {
+        bool include_states,
+        bool include_stamps) {
         counted_t<datum_stream_t> maybe_src;
         if (include_initial) {
             // We want to provide an empty stream in this case because we get
@@ -48,6 +49,7 @@ public:
             std::move(limits),
             squash,
             include_states,
+            include_stamps,
             changefeed::keyspec_t::point_t{key},
             bt,
             tbl->display_name());
@@ -96,7 +98,8 @@ public:
         bool include_initial,
         configured_limits_t limits,
         const datum_t &squash,
-        bool include_states) {
+        bool include_states,
+        bool include_stamps) {
         changefeed::keyspec_t::spec_t spec =
             ql::changefeed::keyspec_t::limit_t{slice->get_range_spec(), 1};
         counted_t<datum_stream_t> maybe_src;
@@ -112,6 +115,7 @@ public:
             std::move(limits),
             squash,
             include_states,
+            include_stamps,
             std::move(spec),
             bt,
             slice->get_tbl()->display_name());

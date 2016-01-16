@@ -41,6 +41,7 @@ public:
         ql::configured_limits_t limits,
         const ql::datum_t &, // TODO: implement squash
         bool include_states,
+        bool include_stamps,
         ql::changefeed::keyspec_t::spec_t &&spec,
         ql::backtrace_id_t bt,
         const std::string &table_name);

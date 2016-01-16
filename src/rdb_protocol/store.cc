@@ -401,17 +401,22 @@ struct rdb_read_visitor_t : public boost::static_visitor<void> {
         if (cserver.first != nullptr) {
             res->resp = changefeed_point_stamp_response_t::valid_response_t();
             auto *vres = &*res->resp;
-            if (boost::optional<uint64_t> stamp
+            uint64_t stamp;
+            if (boost::optional<uint64_t> opt_stamp
                     = cserver.first->get_stamp(s.addr, cserver.second)) {
-                vres->stamp = std::make_pair(cserver.first->get_uuid(), *stamp);
+                stamp = *opt_stamp;
             } else {
                 // The client was removed, so no future messages are coming.
-                vres->stamp = std::make_pair(cserver.first->get_uuid(),
-                                             std::numeric_limits<uint64_t>::max());
+                stamp = std::numeric_limits<uint64_t>::max();
             }
             point_read_response_t val;
             rdb_get(s.key, btree, superblock, &val, trace);
             vres->initial_val = val.data;
+            boost::optional<version_t> version = cserver.first->get_write_version();
+            res->resp = changefeed_point_stamp_response_t::valid_response_t{
+                std::make_pair(cserver.first->get_uuid(), stamp),
+                std::move(version),
+                std::move(val.data)};
         } else {
             res->resp = boost::none;
         }
@@ -640,8 +645,7 @@ void store_t::protocol_read(const read_t &read,
 
     {
         profile::starter_t start_read("Perform read on shard.", trace);
-        rdb_read_visitor_t v(btree.get(), this,
-                             superblock,
+        rdb_read_visitor_t v(btree.get(), this, superblock,
                              ctx, response, trace.get_or_null(), interruptor);
         boost::apply_visitor(v, read.read);
     }
@@ -803,8 +807,8 @@ struct rdb_write_visitor_t : public boost::static_visitor<void> {
     rdb_write_visitor_t(btree_slice_t *_btree,
                         store_t *_store,
                         txn_t *_txn,
-                        scoped_ptr_t<real_superblock_t> *_superblock,
                         version_t _version,
+                        scoped_ptr_t<real_superblock_t> *_superblock,
                         rdb_context_t *_ctx,
                         profile::sampler_t *_sampler,
                         profile::trace_t *_trace,
@@ -814,10 +818,10 @@ struct rdb_write_visitor_t : public boost::static_visitor<void> {
         store(_store),
         txn(_txn),
         response(_response),
+        version(_version),
         ctx(_ctx),
         interruptor(_interruptor),
         superblock(_superblock),
-        version(_version),
         sampler(_sampler),
         trace(_trace),
         sindex_block((*superblock)->expose_buf(),
@@ -839,10 +843,10 @@ private:
     store_t *const store;
     txn_t *const txn;
     write_response_t *const response;
+    const version_t version;
     rdb_context_t *const ctx;
     signal_t *const interruptor;
     scoped_ptr_t<real_superblock_t> *const superblock;
-    const version_t version;
     profile::sampler_t *const sampler;
     profile::trace_t *const trace;
     buf_lock_t sindex_block;
@@ -863,8 +867,8 @@ void store_t::protocol_write(const write_t &write,
         rdb_write_visitor_t v(btree.get(),
                               this,
                               (*superblock)->expose_buf().txn(),
-                              superblock,
                               version,
+                              superblock,
                               ctx,
                               &start_write,
                               trace.get_or_null(),

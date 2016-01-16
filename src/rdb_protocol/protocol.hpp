@@ -202,6 +202,8 @@ struct changefeed_point_stamp_response_t {
     // servers and don't synchronize with each other.)
     struct valid_response_t {
         std::pair<uuid_u, uint64_t> stamp;
+        // RSI: where is this for rget responses?
+        boost::optional<version_t> version;
         ql::datum_t initial_val;
     };
     // If this is empty it means the feed was aborted.

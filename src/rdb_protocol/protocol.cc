@@ -1378,8 +1378,8 @@ RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(
     shard_stamp_info_t, stamp, shard_region, last_read_start);
 RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(changefeed_stamp_response_t, stamp_infos);
 
-RDB_IMPL_SERIALIZABLE_2_FOR_CLUSTER(
-    changefeed_point_stamp_response_t::valid_response_t, stamp, initial_val);
+RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(
+    changefeed_point_stamp_response_t::valid_response_t, stamp, version, initial_val);
 RDB_IMPL_SERIALIZABLE_1_FOR_CLUSTER(
     changefeed_point_stamp_response_t, resp);
 

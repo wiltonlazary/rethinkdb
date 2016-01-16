@@ -101,8 +101,8 @@ public:
         home_thread_mixin_t::assert_thread();
         rassert(region_is_superset(get_region(), metainfo_checker.region));
 
-        store_view->read(DEBUG_ONLY(metainfo_checker, ) read, response, token,
-            interruptor);
+        store_view->read(DEBUG_ONLY(metainfo_checker, )
+                         read, response, token, interruptor);
     }
 
     void write(

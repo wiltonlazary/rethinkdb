@@ -23,6 +23,7 @@ public:
         ql::env_t *env,
         bool include_initial,
         bool include_states,
+        bool include_stamps,
         ql::configured_limits_t limits,
         ql::backtrace_id_t bt,
         ql::changefeed::keyspec_t::spec_t &&spec,
