@@ -1,3 +1,31 @@
+# Release 2.2.3 (Modern Times)
+
+Released on 2016-01-11
+
+Bug fix release
+
+### Compatibility ###
+
+RethinkDB 2.2.3 servers cannot be mixed with servers running RethinkDB 2.2.1 or earlier
+in the same cluster.
+
+No migration is required when upgrading from RethinkDB 2.2.0 or higher. Please read the
+[RethinkDB 2.2.0 release notes][release-notes-2.2.0] if you're upgrading from an
+older version.
+
+[release-notes-2.2.0]: https://github.com/rethinkdb/rethinkdb/releases/tag/v2.2.0
+
+### Bug fixes ###
+
+* Fixed a bug in the changefeed code that caused crashes with the message
+  `Guarantee failed: [env.has()]` (#5238)
+* Fixed a crash in `r.http` when using pagination (#5256)
+* Fixed a bug that made `orderBy.limit` changefeeds prevent other changefeeds on the same
+  table from becoming ready (#5247)
+* Replaced a call to the deprecated `Object#timeout` function in the Ruby driver (#5232)
+
+--
+
 # Release 2.2.2 (Modern Times)
 
 Released on 2015-12-21
