@@ -59,6 +59,7 @@ for nshards in [1, 2, 5]
         @query = query
         @log = []
         @state = {}
+        @start_time = Time.now
       end
       def query
         @query
@@ -80,6 +81,18 @@ for nshards in [1, 2, 5]
         end
         @state.delete(v['old_val']['id']) if v['old_val']
         @state[v['new_val']['id']] = v['new_val'] if v['new_val']
+
+        # Add a delay to ensure that enough writes get through before we reach the
+        # 'ready' state. This is just to increase the coverage of this test.
+        # We're targeting a time of 4 seconds per run, after which we read out the
+        # remaining changes as quickly as possible.
+        elapsed_time = Time.now.to_f - @start_time.to_f
+        if elapsed_time > 30
+          stop
+          raise RuntimeError, "Reached time limit"
+        elsif elapsed_time < 4
+          sleep(0.2)
+        end
       end
       def on_state(s)
         @log << s
@@ -111,6 +124,8 @@ for nshards in [1, 2, 5]
           id = $gen.rand($ndocs)
           res = $tbl.get(id).update({ts: 3}, :return_changes => true).run
           $wlog << [id, res]
+
+          sleep(0.05)
         end
         # Wait an extra 2 seconds to make sure that any pending changes have
         # been received.
