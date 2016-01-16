@@ -389,8 +389,9 @@ private:
 };
 
 class fold_datum_stream_t : public eager_datum_stream_t {
-    fold_datum_stream_t(counted_t<datum_stream_t> &&stream,
-			counted_t<datum_t> &&base,
+public:
+  fold_datum_stream_t(counted_t<datum_stream_t> &&stream,
+			datum_t base, //TODO?
 			counted_t<const func_t> &&_acc_func,
 			counted_t<const func_t> &&_emit_func,
 			backtrace_id_t bt);
@@ -402,7 +403,7 @@ class fold_datum_stream_t : public eager_datum_stream_t {
         return is_array_map;
     }
 
-    virtual bool is_exhaused() const;
+    virtual bool is_exhausted() const;
 
     virtual feed_type_t cfeed_type() const {
       return union_type;
@@ -414,7 +415,8 @@ class fold_datum_stream_t : public eager_datum_stream_t {
 
 private:
     counted_t<datum_stream_t> stream;
-    counted_t<const func_t> func;
+    counted_t<const func_t> acc_func;
+    counted_t<const func_t> emit_func;
     feed_type_t union_type;
     bool is_array_map, is_infinite_map;
 

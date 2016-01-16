@@ -230,11 +230,11 @@ private:
 	bool use_final_emit = false;
 	scoped_ptr_t<val_t> emit_arg;
 	scoped_ptr_t<val_t> final_emit_arg;
-	if (emit_arg = args->optarg(env, "emit")) {
-	    use_emit = use_emit_arg->as_bool();
+	if ((emit_arg = args->optarg(env, "emit"))) {
+	    use_emit = true;
 	}
-	if (final_emit_arg = args->optarg(env, "final_emit")) {
-	    use_final_emit = use_final_emit_arg->as_bool();
+	if ((final_emit_arg = args->optarg(env, "final_emit"))) {
+	    use_final_emit = true;
 	}
 
         if (!use_emit && !use_final_emit ) {
@@ -260,7 +260,7 @@ private:
 	    counted_t<const func_t> emit_func = emit_arg->as_func();
 	    counted_t<datum_stream_t> fold_stream
 	      = make_counted<fold_datum_stream_t>(std::move(stream),
-						  std::move(base),
+						  base,
 						  std::move(acc_func),
 						  std::move(emit_func),
 						  backtrace());

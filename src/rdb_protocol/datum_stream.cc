@@ -1978,16 +1978,15 @@ bool map_datum_stream_t::is_exhausted() const {
 
 fold_datum_stream_t::fold_datum_stream_t(
         counted_t<datum_stream_t> &&_stream,
-        counted_t<datum_t> &&_base,
+        datum_t _base,
 	counted_t<const func_t> &&_acc_func,
 	counted_t<const func_t> &&_emit_func,
 	backtrace_id_t bt)
   : eager_datum_stream_t(bt),
     stream(std::move(_stream)),
-    acc(_base),
     acc_func(std::move(_acc_func)),
     emit_func(std::move(_emit_func)),
-    final_emit_func(std::move(_final_emit_func)) {
+    acc(_base) {
 
     is_array_map = stream->is_array();
     union_type = stream->cfeed_type();
@@ -2016,14 +2015,14 @@ fold_datum_stream_t::next_raw_batch(env_t *env, const batchspec_t &batchspec) {
         datum_t row = stream->next(env, batchspec_inner);
 	acc_args.push_back(acc);
 	acc_args.push_back(row);
-	datum_t new_acc = acc_func->call(env->env, acc_args)->as_datum();
+	datum_t new_acc = acc_func->call(env, acc_args)->as_datum();
 
 	r_sanity_check(new_acc.has());
 
 	emit_args.push_back(acc);
 	emit_args.push_back(row);
 	emit_args.push_back(new_acc);
-	datum_t emit_elem = emit_func->call(env->env, emit_args)->as_datum();
+	datum_t emit_elem = emit_func->call(env, emit_args)->as_datum();
 
 	r_sanity_check(emit_elem.has());
 
