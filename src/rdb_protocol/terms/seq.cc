@@ -209,7 +209,7 @@ private:
 class fold_term_t : public grouped_seq_op_term_t {
 public:
     fold_term_t(compile_env_t *env, const raw_term_t &term)
-      : grouped_seq_op_term_t(env, term, argspec_t(3, -1)) { }
+      : grouped_seq_op_term_t(env, term, argspec_t(3), optargspec_t({"emit", "final_emit"})) { }
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
         counted_t<datum_stream_t> stream = args->arg(env, 0)->as_seq(env->env);
@@ -226,12 +226,18 @@ private:
                    strprintf("The accumulator function passed to `fold`"
                              " should expect 2 arguments"));
         }
-	//scoped_ptr_t<val_t> use_emit_arg = args->optarg(env, "emit");
-	//scoped_ptr_t<val_t> use_final_emit_arg = args->optarg(env, "final_emit");
-	//bool use_emit = use_emit_arg->as_bool();
-	//bool use_final_emit = use_final_emit_arg->as_bool();
-	  
-        if (1/*!use_emit && !use_final_emit */) {
+	bool use_emit = false;
+	bool use_final_emit = false;
+	scoped_ptr_t<val_t> emit_arg;
+	scoped_ptr_t<val_t> final_emit_arg;
+	if (emit_arg = args->optarg(env, "emit")) {
+	    use_emit = use_emit_arg->as_bool();
+	}
+	if (final_emit_arg = args->optarg(env, "final_emit")) {
+	    use_final_emit = use_final_emit_arg->as_bool();
+	}
+
+        if (!use_emit && !use_final_emit ) {
 	    //Handle case without emit function
 	    datum_t result = base;
 	    batchspec_t batchspec = batchspec_t::user(batch_type_t::TERMINAL, env->env);
@@ -239,7 +245,7 @@ private:
 	        datum_t row;
 		std::vector<datum_t> acc_args;
 		while (row = stream->next(env->env, batchspec), row.has()) {
-		    acc_args.push_back(result);
+		    acc_args.push_back(std::move(result));
 		    acc_args.push_back(std::move(row));
 
 		    result = acc_func->call(env->env, acc_args)->as_datum();
@@ -250,9 +256,18 @@ private:
 	    }
 
 	    return new_val(result);
+        } else if (use_emit && !use_final_emit) {
+	    counted_t<const func_t> emit_func = emit_arg->as_func();
+	    counted_t<datum_stream_t> fold_stream
+	      = make_counted<fold_datum_stream_t>(std::move(stream),
+						  std::move(base),
+						  std::move(acc_func),
+						  std::move(emit_func),
+						  backtrace());
+	    return new_val(env->env, fold_stream);
         } else {
-            crash("TODO");
-        }
+	    crash("TODO");
+	}
     }
     virtual const char *name() const { return "fold"; }
 };

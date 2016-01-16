@@ -1976,6 +1976,80 @@ bool map_datum_stream_t::is_exhausted() const {
     return false;
 }
 
+fold_datum_stream_t::fold_datum_stream_t(
+        counted_t<datum_stream_t> &&_stream,
+        counted_t<datum_t> &&_base,
+	counted_t<const func_t> &&_acc_func,
+	counted_t<const func_t> &&_emit_func,
+	backtrace_id_t bt)
+  : eager_datum_stream_t(bt),
+    stream(std::move(_stream)),
+    acc(_base),
+    acc_func(std::move(_acc_func)),
+    emit_func(std::move(_emit_func)),
+    final_emit_func(std::move(_final_emit_func)) {
+
+    is_array_map = stream->is_array();
+    union_type = stream->cfeed_type();
+    is_infinite_map = stream->is_infinite();
+}
+
+std::vector<datum_t>
+fold_datum_stream_t::next_raw_batch(env_t *env, const batchspec_t &batchspec) {
+    rcheck(!is_infinite_map
+	   || batchspec.get_batch_type() == batch_type_t::NORMAL
+	   || batchspec.get_batch_type() == batch_type_t::NORMAL_FIRST,
+	   base_exc_t::LOGIC,
+           "Cannot use an infinite stream with an aggregation function "
+           "(`reduce`, `count`, etc.) or coerce it to an array.");
+
+    std::vector<datum_t> batch;
+    batcher_t batcher = batchspec.to_batcher();
+
+    // We need a separate batchspec for the streams to prevent calling `stream->next`
+    // with a `batch_type_t::TERMINAL` on an infinite stream.
+    batchspec_t batchspec_inner = batchspec_t::default_for(batch_type_t::NORMAL);
+    std::vector<datum_t> acc_args;
+    std::vector<datum_t> emit_args;
+
+    while (!is_exhausted()) {
+        datum_t row = stream->next(env, batchspec_inner);
+	acc_args.push_back(acc);
+	acc_args.push_back(row);
+	datum_t new_acc = acc_func->call(env->env, acc_args)->as_datum();
+
+	r_sanity_check(new_acc.has());
+
+	emit_args.push_back(acc);
+	emit_args.push_back(row);
+	emit_args.push_back(new_acc);
+	datum_t emit_elem = emit_func->call(env->env, emit_args)->as_datum();
+
+	r_sanity_check(emit_elem.has());
+
+	batcher.note_el(emit_elem);
+	batch.push_back(std::move(emit_elem));
+
+	acc_args.clear();
+	emit_args.clear();
+
+	acc = std::move(new_acc);
+
+	if (batcher.should_send_batch()) {
+	    break;
+	}
+    }
+
+    return batch;
+}
+
+bool fold_datum_stream_t::is_exhausted() const {
+    if (stream->is_exhausted()) {
+        return batch_cache_exhausted();
+    }
+    return false;
+}
+
 vector_datum_stream_t::vector_datum_stream_t(
         backtrace_id_t bt,
         std::vector<datum_t> &&_rows,
