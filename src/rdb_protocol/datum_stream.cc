@@ -2060,7 +2060,7 @@ fold_datum_stream_t::next_raw_batch(env_t *env, const batchspec_t &batchspec) {
 
         if (batcher.should_send_batch()) {
             break;
-	}
+        }
     }
 
     if (is_exhausted() && do_final_emit) {
