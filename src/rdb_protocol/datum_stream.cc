@@ -2067,7 +2067,8 @@ fold_datum_stream_t::next_raw_batch(env_t *env, const batchspec_t &batchspec) {
         std::vector<datum_t> final_emit_args;
         final_emit_args.push_back(acc);
         datum_t final_emit_elem = final_emit_func->call(env, final_emit_args)->as_datum();
-        batch.push_back(std::move(final_emit_elem));
+        r_sanity_check(final_emit_elem.has());
+	batch.push_back(std::move(final_emit_elem));
 
         // So that accumulate_all will work
         do_final_emit=false;
