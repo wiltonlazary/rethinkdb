@@ -262,6 +262,7 @@ private:
 
                 counted_t<const func_t> final_emit_func = final_emit_arg->as_func();
                 final_result = final_emit_func->call(env->env, final_args)->as_datum();
+                r_sanity_check(final_result.has());
                 return new_val(final_result);
             } else {
                 return new_val(result);
