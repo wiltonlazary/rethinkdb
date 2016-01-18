@@ -429,7 +429,7 @@ private:
     bool is_array_map, is_infinite_map;
 
     datum_t acc;
-    bool uses_final_emit;
+    bool do_final_emit;
 };
 
 // Every shard is in a particular state.  ACTIVE means we should read more data

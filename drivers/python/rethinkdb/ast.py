@@ -425,8 +425,12 @@ class RqlQuery(object):
         if len(args) > 0:
             # `func_wrap` only the last argument before optional arguments
             # Also `func_wrap` keyword arguments
-            return Fold(self, *(args[:-1] + (func_wrap(args[-1]), )),
-                        **{ arg_name:func_wrap(kwargs[arg_name]) for arg_name in kwargs})
+
+            #Nice syntax not supported by python2.6
+            kwfuncargs = {}
+            for arg_name in kwargs:
+                kwfuncargs[arg_name] = func_wrap(kwargs[arg_name])
+            return Fold(self, *(args[:-1] + (func_wrap(args[-1]), )), **kwfuncargs)
         else:
             return Fold(self)
 

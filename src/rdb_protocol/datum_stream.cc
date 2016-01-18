@@ -1987,7 +1987,7 @@ fold_datum_stream_t::fold_datum_stream_t(
     acc_func(std::move(_acc_func)),
     emit_func(std::move(_emit_func)),
     acc(_base),
-    uses_final_emit(false) {
+    do_final_emit(false) {
 
     is_array_map = stream->is_array();
     union_type = stream->cfeed_type();
@@ -2007,7 +2007,7 @@ fold_datum_stream_t::fold_datum_stream_t(
     emit_func(std::move(_emit_func)),
     final_emit_func(std::move(_final_emit_func)),
     acc(_base),
-    uses_final_emit(true) {
+    do_final_emit(true) {
 
     is_array_map = stream->is_array();
     union_type = stream->cfeed_type();
@@ -2063,11 +2063,14 @@ fold_datum_stream_t::next_raw_batch(env_t *env, const batchspec_t &batchspec) {
 	}
     }
 
-    if (uses_final_emit) {
+    if (is_exhausted() && do_final_emit) {
         std::vector<datum_t> final_emit_args;
 	final_emit_args.push_back(acc);
 	datum_t final_emit_elem = final_emit_func->call(env, final_emit_args)->as_datum();
 	batch.push_back(std::move(final_emit_elem));
+
+	// So that accumulate_all will work
+	do_final_emit=false;
     }
 
     return batch;
