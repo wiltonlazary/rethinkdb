@@ -1986,7 +1986,28 @@ fold_datum_stream_t::fold_datum_stream_t(
     stream(std::move(_stream)),
     acc_func(std::move(_acc_func)),
     emit_func(std::move(_emit_func)),
-    acc(_base) {
+    acc(_base),
+    uses_final_emit(false) {
+
+    is_array_map = stream->is_array();
+    union_type = stream->cfeed_type();
+    is_infinite_map = stream->is_infinite();
+}
+
+fold_datum_stream_t::fold_datum_stream_t(
+	counted_t<datum_stream_t> &&_stream,
+	datum_t _base, 
+	counted_t<const func_t> &&_acc_func,
+	counted_t<const func_t> &&_emit_func,
+	counted_t<const func_t> &&_final_emit_func,
+	backtrace_id_t bt)
+  : eager_datum_stream_t(bt),
+    stream(std::move(_stream)),
+    acc_func(std::move(_acc_func)),
+    emit_func(std::move(_emit_func)),
+    final_emit_func(std::move(_final_emit_func)),
+    acc(_base),
+    uses_final_emit(true) {
 
     is_array_map = stream->is_array();
     union_type = stream->cfeed_type();
@@ -2037,6 +2058,13 @@ fold_datum_stream_t::next_raw_batch(env_t *env, const batchspec_t &batchspec) {
 	if (batcher.should_send_batch()) {
 	    break;
 	}
+    }
+
+    if (uses_final_emit) {
+        std::vector<datum_t> final_emit_args;
+	final_emit_args.push_back(acc);
+	datum_t final_emit_elem = final_emit_func->call(env, final_emit_args)->as_datum();
+	batch.push_back(std::move(final_emit_elem));
     }
 
     return batch;

@@ -390,10 +390,17 @@ private:
 
 class fold_datum_stream_t : public eager_datum_stream_t {
 public:
-  fold_datum_stream_t(counted_t<datum_stream_t> &&stream,
-			datum_t base, //TODO?
+    fold_datum_stream_t(counted_t<datum_stream_t> &&stream,
+			datum_t base,
+		        counted_t<const func_t> &&_acc_func,
+			counted_t<const func_t> &&_emit_func,
+			backtrace_id_t bt);
+
+    fold_datum_stream_t(counted_t<datum_stream_t> &&stream,
+			datum_t base,
 			counted_t<const func_t> &&_acc_func,
 			counted_t<const func_t> &&_emit_func,
+			counted_t<const func_t> &&_final_emit_func,
 			backtrace_id_t bt);
 
     virtual std::vector<datum_t>
@@ -417,10 +424,12 @@ private:
     counted_t<datum_stream_t> stream;
     counted_t<const func_t> acc_func;
     counted_t<const func_t> emit_func;
+    counted_t<const func_t> final_emit_func;
     feed_type_t union_type;
     bool is_array_map, is_infinite_map;
 
     datum_t acc;
+    bool uses_final_emit;
 };
 
 // Every shard is in a particular state.  ACTIVE means we should read more data

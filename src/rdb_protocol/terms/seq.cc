@@ -237,7 +237,7 @@ private:
 	    use_final_emit = true;
 	}
 
-        if (!use_emit && !use_final_emit ) {
+        if (!use_emit) {
 	    //Handle case without emit function
 	    datum_t result = base;
 	    batchspec_t batchspec = batchspec_t::user(batch_type_t::TERMINAL, env->env);
@@ -255,19 +255,39 @@ private:
 		}
 	    }
 
-	    return new_val(result);
-        } else if (use_emit && !use_final_emit) {
-	    counted_t<const func_t> emit_func = emit_arg->as_func();
-	    counted_t<datum_stream_t> fold_stream
-	      = make_counted<fold_datum_stream_t>(std::move(stream),
-						  base,
-						  std::move(acc_func),
-						  std::move(emit_func),
-						  backtrace());
-	    return new_val(env->env, fold_stream);
+	    if (use_final_emit) {
+		datum_t final_result;
+		std::vector<datum_t> final_args;
+		final_args.push_back(std::move(result));
+
+		counted_t<const func_t> final_emit_func = final_emit_arg->as_func();
+		final_result = final_emit_func->call(env->env, final_args)->as_datum();
+		return new_val(final_result);
+	    } else {
+		return new_val(result);
+	    }
         } else {
-	    crash("TODO");
-	}
+	    counted_t<const func_t> emit_func = emit_arg->as_func();
+	    counted_t<datum_stream_t> fold_stream;
+	    if (use_final_emit) {
+		counted_t<const func_t> final_emit_func = final_emit_arg->as_func();
+		fold_stream
+		    = make_counted<fold_datum_stream_t>(std::move(stream),
+							base,
+							std::move(acc_func),
+							std::move(emit_func),
+							std::move(final_emit_func),
+							backtrace());
+	    } else {
+		fold_stream
+		    = make_counted<fold_datum_stream_t>(std::move(stream),
+							base,
+							std::move(acc_func),
+							std::move(emit_func),
+							backtrace());
+	    }
+	    return new_val(env->env, fold_stream);
+        }
     }
     virtual const char *name() const { return "fold"; }
 };
