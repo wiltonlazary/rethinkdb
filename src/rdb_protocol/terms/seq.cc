@@ -226,67 +226,67 @@ private:
                    strprintf("The accumulator function passed to `fold`"
                              " should expect 2 arguments"));
         }
-	bool use_emit = false;
-	bool use_final_emit = false;
-	scoped_ptr_t<val_t> emit_arg;
-	scoped_ptr_t<val_t> final_emit_arg;
-	if ((emit_arg = args->optarg(env, "emit"))) {
-	    use_emit = true;
-	}
-	if ((final_emit_arg = args->optarg(env, "final_emit"))) {
-	    use_final_emit = true;
-	}
+        bool use_emit = false;
+        bool use_final_emit = false;
+        scoped_ptr_t<val_t> emit_arg;
+        scoped_ptr_t<val_t> final_emit_arg;
+        if ((emit_arg = args->optarg(env, "emit"))) {
+            use_emit = true;
+        }
+        if ((final_emit_arg = args->optarg(env, "final_emit"))) {
+            use_final_emit = true;
+        }
 
         if (!use_emit) {
-	    //Handle case without emit function
-	    datum_t result = base;
-	    batchspec_t batchspec = batchspec_t::user(batch_type_t::TERMINAL, env->env);
-	    {
-	        datum_t row;
-		std::vector<datum_t> acc_args;
-		while (row = stream->next(env->env, batchspec), row.has()) {
-		    acc_args.push_back(std::move(result));
-		    acc_args.push_back(std::move(row));
+            //Handle case without emit function
+            datum_t result = base;
+            batchspec_t batchspec = batchspec_t::user(batch_type_t::TERMINAL, env->env);
+            {
+                datum_t row;
+                std::vector<datum_t> acc_args;
+                while (row = stream->next(env->env, batchspec), row.has()) {
+                    acc_args.push_back(std::move(result));
+                    acc_args.push_back(std::move(row));
 
-		    result = acc_func->call(env->env, acc_args)->as_datum();
+                    result = acc_func->call(env->env, acc_args)->as_datum();
 
-		    r_sanity_check(result.has());
-		    acc_args.clear();
-		}
-	    }
+                    r_sanity_check(result.has());
+                    acc_args.clear();
+                }
+            }
 
-	    if (use_final_emit) {
-		datum_t final_result;
-		std::vector<datum_t> final_args;
-		final_args.push_back(std::move(result));
+            if (use_final_emit) {
+                datum_t final_result;
+                std::vector<datum_t> final_args;
+                final_args.push_back(std::move(result));
 
-		counted_t<const func_t> final_emit_func = final_emit_arg->as_func();
-		final_result = final_emit_func->call(env->env, final_args)->as_datum();
-		return new_val(final_result);
-	    } else {
-		return new_val(result);
-	    }
+                counted_t<const func_t> final_emit_func = final_emit_arg->as_func();
+                final_result = final_emit_func->call(env->env, final_args)->as_datum();
+                return new_val(final_result);
+            } else {
+                return new_val(result);
+            }
         } else {
-	    counted_t<const func_t> emit_func = emit_arg->as_func();
-	    counted_t<datum_stream_t> fold_stream;
-	    if (use_final_emit) {
-		counted_t<const func_t> final_emit_func = final_emit_arg->as_func();
-		fold_stream
-		    = make_counted<fold_datum_stream_t>(std::move(stream),
-							base,
-							std::move(acc_func),
-							std::move(emit_func),
-							std::move(final_emit_func),
-							backtrace());
-	    } else {
-		fold_stream
-		    = make_counted<fold_datum_stream_t>(std::move(stream),
-							base,
-							std::move(acc_func),
-							std::move(emit_func),
-							backtrace());
-	    }
-	    return new_val(env->env, fold_stream);
+            counted_t<const func_t> emit_func = emit_arg->as_func();
+            counted_t<datum_stream_t> fold_stream;
+            if (use_final_emit) {
+                counted_t<const func_t> final_emit_func = final_emit_arg->as_func();
+                fold_stream
+                    = make_counted<fold_datum_stream_t>(std::move(stream),
+                                                        base,
+                                                        std::move(acc_func),
+                                                        std::move(emit_func),
+                                                        std::move(final_emit_func),
+                                                        backtrace());
+            } else {
+                fold_stream
+                    = make_counted<fold_datum_stream_t>(std::move(stream),
+                                                        base,
+                                                        std::move(acc_func),
+                                                        std::move(emit_func),
+                                                        backtrace());
+            }
+            return new_val(env->env, fold_stream);
         }
     }
     virtual const char *name() const { return "fold"; }

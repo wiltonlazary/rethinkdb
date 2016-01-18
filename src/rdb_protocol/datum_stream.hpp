@@ -391,17 +391,17 @@ private:
 class fold_datum_stream_t : public eager_datum_stream_t {
 public:
     fold_datum_stream_t(counted_t<datum_stream_t> &&stream,
-			datum_t base,
-		        counted_t<const func_t> &&_acc_func,
-			counted_t<const func_t> &&_emit_func,
-			backtrace_id_t bt);
+                        datum_t base,
+                        counted_t<const func_t> &&_acc_func,
+                        counted_t<const func_t> &&_emit_func,
+                        backtrace_id_t bt);
 
     fold_datum_stream_t(counted_t<datum_stream_t> &&stream,
-			datum_t base,
-			counted_t<const func_t> &&_acc_func,
-			counted_t<const func_t> &&_emit_func,
-			counted_t<const func_t> &&_final_emit_func,
-			backtrace_id_t bt);
+                        datum_t base,
+                        counted_t<const func_t> &&_acc_func,
+                        counted_t<const func_t> &&_emit_func,
+                        counted_t<const func_t> &&_final_emit_func,
+                        backtrace_id_t bt);
 
     virtual std::vector<datum_t>
     next_raw_batch(env_t *env, const batchspec_t &batchspec);
@@ -413,11 +413,11 @@ public:
     virtual bool is_exhausted() const;
 
     virtual feed_type_t cfeed_type() const {
-      return union_type;
+        return union_type;
     }
 
     virtual bool is_infinite() const {
-      return is_infinite_map;
+        return is_infinite_map;
     }
 
 private:
