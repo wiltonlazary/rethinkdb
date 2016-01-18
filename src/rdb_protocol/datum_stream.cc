@@ -2034,43 +2034,43 @@ fold_datum_stream_t::next_raw_batch(env_t *env, const batchspec_t &batchspec) {
 
     while (!is_exhausted()) {
         datum_t row = stream->next(env, batchspec_inner);
-	acc_args.push_back(acc);
-	acc_args.push_back(row);
-	datum_t new_acc = acc_func->call(env, acc_args)->as_datum();
+        acc_args.push_back(acc);
+        acc_args.push_back(row);
+        datum_t new_acc = acc_func->call(env, acc_args)->as_datum();
 
-	r_sanity_check(new_acc.has());
+        r_sanity_check(new_acc.has());
 
-	emit_args.push_back(acc);
-	emit_args.push_back(row);
-	emit_args.push_back(new_acc);
-	datum_t emit_elem = emit_func->call(env, emit_args)->as_datum();
+        emit_args.push_back(acc);
+        emit_args.push_back(row);
+        emit_args.push_back(new_acc);
+        datum_t emit_elem = emit_func->call(env, emit_args)->as_datum();
 
-	r_sanity_check(emit_elem.has());
+        r_sanity_check(emit_elem.has());
 
-	batcher.note_el(emit_elem);
+        batcher.note_el(emit_elem);
 
-	for (size_t i=0;i<emit_elem.arr_size();++i) {
-	    batch.push_back(std::move(emit_elem.get(i)));
-	}
+        for (size_t i=0;i<emit_elem.arr_size();++i) {
+            batch.push_back(std::move(emit_elem.get(i)));
+        }
 
-	acc_args.clear();
-	emit_args.clear();
+        acc_args.clear();
+        emit_args.clear();
 
-	acc = std::move(new_acc);
+        acc = std::move(new_acc);
 
-	if (batcher.should_send_batch()) {
-	    break;
+        if (batcher.should_send_batch()) {
+            break;
 	}
     }
 
     if (is_exhausted() && do_final_emit) {
         std::vector<datum_t> final_emit_args;
-	final_emit_args.push_back(acc);
-	datum_t final_emit_elem = final_emit_func->call(env, final_emit_args)->as_datum();
-	batch.push_back(std::move(final_emit_elem));
+        final_emit_args.push_back(acc);
+        datum_t final_emit_elem = final_emit_func->call(env, final_emit_args)->as_datum();
+        batch.push_back(std::move(final_emit_elem));
 
-	// So that accumulate_all will work
-	do_final_emit=false;
+        // So that accumulate_all will work
+        do_final_emit=false;
     }
 
     return batch;
