@@ -253,8 +253,6 @@ counted_t<term_t> make_fold_term(
     compile_env_t *env, const raw_term_t &term);
 counted_t<term_t> make_filter_term(
     compile_env_t *env, const raw_term_t &term);
-counted_t<term_t> make_filter_term(
-    compile_env_t *env, const raw_term_t &term);
 counted_t<term_t> make_concatmap_term(
     compile_env_t *env, const raw_term_t &term);
 counted_t<term_t> make_group_term(

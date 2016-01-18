@@ -446,7 +446,7 @@ struct rcheck_transform_visitor_t : public bt_rcheckable_t,
             rfail(base_exc_t::LOGIC, "Cannot call `changes` after `concat_map`.");
             // fallthru
 
-	default: unreachable();
+        default: unreachable();
         }
     }
     NORETURN void operator()(const group_wire_func_t &) const {
