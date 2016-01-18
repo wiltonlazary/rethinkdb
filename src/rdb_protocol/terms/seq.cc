@@ -213,7 +213,7 @@ public:
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
         counted_t<datum_stream_t> stream = args->arg(env, 0)->as_seq(env->env);
-	
+
         datum_t base = args->arg(env, 1)->as_datum();
 
         counted_t<const func_t> acc_func =
@@ -445,7 +445,8 @@ struct rcheck_transform_visitor_t : public bt_rcheckable_t,
         case result_hint_t::NO_HINT:
             rfail(base_exc_t::LOGIC, "Cannot call `changes` after `concat_map`.");
             // fallthru
-        default: unreachable();
+
+	default: unreachable();
         }
     }
     NORETURN void operator()(const group_wire_func_t &) const {

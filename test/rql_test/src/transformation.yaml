@@ -113,7 +113,7 @@ tests:
       ot: "STREAM"
     - py: tbl.filter("id").fold(0, lambda acc, _: acc.add(1), emit=lambda old,row,acc: r.branch(old.mod(20).eq(0),[row],[])).coerce_to("array")
       ot: [{u'a': 0, u'id': 20}, {u'a': 3, u'id': 15}, {u'a': 2, u'id': 46}, {u'a': 2, u'id': 78}, {u'a': 2, u'id': 90}]
-      
+
     # Concat-map
     - py: tbl.concat_map(lambda row:[])
       js: tbl.concatMap(function(row) { return []; })

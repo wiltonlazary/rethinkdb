@@ -1996,7 +1996,7 @@ fold_datum_stream_t::fold_datum_stream_t(
 
 fold_datum_stream_t::fold_datum_stream_t(
 	counted_t<datum_stream_t> &&_stream,
-	datum_t _base, 
+	datum_t _base,
 	counted_t<const func_t> &&_acc_func,
 	counted_t<const func_t> &&_emit_func,
 	counted_t<const func_t> &&_final_emit_func,
