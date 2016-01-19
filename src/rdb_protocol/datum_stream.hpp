@@ -407,7 +407,7 @@ public:
     next_raw_batch(env_t *env, const batchspec_t &batchspec);
 
     virtual bool is_array() const {
-        return is_array_map;
+        return is_array_fold;
     }
 
     virtual bool is_exhausted() const;
@@ -417,7 +417,7 @@ public:
     }
 
     virtual bool is_infinite() const {
-        return is_infinite_map;
+        return is_infinite_fold;
     }
 
 private:
@@ -426,7 +426,7 @@ private:
     counted_t<const func_t> emit_func;
     counted_t<const func_t> final_emit_func;
     feed_type_t union_type;
-    bool is_array_map, is_infinite_map;
+    bool is_array_fold, is_infinite_fold;
 
     datum_t acc;
     bool do_final_emit;

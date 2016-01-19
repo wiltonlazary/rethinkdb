@@ -1989,9 +1989,9 @@ fold_datum_stream_t::fold_datum_stream_t(
     acc(_base),
     do_final_emit(false) {
 
-    is_array_map = stream->is_array();
+    is_array_fold = stream->is_array();
     union_type = stream->cfeed_type();
-    is_infinite_map = stream->is_infinite();
+    is_infinite_fold = stream->is_infinite();
 }
 
 fold_datum_stream_t::fold_datum_stream_t(
@@ -2009,14 +2009,14 @@ fold_datum_stream_t::fold_datum_stream_t(
     acc(_base),
     do_final_emit(true) {
 
-    is_array_map = stream->is_array();
+    is_array_fold = stream->is_array();
     union_type = stream->cfeed_type();
-    is_infinite_map = stream->is_infinite();
+    is_infinite_fold = stream->is_infinite();
 }
 
 std::vector<datum_t>
 fold_datum_stream_t::next_raw_batch(env_t *env, const batchspec_t &batchspec) {
-    rcheck(!is_infinite_map
+    rcheck(!is_infinite_fold
 	   || batchspec.get_batch_type() == batch_type_t::NORMAL
 	   || batchspec.get_batch_type() == batch_type_t::NORMAL_FIRST,
 	   base_exc_t::LOGIC,
@@ -2049,7 +2049,7 @@ fold_datum_stream_t::next_raw_batch(env_t *env, const batchspec_t &batchspec) {
 
         batcher.note_el(emit_elem);
 
-        for (size_t i=0;i<emit_elem.arr_size();++i) {
+        for (size_t i = 0;i < emit_elem.arr_size();++i) {
             batch.push_back(std::move(emit_elem.get(i)));
         }
 
@@ -2071,7 +2071,7 @@ fold_datum_stream_t::next_raw_batch(env_t *env, const batchspec_t &batchspec) {
         batch.push_back(std::move(final_emit_elem));
 
         // So that accumulate_all will work
-        do_final_emit=false;
+        do_final_emit = false;
     }
 
     return batch;

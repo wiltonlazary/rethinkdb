@@ -220,7 +220,7 @@ private:
             args->arg(env, 2)->as_func();
         boost::optional<std::size_t> acc_func_arity = acc_func->arity();
 
-        if (!!acc_func_arity) {
+        if (static_cast<bool>(acc_func_arity)) {
             rcheck(acc_func_arity.get() == 0 || acc_func_arity.get() == 2,
                    base_exc_t::LOGIC,
                    strprintf("The accumulator function passed to `fold`"
