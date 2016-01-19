@@ -665,10 +665,10 @@ public:
     virtual ~empty_reader_t() {}
     virtual void add_transformation(transform_variant_t &&) {}
     virtual bool add_stamp(changefeed_stamp_t) {
-        return false;
+        r_sanity_fail();
     }
     virtual boost::optional<active_state_t> get_active_state() {
-        return boost::optional<active_state_t>();
+        r_sanity_fail();
     }
     virtual void accumulate(env_t *, eager_acc_t *, const terminal_variant_t &) {}
     virtual void accumulate_all(env_t *, eager_acc_t *) {}

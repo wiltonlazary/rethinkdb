@@ -1704,7 +1704,7 @@ public:
                 bool include_states)
     // There will never be any changes, safe to start squashing right away.
     : flat_sub_t(init_squashing_queue_t::YES,
-		 feed, std::move(limits), squash, include_states),
+                 feed, std::move(limits), squash, include_states),
       state(state_t::INITIALIZING),
       sent_state(state_t::NONE),
       include_initial(false) {
@@ -1745,7 +1745,7 @@ public:
         return make_counted<stream_t<subscription_t> >(std::move(self), bt);
     }
     virtual counted_t<datum_stream_t> to_artificial_stream(
-	const uuid_u &,
+        const uuid_u &,
         const std::string &,
         const std::vector<datum_t> &,
         bool _include_initial,
