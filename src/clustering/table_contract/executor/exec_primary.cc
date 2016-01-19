@@ -370,6 +370,15 @@ bool primary_execution_t::sync_committed_read(const read_t &read_request,
     mutex_assertion_t::acq_t begin_write_mutex_acq(&begin_write_mutex);
     counted_t<contract_info_t> contract_snapshot = latest_contract_store_thread;
 
+    if (static_cast<bool>(contract_snapshot->contract.primary->hand_over)) {
+        *error_out = admin_err_t{
+            "The primary replica is currently changing from one replica to "
+            "another. The read could not be guaranteed as committed. This error "
+            "should go away in a couple of seconds.",
+            query_state_t::FAILED};
+        return false;
+    }
+
     write_callback_t write_callback(&response,
                                     write_durability_t::HARD,
                                     write_ack_config_t::MAJORITY,
@@ -385,7 +394,7 @@ bool primary_execution_t::sync_committed_read(const read_t &read_request,
         *error_out = admin_err_t{
             "The primary replica lost contact with the secondary "
             "replicas. The read could not be guaranteed as committed.",
-            query_state_t::INDETERMINATE};
+            query_state_t::FAILED};
     }
     return res;
 }
@@ -520,7 +529,11 @@ void primary_execution_t::sync_contract_with_replicas(
         signal_t *interruptor) {
     store->assert_thread();
     guarantee(our_dispatcher != nullptr);
-    while (!interruptor->is_pulsed()) {
+    while (true) {
+        if (interruptor->is_pulsed()) {
+            throw interrupted_exc_t();
+        }
+
         /* Wait until it looks like the write could go through */
         our_dispatcher->get_ready_dispatchees()->run_until_satisfied(
             [&](const std::set<server_id_t> &servers) {
@@ -562,14 +575,14 @@ bool primary_execution_t::is_contract_ackable(
     /* If it's a regular contract, we can ack it as soon as we send a sync to a quorum of
     replicas. If it's a hand-over contract, we can ack it as soon as we send a sync to
     the new primary. */
-    if (!static_cast<bool>(contract_info->contract.primary->hand_over)) {
-        ack_counter_t ack_counter(contract_info->contract);
-        for (const server_id_t &s : servers) {
-            ack_counter.note_ack(s);
-        }
-        return ack_counter.is_safe();
-    } else {
-        return servers.count(*contract_info->contract.primary->hand_over) == 1;
+    // TODO! Test this and make sure it's correct.
+    ack_counter_t ack_counter(contract_info->contract);
+    for (const server_id_t &s : servers) {
+        ack_counter.note_ack(s);
+    }
+    if (static_cast<bool>(contract_info->contract.primary->hand_over)) {
+        return ack_counter.is_safe() &&
+            servers.count(*contract_info->contract.primary->hand_over) == 1;
     }
 }
 

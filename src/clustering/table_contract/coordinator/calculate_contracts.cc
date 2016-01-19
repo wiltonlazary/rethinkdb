@@ -256,6 +256,9 @@ contract_t calculate_contract(
                 acks.count(old_c.primary->server) == 1 &&
                 acks.at(old_c.primary->server).state ==
                     contract_ack_t::state_t::primary_ready) {
+            /* The `acks` we just checked are based on `old_c`, so we really shouldn't
+            commit any different set of `temp_voters`. */
+            guarantee(new_c.temp_voters == old_c.temp_voters);
             /* OK, it's safe to commit. */
             new_c.voters = *new_c.temp_voters;
             new_c.temp_voters = boost::none;
