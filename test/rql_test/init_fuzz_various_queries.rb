@@ -111,7 +111,18 @@ for nshards in [1, 2, 5]
         q.changes.em_run($handlers.last, $opts)
       end
       EM.defer {
+        start_time = Time.now
         while $num_running != 0
+          elapsed_time = Time.now.to_f - start_time.to_f
+          execution_timeout = 60
+          if elapsed_time > execution_timeout
+            for h in $handlers
+              h.stop
+            end
+            EM.stop
+            raise RuntimeError, "Reached time limit of #{execution_timeout}s in write loop"
+          end
+
           id = $gen.rand($ndocs)
           res = $tbl.get(id).delete(:return_changes => true).run
           $wlog << [id, res]
