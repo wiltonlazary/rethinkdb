@@ -583,6 +583,8 @@ bool primary_execution_t::is_contract_ackable(
     if (static_cast<bool>(contract_info->contract.primary->hand_over)) {
         return ack_counter.is_safe() &&
             servers.count(*contract_info->contract.primary->hand_over) == 1;
+    } else {
+        return ack_counter.is_safe();
     }
 }
 
