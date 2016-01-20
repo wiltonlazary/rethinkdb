@@ -1677,6 +1677,59 @@ private:
     union_datum_stream_t *parent;
 };
 
+ordered_union_datum_stream_t::ordered_union_datum_stream_t(
+    std::vector<counted_t<datum_stream_t> > &&_streams,
+    backtrace_id_t bt)
+    : eager_datum_stream_t(bt),
+      union_type(feed_type_t::not_feed),
+      is_infinite_ordered_union(false) {
+   for (const auto &stream : _streams) {
+        union_type = union_of(union_type, stream->cfeed_type());
+        is_infinite_ordered_union |= stream->is_infinite();
+        is_array_ordered_union &= stream->is_array();
+    }
+    for (auto &&stream : _streams) {
+        streams.push_back(std::move(stream));
+    }
+}
+
+std::vector<datum_t> ordered_union_datum_stream_t::next_raw_batch(env_t *env, const batchspec_t &batchspec) {
+    rcheck(!is_infinite_ordered_union
+           || batchspec.get_batch_type() == batch_type_t::NORMAL
+           || batchspec.get_batch_type() == batch_type_t::NORMAL_FIRST,
+           base_exc_t::LOGIC,
+           "Cannot use an infinite stream with an ordered `union`.");
+    std::vector<datum_t> batch;
+    batcher_t batcher = batchspec.to_batcher();
+
+    // We need a separate batchspec for the streams to prevent calling `stream->next`
+    // with a `batch_type_t::TERMINAL` on an infinite stream.
+    batchspec_t batchspec_inner = batchspec_t::default_for(batch_type_t::NORMAL);
+
+    while (!streams.front()->is_exhausted()) {
+        datum_t row = streams.front()->next(env, batchspec_inner);
+        batcher.note_el(row);
+        batch.push_back(std::move(row));
+
+        if (streams.front()->is_exhausted()) {
+            if (streams.size() > 1) {
+                streams.pop_front();
+            }
+        }
+        if (batcher.should_send_batch()) {
+            break;
+        }
+    }
+    return batch;
+}
+
+bool ordered_union_datum_stream_t::is_exhausted() const {
+    if (streams.size() == 1 && streams.front()->is_exhausted()) {
+        return batch_cache_exhausted();
+    }
+    return false;
+}
+
 // The maximum number of reads that a union_datum_stream spawns on its substreams
 // at a time. This limit does not apply to changefeed streams.
 const size_t MAX_CONCURRENT_UNION_READS = 32;

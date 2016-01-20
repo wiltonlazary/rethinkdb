@@ -262,6 +262,34 @@ private:
 struct coro_info_t;
 class coro_stream_t;
 
+class ordered_union_datum_stream_t : public eager_datum_stream_t {
+public:
+    ordered_union_datum_stream_t(std::vector<counted_t<datum_stream_t> > &&_streams,
+                                 backtrace_id_t bt);
+    virtual std::vector<datum_t>
+    next_raw_batch(env_t *env, const batchspec_t &batchspec);
+
+    virtual bool is_array() const {
+        return is_array_ordered_union;
+    }
+
+    virtual bool is_exhausted() const;
+
+    virtual feed_type_t cfeed_type() const {
+        return union_type;
+    }
+
+    virtual bool is_infinite() const {
+        return is_infinite_ordered_union;
+    }
+
+private:
+    std::deque<counted_t<datum_stream_t>> streams;
+
+    feed_type_t union_type;
+    bool is_array_ordered_union, is_infinite_ordered_union;
+};
+
 class union_datum_stream_t : public datum_stream_t, public home_thread_mixin_t {
 public:
     union_datum_stream_t(env_t *env,
