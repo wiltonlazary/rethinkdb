@@ -261,7 +261,7 @@ int windows_runtime_debug_failure_handler(int type, char *message, int *retval) 
     return false;
 }
 
-BOOL windows_ctrl_handler(DWORD type) {
+BOOL WINAPI windows_ctrl_handler(DWORD type) {
     if (type != CTRL_C_EVENT && type != CTRL_BREAK_EVENT) {
         return false;
     }
