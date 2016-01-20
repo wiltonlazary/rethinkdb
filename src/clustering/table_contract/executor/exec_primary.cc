@@ -575,16 +575,14 @@ bool primary_execution_t::is_contract_ackable(
     /* If it's a regular contract, we can ack it as soon as we send a sync to a quorum of
     replicas. If it's a hand-over contract, we can ack it as soon as we send a sync to
     the new primary. */
-    // TODO! Test this and make sure it's correct.
-    ack_counter_t ack_counter(contract_info->contract);
-    for (const server_id_t &s : servers) {
-        ack_counter.note_ack(s);
-    }
-    if (static_cast<bool>(contract_info->contract.primary->hand_over)) {
-        return ack_counter.is_safe() &&
-            servers.count(*contract_info->contract.primary->hand_over) == 1;
-    } else {
+    if (!static_cast<bool>(contract_info->contract.primary->hand_over)) {
+        ack_counter_t ack_counter(contract_info->contract);
+        for (const server_id_t &s : servers) {
+            ack_counter.note_ack(s);
+        }
         return ack_counter.is_safe();
+    } else {
+        return servers.count(*contract_info->contract.primary->hand_over) == 1;
     }
 }
 
