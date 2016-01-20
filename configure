@@ -20,6 +20,7 @@ init () {
     min_browserify_version=3.0.0
     max_browserify_version=12.0.1
     min_python_version=2.6.0
+    min_msbuild_version=14.0
 
     must_fetch_list='bluebird v8'
     please_fetch_list="handlebars gtest re2 $must_fetch_list"
@@ -56,6 +57,15 @@ configure () {
             var $var "$val"
         fi
     done
+    check_windows
+    if $windows; then
+        configure_windows
+    else
+        configure_unixlike
+    fi
+}
+
+configure_unixlike () {
     var LIB_SEARCH_PATHS $(for path in $lib_paths; do echo " -L$path"; done)
     require "Use ccache"
     boolvar USE_CCACHE $use_ccache
@@ -177,6 +187,17 @@ configure () {
     fi
 }
 
+configure_windows () {
+    require MSBuild
+    check_msbuild
+    require Precompiled assets
+    check_precompiled
+    for pkg in protobuf curl v8 zlib re2 openssl gtest; do
+        require_dep $pkg
+        fetch_lib $pkg
+    done
+}
+
 # Entry point
 main () {
     init
@@ -238,6 +259,7 @@ read_args () {
     custom_allocator=
     enable_precompiled_web=
     use_ccache=false
+    require_windows=false
 
     while [[ $# -ne 0 ]]; do
         arg=${1#*=}
@@ -254,7 +276,7 @@ read_args () {
             has_arg=shift
         fi
         option="${1%%=*}"
-        case "$option" in
+        case "$option" in 
             --debug-configure) $no_arg; set -x ;;
             --config) $has_arg; config=$arg ;;
             --continue) $no_arg; exit_on_error=false ;;
@@ -298,6 +320,7 @@ read_args () {
             --prefix) $has_arg; arg_prefix=$arg ;;
             --sysconfdir) $has_arg; arg_sysconfdir=$arg ;;
             --localstatedir) $has_arg; arg_localstatedir=$arg ;;
+            --windows) $no_arg; require_windows=true ;;
             --help) show_help; exit ;;
             -*) die "Unknown option '$option'" ;;
             *) if contains "$all_deps" "$(lc $option)"; then
@@ -648,7 +671,7 @@ test_bin_version () {
     test -z "$min$max$invalid" && return 0
     local output
     local ver
-    if output=$("$2" --version 2>&1) &&
+    if output=$("$2" ${3:---version} 2>&1) &&
        ver=$(echo "$output" | extract_version_string) &&
        test -n "$ver" ;
     then
@@ -1216,6 +1239,39 @@ check_admin_deps () {
     add_fetch admin-deps
     macro "GULP"         "\$(abspath \$(SUPPORT_BUILD_DIR)/admin-deps_$version/bin/gulp)"
     macro "GULP_BIN_DEP" "\$(SUPPORT_BUILD_DIR)/admin-deps_$version/bin/gulp"
+}
+
+check_msbuild () {
+    # TODO: where else does msbuild hide?
+    MSBUILD=${MSBUILD:-/cygdrive/c/Program\ Files\ \(x86\)/MSBuild/14.0/Bin/MSBuild.exe}
+    if test -x "$MSBUILD"; then
+       test_bin_version msbuild "$MSBUILD" /version
+       var MSBUILD "$MSBUILD"
+    else
+        not_found MSBUILD
+    fi
+}
+
+check_precompiled () {
+    if test -d precompiled; then
+        show yes
+    else
+        error "The 'precompiled/' folder is missing. Get it from a RethinkDB source tarball or build it on linux."
+    fi
+}
+
+check_windows () {
+    if winver=`cmd /c ver | xargs` 2>&1; then
+        require "Operating System"
+        show "$winver"
+        windows=true
+        OS=Windows
+    elif $require_windows; then
+        require Windows
+        error "Not running on windows"
+    else
+        windows=false
+    fi
 }
 
 # The root of the source tree
