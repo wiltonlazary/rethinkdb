@@ -53,9 +53,7 @@
         <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='{$config-tuple}'">
           <LinkIncremental>true</LinkIncremental>
           <IncludePath>$(ProjectDir)\precompiled\proto;$(ProjectDir)\src;$(IncludePath)</IncludePath>
-          <LibraryPath>
-            $(ProjectDir)\windows_deps\lib\<xsl:value-of select="@platform" />\<xsl:value-of select="@configuration" />;$(LibraryPath)
-          </LibraryPath>
+          <LibraryPath>$(ProjectDir)\windows_deps\lib\<xsl:value-of select="@platform" />\<xsl:value-of select="@configuration" />;$(LibraryPath)</LibraryPath>
         </PropertyGroup>
 
         <ImportGroup Condition="'$(Configuration)|$(Platform)'=='{$config-tuple}'" Label="PropertySheets">

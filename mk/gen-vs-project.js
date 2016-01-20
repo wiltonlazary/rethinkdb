@@ -1,6 +1,6 @@
-# This script builds RethinkDB.vcxproj
-# From the template in mk/RethinkDB.vcxproj.xsl
-# Using the settings in Rethinkdb.vcxproj.xml
+// This script builds RethinkDB.vcxproj
+// From the template in mk/RethinkDB.vcxproj.xsl
+// Using the settings in Rethinkdb.vcxproj.xml
 
 function load(path) {
     var xml = new ActiveXObject("Msxml2.DOMDocument.6.0");
