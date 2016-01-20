@@ -15,4 +15,4 @@ format_output () {
       print unless m{^         x64/.*\.obj.?$}' # do not list all object files when linking
 }
 
-"$MSBUILD" /p:PlatformToolset=v140 /property:Platform=x64 /maxcpucount "$@" RethinkDB.vcxproj | format_output
+"$MSBUILD" /p:Configuration=Release /p:PlatformToolset=v140 /property:Platform=x64 /maxcpucount "$@" RethinkDB.vcxproj | format_output
