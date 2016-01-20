@@ -25,13 +25,13 @@ primary_execution_t::primary_execution_t(
         contract_id, contract, raft_state.config.config.durability,
         raft_state.config.config.write_ack_config);
     latest_contract_store_thread = latest_contract_home_thread;
-    begin_write_mutex.rethread(store->home_thread());
+    begin_write_mutex_assertion.rethread(store->home_thread());
     coro_t::spawn_sometime(std::bind(&primary_execution_t::run, this, drainer.lock()));
 }
 
 primary_execution_t::~primary_execution_t() {
     drainer.drain();
-    begin_write_mutex.rethread(home_thread());
+    begin_write_mutex_assertion.rethread(home_thread());
 }
 
 void primary_execution_t::update_contract_or_raft_state(
@@ -303,12 +303,17 @@ bool primary_execution_t::on_write(
     store->assert_thread();
     guarantee(our_dispatcher != nullptr);
 
-    /* `acq` ensures that `update_contract_on_store_thread()` doesn't run between when we
+    /* `acq` asserts that `update_contract_on_store_thread()` doesn't run between when we
     take `contract_snapshot` and when we call `spawn_write()`. This is important because
     `update_contract_on_store_thread()` needs to be able to make sure that all writes
     that see the old contract are spawned before it calls
     `sync_contract_with_replicas()`. */
-    mutex_assertion_t::acq_t begin_write_mutex_acq(&begin_write_mutex);
+    mutex_assertion_t::acq_t begin_write_mutex_acq(&begin_write_mutex_assertion);
+
+    /* The reason that the `begin_write_mutex_acq` holds, is because we don't block in
+    here nor anywhere else where we acquire the mutex assertion. */
+    DEBUG_ONLY(scoped_ptr_t<assert_finite_coro_waiting_t> finite_coro_waiting(
+                   make_scoped<assert_finite_coro_waiting_t>(__FILE__, __LINE__)));
 
     counted_t<contract_info_t> contract_snapshot = latest_contract_store_thread;
 
@@ -342,6 +347,7 @@ bool primary_execution_t::on_write(
     /* Now that we've called `spawn_write()`, our write is in the queue. So it's safe to
     release the `begin_write_mutex`; any calls to `update_contract_on_store_thread()`
     will enter the queue after us. */
+    DEBUG_ONLY(finite_coro_waiting.reset());
     begin_write_mutex_acq.reset();
 
     /* This will allow other calls to `on_write()` to happen. */
@@ -367,7 +373,11 @@ bool primary_execution_t::sync_committed_read(const read_t &read_request,
     write_t request = write_t::make_sync(read_request.get_region(),
                                          read_request.profile);
 
-    mutex_assertion_t::acq_t begin_write_mutex_acq(&begin_write_mutex);
+    /* See the comments in `on_write` for an explanation about why we're acquiring
+    `begin_write_mutex_assertion` here. */
+    mutex_assertion_t::acq_t begin_write_mutex_acq(&begin_write_mutex_assertion);
+    DEBUG_ONLY(scoped_ptr_t<assert_finite_coro_waiting_t> finite_coro_waiting(
+                   make_scoped<assert_finite_coro_waiting_t>(__FILE__, __LINE__)));
     counted_t<contract_info_t> contract_snapshot = latest_contract_store_thread;
 
     if (static_cast<bool>(contract_snapshot->contract.primary->hand_over)) {
@@ -385,6 +395,7 @@ bool primary_execution_t::sync_committed_read(const read_t &read_request,
                                     &contract_snapshot->contract);
     our_dispatcher->spawn_write(request, order_token, &write_callback);
 
+    DEBUG_ONLY(finite_coro_waiting.reset());
     begin_write_mutex_acq.reset();
 
     wait_interruptible(write_callback.result.get_ready_signal(), interruptor);
@@ -486,11 +497,13 @@ void primary_execution_t::update_contract_on_store_thread(
 
             /* Deliver the latest contract */
             {
-                /* We acquire `begin_write_mutex` to make sure we're not interleaving
-                with a call to `on_write()`. This way, we can be sure that any writes
-                that saw the old contract will enter the primary dispatcher's queue
-                before we call `sync_contract_with_replicas()`. */
-                mutex_assertion_t::acq_t begin_write_mutex_acq(&begin_write_mutex);
+                /* We acquire `begin_write_mutex_assertion` to assert that we're not
+                interleaving with a call to `on_write()`. This way, we can be sure that
+                any writes that saw the old contract will enter the primary dispatcher's
+                queue before we call `sync_contract_with_replicas()`. */
+                mutex_assertion_t::acq_t begin_write_mutex_acq(
+                    &begin_write_mutex_assertion);
+                ASSERT_FINITE_CORO_WAITING;
                 latest_contract_store_thread = contract;
             }
 
