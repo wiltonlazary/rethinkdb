@@ -150,7 +150,9 @@ raft_member_t<state_t>::~raft_member_t() {
 }
 
 template<class state_t>
-raft_persistent_state_t<state_t> raft_member_t<state_t>::get_state_for_init() {
+raft_persistent_state_t<state_t> raft_member_t<state_t>::get_state_for_init(
+        new_mutex_acq_t &mutex_acq_proof) {
+    mutex_acq_proof.guarantee_is_holding(&mutex);
     /* This implementation deviates from the Raft paper in that we initialize new peers
     joining the cluster by copying the log, snapshot, etc. from an existing peer, instead
     of starting the new peer with a blank state. */
@@ -230,7 +232,7 @@ raft_member_t<state_t>::propose_config_change(
     /* Raft paper, Section 6: "... the cluster first switches to a [joint consensus
     configuration]" */
     raft_complex_config_t new_complex_config;
-    new_complex_config.config = committed_state.get_ref().config.config;
+    new_complex_config.config = latest_state.get_ref().config.config;
     new_complex_config.new_config = boost::optional<raft_config_t>(new_config);
 
     raft_log_entry_t<state_t> new_entry;
@@ -655,10 +657,14 @@ void raft_member_t<state_t>::on_append_entries_rpc(
     but different terms), delete the existing entry and all that follow it" */
     bool conflict = false;
     raft_log_index_t first_nonmatching_index;
-    for (first_nonmatching_index =
-                std::max(request.entries.prev_index, ps().log.prev_index) + 1;
-            first_nonmatching_index <= std::min(
-                ps().log.get_latest_index(), request.entries.get_latest_index());
+    const raft_log_index_t max_index =
+        std::min(ps().log.get_latest_index(), request.entries.get_latest_index());
+    const raft_log_index_t min_index =
+        std::min(
+            max_index,
+            std::max(request.entries.prev_index, ps().log.prev_index) + 1);
+    for (first_nonmatching_index = min_index;
+            first_nonmatching_index <= max_index;
             ++first_nonmatching_index) {
         if (ps().log.get_entry_term(first_nonmatching_index) !=
                 request.entries.get_entry_term(first_nonmatching_index)) {
@@ -669,6 +675,7 @@ void raft_member_t<state_t>::on_append_entries_rpc(
 
     /* Raft paper, Figure 2: "Append any new entries not already in the log" */
     if (first_nonmatching_index != request.entries.get_latest_index() + 1) {
+        guarantee(first_nonmatching_index > ps().commit_index);
         storage->write_log_replace_tail(
             request.entries, first_nonmatching_index);
     }

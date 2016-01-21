@@ -538,20 +538,26 @@ void multi_table_manager_t::do_sync(
         boost::optional<raft_member_id_t> raft_member_id;
         boost::optional<raft_persistent_state_t<table_raft_state_t> >
             initial_raft_state;
-        table.active->get_raft()->get_committed_state()->apply_read(
-            [&](const raft_member_t<table_raft_state_t>::state_and_config_t *st) {
-                timestamp.log_index = st->log_index;
-                auto it = st->state.member_ids.find(other_server_id);
-                if (it != st->state.member_ids.end()) {
-                    action_status = action_status_t::ACTIVE;
-                    raft_member_id = boost::make_optional(it->second);
-                    initial_raft_state = boost::make_optional(
-                        table.active->get_raft()->get_state_for_init());
-                } else {
-                    action_status = action_status_t::INACTIVE;
-                    basic_config = boost::make_optional(st->state.config.config.basic);
-                }
-            });
+        {
+            scoped_ptr_t<new_mutex_acq_t> raft_mutex_acq =
+                table.active->get_raft()->get_mutex_acq();
+            table.active->get_raft()->get_committed_state()->apply_read(
+                [&](const raft_member_t<table_raft_state_t>::state_and_config_t *st) {
+                    timestamp.log_index = st->log_index;
+                    auto it = st->state.member_ids.find(other_server_id);
+                    if (it != st->state.member_ids.end()) {
+                        action_status = action_status_t::ACTIVE;
+                        raft_member_id = boost::make_optional(it->second);
+                        initial_raft_state = boost::make_optional(
+                            table.active->get_raft()->get_state_for_init(
+                                *raft_mutex_acq));
+                    } else {
+                        action_status = action_status_t::INACTIVE;
+                        basic_config =
+                            boost::make_optional(st->state.config.config.basic);
+                    }
+                });
+        }
 
         if (static_cast<bool>(table_bcard)) {
             /* If the peer already has an entry in the directory, we can use that to

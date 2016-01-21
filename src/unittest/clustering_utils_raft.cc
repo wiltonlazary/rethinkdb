@@ -71,7 +71,10 @@ raft_member_id_t dummy_raft_cluster_t::join() {
     bool found_init_state = false;
     for (const auto &pair : members) {
         if (pair.second->member_drainer.has()) {
-            init_state = pair.second->member->get_raft()->get_state_for_init();
+            scoped_ptr_t<new_mutex_acq_t> raft_mutex_acq =
+                pair.second->member->get_raft()->get_mutex_acq();
+            init_state =
+                pair.second->member->get_raft()->get_state_for_init(*raft_mutex_acq);
             found_init_state = true;
             break;
         }
