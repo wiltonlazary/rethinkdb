@@ -121,6 +121,10 @@ pkg_fetch () {
     fi
 }
 
+pkg_fetch-windows () {
+    pkg_fetch "$@"
+}
+
 pkg_move_tmp_to_src () {
     test -e "$src_dir" && rm -rf "$src_dir"
     mv "$tmp_dir" "$src_dir"
@@ -137,6 +141,12 @@ pkg_install-include () {
         mkdir -p "$install_dir/include"
         cp -RL "$src_dir/include/." "$install_dir/include"
     fi
+}
+
+pkg_install-include-windows () {
+    pkg_install-include "$@"
+    mkdir -p "$windows_deps/include/"
+    cp -R "$install_dir"/include/* "$windows_deps/include/"
 }
 
 pkg_configure () {
@@ -238,7 +248,15 @@ load_pkg () {
     fi
 
     src_dir=$(niceabspath "$external_dir/$pkg""_$version")
-    install_dir=$(niceabspath "$root_build_dir/external/$pkg""_$version")
+    if [ "$OS" = Windows ]; then
+        if [ "$DEBUG" = 1 ]; then
+            install_dir=$(niceabspath "$root_build_dir/external/$PLATFORM/Debug/$pkg""_$version")
+        else
+            install_dir=$(niceabspath "$root_build_dir/external/$PLATFORM/Release/$pkg""_$version")
+        fi
+    else
+        install_dir=$(niceabspath "$root_build_dir/external/$pkg""_$version")
+    fi
     build_dir=$(niceabspath "$install_dir/build")
 }
 
@@ -310,6 +328,7 @@ root_dir=$(niceabspath "$pkg_dir/../../..")
 conf_dir=$(niceabspath "$pkg_dir/../config")
 external_dir=$(niceabspath "$pkg_dir/../../../external")
 root_build_dir=${BUILD_ROOT_DIR:-$(niceabspath "$pkg_dir/../../../build")}
+windows_deps=$root_build_dir/windows_deps
 
 # These variables should be passed to this script from support/build.mk
 WGET=${WGET:-}
@@ -323,6 +342,9 @@ OS=${OS:-}
 # Read the command
 cmd=$1
 shift
+if [ "$OS" = "Windows" ]; then
+    cmd=$cmd-windows
+fi
 
 # Load the package
 load_pkg "$1"
