@@ -1698,6 +1698,7 @@ ordered_union_datum_stream_t::ordered_union_datum_stream_t(
 ordered_union_datum_stream_t::ordered_union_datum_stream_t(
     std::vector<counted_t<datum_stream_t> > &&_streams,
     datum_string_t _field,
+    raw_term_t r_term,
     backtrace_id_t bt)
     : eager_datum_stream_t(bt),
       union_type(feed_type_t::not_feed),
@@ -1706,7 +1707,6 @@ ordered_union_datum_stream_t::ordered_union_datum_stream_t(
       is_ordered_by_field(true),
       field(_field),
       do_prelim_cache(true) {
-
     for (const auto &stream : _streams) {
         union_type = union_of(union_type, stream->cfeed_type());
         is_infinite_ordered_union |= stream->is_infinite();
@@ -1714,6 +1714,15 @@ ordered_union_datum_stream_t::ordered_union_datum_stream_t(
     }
     for (auto &&stream : _streams) {
         streams.push_back(std::move(stream));
+    }
+
+    // This is hacky, but seems to be roughly how it's handled in order_by
+    boost::optional<raw_term_t> raw_field = r_term.optarg("interleave");
+    r_sanity_check(raw_field);
+    if ((*raw_field).type() == Term::DESC) {
+        merge_order = DESC;
+    } else {
+        merge_order = ASC;
     }
 }
 
@@ -1738,7 +1747,7 @@ std::vector<datum_t> ordered_union_datum_stream_t::next_raw_batch(env_t *env, co
             do_prelim_cache = false;
         }
         while (!is_exhausted()) {
-            int min_datum_pos=0;
+            int min_datum_pos = 0;
             for (size_t i = 0; i < merge_cache.size();++i) {
                 if (merge_cache[i].has()) {
                     min_datum_pos = i;
@@ -1746,10 +1755,13 @@ std::vector<datum_t> ordered_union_datum_stream_t::next_raw_batch(env_t *env, co
                 }
             }
             for (size_t i = 0;i < merge_cache.size();++i) {
-                if (merge_cache[i].has()
-                    && merge_cache[i].get_field(field).cmp(
-                        merge_cache[min_datum_pos].get_field(field)) < 0) {
-                    min_datum_pos = i;
+                if (merge_cache[i].has()) {
+                    bool cmp_result = (merge_cache[i].get_field(field).cmp(
+                                           merge_cache[min_datum_pos].get_field(field))) < 0;
+                    cmp_result = cmp_result != (merge_order == DESC);
+                    if (cmp_result) {
+                        min_datum_pos = i;
+                    }
                 }
             }
             r_sanity_check(merge_cache[min_datum_pos].has());

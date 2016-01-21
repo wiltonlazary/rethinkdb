@@ -268,6 +268,7 @@ public:
                                  backtrace_id_t bt);
     ordered_union_datum_stream_t(std::vector<counted_t<datum_stream_t> > &&_streams,
                                  datum_string_t _field,
+                                 raw_term_t r_term,
                                  backtrace_id_t bt);
 
     virtual std::vector<datum_t>
@@ -288,6 +289,7 @@ public:
     }
 
 private:
+    enum order_direction_t {ASC, DESC};
     std::deque<counted_t<datum_stream_t>> streams;
 
     feed_type_t union_type;
@@ -297,6 +299,8 @@ private:
 
     std::vector<datum_t> merge_cache;
     bool do_prelim_cache;
+
+    order_direction_t merge_order;
 };
 
 class union_datum_stream_t : public datum_stream_t, public home_thread_mixin_t {

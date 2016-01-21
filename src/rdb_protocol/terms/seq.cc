@@ -574,21 +574,24 @@ private:
         }
         scoped_ptr_t<val_t> interleave_arg = args->optarg(env, "interleave");
         bool interleave = true;
-        bool order_by_field=false;
+        bool order_by_field = false;
         datum_t field;
 
         if (interleave_arg) {
+            if (interleave_arg->get_type().is_convertible(val_t::type_t::FUNC)) {
+                interleave_arg = interleave_arg->as_func()->call(env->env);
+                r_sanity_check(interleave_arg.has());
+            }
             if (interleave_arg->get_type().is_convertible(val_t::type_t::DATUM)) {
                 datum_t interleave_datum = interleave_arg->as_datum();
                 if (interleave_datum.get_type() == datum_t::type_t::R_BOOL) {
                     interleave = interleave_datum.as_bool();
                 } else {
+                    // Handle as an order by a field name in ordered_union_datum_stream
                     interleave=false;
                     field = interleave_datum;
                     order_by_field = true;
                 }
-            } else if (interleave_arg->get_type().is_convertible(val_t::type_t::FUNC)) {
-                crash("TODO");
             }
         }
 
@@ -597,9 +600,10 @@ private:
             union_stream = make_counted<union_datum_stream_t>(
                 env->env, std::move(streams), backtrace());
         } else {
+            // We can't use the coroutine implementation for these
             if (order_by_field) {
                 union_stream = make_counted<ordered_union_datum_stream_t>(
-                    std::move(streams), datum_string_t(field.as_str()), backtrace());
+                    std::move(streams), datum_string_t(field.as_str()), get_src(), backtrace());
             } else {
                 union_stream = make_counted<ordered_union_datum_stream_t>(
                     std::move(streams), backtrace());
