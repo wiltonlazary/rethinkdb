@@ -9,9 +9,13 @@
 .PHONY: default-goal
 default-goal: real-default-goal
 
-# Build the drivers and executable
 .PHONY: all
-all: $(TOP)/src/all $(TOP)/drivers/all
+ifeq (Windows,$(OS))
+  all: windows-all
+else
+  # Build the drivers and executable
+  all: $(TOP)/src/all $(TOP)/drivers/all
+endif
 
 # $/ is a shorthand for $(TOP)/, without the leading ./
 / := $(patsubst ./%,%,$(TOP)/)
@@ -34,6 +38,15 @@ include $(TOP)/mk/paths.mk
 # Download and build internal tools like v8 and gperf
 include $(TOP)/mk/support/build.mk
 
+ifeq (Windows,$(OS))
+
+# Windows build
+include $(TOP)/mk/windows.mk
+
+else # Windows
+
+$(error TODO ATN)
+
 # make install
 include $(TOP)/mk/install.mk
 
@@ -54,6 +67,8 @@ include $(TOP)/mk/tools.mk
 
 # Tests
 include $(TOP)/test/build.mk
+
+endif # Windows
 
 .PHONY: clean
 clean: build-clean
