@@ -15,6 +15,8 @@
       <PropertyGroup Label="Globals">
         <ProjectGuid>{CB045D34-1C67-473B-ABAB-83F0D630596D}</ProjectGuid>
         <Keyword>Win32Proj</Keyword>
+        <OutDir>build\$(Platform)\$(Configuration)\</OutDir>
+        <IntDir>build\$(Platform)\$(Configuration)\</IntDir>
         <WindowsTargetPlatformVersion>
           <xsl:value-of select="target/@version" />
         </WindowsTargetPlatformVersion>

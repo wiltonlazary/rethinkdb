@@ -41,7 +41,7 @@ init () {
     default_allocator_osx=system
     default_allocator_mingw=system
 
-    allowed_arg_vars="CXXFLAGS LDFLAGS"
+    allowed_arg_vars="CXXFLAGS LDFLAGS PLATFORM"
 }
 
 # The main configuration steps
@@ -190,6 +190,14 @@ configure_unixlike () {
 configure_windows () {
     require MSBuild
     check_msbuild
+    require Platform
+    var PLATFORM ${requested_platform:-Win32}
+    var COMPILER MSC
+    var DEFAULT_ALLOCATOR system
+    var ALLOCATOR system
+    var PTHREAD_LIBS
+    var CROSS_COMPILING 0
+    var CXX false
     require Precompiled assets
     check_precompiled
     for pkg in protobuf curl v8 zlib re2 openssl gtest; do
@@ -259,7 +267,6 @@ read_args () {
     custom_allocator=
     enable_precompiled_web=
     use_ccache=false
-    require_windows=false
 
     while [[ $# -ne 0 ]]; do
         arg=${1#*=}
@@ -276,7 +283,7 @@ read_args () {
             has_arg=shift
         fi
         option="${1%%=*}"
-        case "$option" in 
+        case "$option" in
             --debug-configure) $no_arg; set -x ;;
             --config) $has_arg; config=$arg ;;
             --continue) $no_arg; exit_on_error=false ;;
@@ -320,7 +327,7 @@ read_args () {
             --prefix) $has_arg; arg_prefix=$arg ;;
             --sysconfdir) $has_arg; arg_sysconfdir=$arg ;;
             --localstatedir) $has_arg; arg_localstatedir=$arg ;;
-            --windows) $no_arg; require_windows=true ;;
+            --platform) $has_arg; requested_platform=$arg ;;
             --help) show_help; exit ;;
             -*) die "Unknown option '$option'" ;;
             *) if contains "$all_deps" "$(lc $option)"; then
@@ -394,6 +401,7 @@ EOF
   --enable-precompiled-web
   --disable-precompiled-web Use precompiled web assets located in precompiled/web (default: autodetect)
   --ccache                Speed up the build using ccache
+  --platform              Windows platform: Win32 (32 bit) or x64 (64 bit)
 EOF
 }
 
@@ -1265,10 +1273,7 @@ check_windows () {
         require "Operating System"
         show "$winver"
         windows=true
-        OS=Windows
-    elif $require_windows; then
-        require Windows
-        error "Not running on windows"
+        var OS Windows
     else
         windows=false
     fi
