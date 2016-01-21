@@ -22,7 +22,7 @@ ifeq (1,$(DEBUG))
   SOURCES := $(filter-out $(SOURCE_DIR)/unittest/%,$(SOURCES))
 endif
 
-LIB_DEPS :=
+LIB_DEPS := $(foreach dep, $(FETCH_LIST), $(SUPPORT_BUILD_DIR)/$(dep)_$($(dep)_VERSION)/install.witness)
 
 MSBUILD_FLAGS := /nologo /maxcpucount
 MSBUILD_FLAGS += /p:Configuration=$(CONFIGURATION)
@@ -36,3 +36,8 @@ endif
 $/build/$(PLATFORM)/$(CONFIGURATION)/RethinkDB.exe: $/RethinkDB.vcxproj $(SOURCES) $(LIB_DEPS)
 	$P MSBUILD
 	"$(MSBUILD)" $(MSBUILD_FLAGS) $<
+
+.PHONY: build-clean
+build-clean:
+	$P RM $(BUILD_ROOT_DIR)
+	rm -rf $(BUILD_ROOT_DIR)

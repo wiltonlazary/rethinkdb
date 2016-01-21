@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Visual C++ project file template for RethinkDB -->
+<!-- Visual C++ 2015 project file template for RethinkDB -->
 <xsl:stylesheet version="1.0"
                 xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
                 xmlns="http://schemas.microsoft.com/developer/msbuild/2003"
@@ -55,7 +55,7 @@
         <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='{$config-tuple}'">
           <LinkIncremental>true</LinkIncremental>
           <IncludePath>$(ProjectDir)\precompiled\proto;$(ProjectDir)\src;$(IncludePath)</IncludePath>
-          <LibraryPath>$(ProjectDir)\windows_deps\lib\<xsl:value-of select="@platform" />\<xsl:value-of select="@configuration" />;$(LibraryPath)</LibraryPath>
+          <LibraryPath>$(ProjectDir)\build\windows_deps\lib\<xsl:value-of select="@platform" />\<xsl:value-of select="@configuration" />;$(LibraryPath)</LibraryPath>
         </PropertyGroup>
 
         <ImportGroup Condition="'$(Configuration)|$(Platform)'=='{$config-tuple}'" Label="PropertySheets">
@@ -98,7 +98,7 @@
 
             <AdditionalIncludeDirectories>
               $(ProjectDir)\src\arch\windows_stub;
-              $(ProjectDir)\windows_deps\include;
+              $(ProjectDir)\build\windows_deps\include;
             </AdditionalIncludeDirectories>
             <xsl:if test="/config/@PreprocessToFile = 'yes'">
               <PreprocessToFile>true</PreprocessToFile>
