@@ -657,12 +657,10 @@ void raft_member_t<state_t>::on_append_entries_rpc(
     but different terms), delete the existing entry and all that follow it" */
     bool conflict = false;
     raft_log_index_t first_nonmatching_index;
+    const raft_log_index_t min_index =
+        std::max(request.entries.prev_index, ps().log.prev_index) + 1;
     const raft_log_index_t max_index =
         std::min(ps().log.get_latest_index(), request.entries.get_latest_index());
-    const raft_log_index_t min_index =
-        std::min(
-            max_index,
-            std::max(request.entries.prev_index, ps().log.prev_index) + 1);
     for (first_nonmatching_index = min_index;
             first_nonmatching_index <= max_index;
             ++first_nonmatching_index) {
@@ -674,7 +672,8 @@ void raft_member_t<state_t>::on_append_entries_rpc(
     }
 
     /* Raft paper, Figure 2: "Append any new entries not already in the log" */
-    if (first_nonmatching_index != request.entries.get_latest_index() + 1) {
+    if (ps().log.prev_index < request.entries.get_latest_index() &&
+            first_nonmatching_index != request.entries.get_latest_index() + 1) {
         guarantee(first_nonmatching_index > ps().commit_index);
         storage->write_log_replace_tail(
             request.entries, first_nonmatching_index);
