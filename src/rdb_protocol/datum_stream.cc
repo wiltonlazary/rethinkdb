@@ -1682,8 +1682,32 @@ ordered_union_datum_stream_t::ordered_union_datum_stream_t(
     backtrace_id_t bt)
     : eager_datum_stream_t(bt),
       union_type(feed_type_t::not_feed),
-      is_infinite_ordered_union(false) {
+      is_array_ordered_union(true),
+      is_infinite_ordered_union(false),
+      is_ordered_by_field(false) {
    for (const auto &stream : _streams) {
+        union_type = union_of(union_type, stream->cfeed_type());
+        is_infinite_ordered_union |= stream->is_infinite();
+        is_array_ordered_union &= stream->is_array();
+    }
+    for (auto &&stream : _streams) {
+        streams.push_back(std::move(stream));
+    }
+}
+
+ordered_union_datum_stream_t::ordered_union_datum_stream_t(
+    std::vector<counted_t<datum_stream_t> > &&_streams,
+    datum_string_t _field,
+    backtrace_id_t bt)
+    : eager_datum_stream_t(bt),
+      union_type(feed_type_t::not_feed),
+      is_array_ordered_union(true),
+      is_infinite_ordered_union(false),
+      is_ordered_by_field(true),
+      field(_field),
+      do_prelim_cache(true) {
+
+    for (const auto &stream : _streams) {
         union_type = union_of(union_type, stream->cfeed_type());
         is_infinite_ordered_union |= stream->is_infinite();
         is_array_ordered_union &= stream->is_array();
@@ -1706,28 +1730,75 @@ std::vector<datum_t> ordered_union_datum_stream_t::next_raw_batch(env_t *env, co
     // with a `batch_type_t::TERMINAL` on an infinite stream.
     batchspec_t batchspec_inner = batchspec_t::default_for(batch_type_t::NORMAL);
 
-    while (!streams.front()->is_exhausted()) {
-        datum_t row = streams.front()->next(env, batchspec_inner);
-        batcher.note_el(row);
-        batch.push_back(std::move(row));
+    if (is_ordered_by_field) {
+        if (do_prelim_cache) {
+            for (auto &stream : streams) {
+                merge_cache.push_back(std::move(stream->next(env, batchspec_inner)));
+            }
+            do_prelim_cache = false;
+        }
+        while (!is_exhausted()) {
+            int min_datum_pos=0;
+            for (size_t i = 0; i < merge_cache.size();++i) {
+                if (merge_cache[i].has()) {
+                    min_datum_pos = i;
+                    break;
+                }
+            }
+            for (size_t i = 0;i < merge_cache.size();++i) {
+                if (merge_cache[i].has()
+                    && merge_cache[i].get_field(field).cmp(
+                        merge_cache[min_datum_pos].get_field(field)) < 0) {
+                    min_datum_pos = i;
+                }
+            }
+            r_sanity_check(merge_cache[min_datum_pos].has());
+            batcher.note_el(merge_cache[min_datum_pos]);
+            batch.push_back(std::move(merge_cache[min_datum_pos]));
 
-        if (streams.front()->is_exhausted()) {
-            if (streams.size() > 1) {
-                streams.pop_front();
+            if (!streams[min_datum_pos]->is_exhausted()) {
+                merge_cache[min_datum_pos] = std::move(
+                    streams[min_datum_pos]->next(env, batchspec_inner));
+            } else {
+                merge_cache[min_datum_pos] = datum_t();
+            }
+            if (batcher.should_send_batch()) {
+                break;
             }
         }
-        if (batcher.should_send_batch()) {
-            break;
+    } else {
+        while (!streams.front()->is_exhausted()) {
+            datum_t row = streams.front()->next(env, batchspec_inner);
+            batcher.note_el(row);
+            batch.push_back(std::move(row));
+
+            if (streams.front()->is_exhausted()) {
+                if (streams.size() > 1) {
+                    streams.pop_front();
+                }
+            }
+            if (batcher.should_send_batch()) {
+                break;
+            }
         }
     }
     return batch;
 }
 
 bool ordered_union_datum_stream_t::is_exhausted() const {
-    if (streams.size() == 1 && streams.front()->is_exhausted()) {
+    if (is_ordered_by_field) {
+        for (auto datum : merge_cache) {
+            if (datum.has()) {
+                return false;
+            }
+        }
         return batch_cache_exhausted();
+    } else {
+        if (streams.size() == 1 && streams.front()->is_exhausted()) {
+            return batch_cache_exhausted();
+        }
+        return false;
     }
-    return false;
 }
 
 // The maximum number of reads that a union_datum_stream spawns on its substreams

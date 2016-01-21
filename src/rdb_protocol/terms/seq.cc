@@ -574,8 +574,22 @@ private:
         }
         scoped_ptr_t<val_t> interleave_arg = args->optarg(env, "interleave");
         bool interleave = true;
+        bool order_by_field=false;
+        datum_t field;
+
         if (interleave_arg) {
-            interleave = interleave_arg->as_bool();
+            if (interleave_arg->get_type().is_convertible(val_t::type_t::DATUM)) {
+                datum_t interleave_datum = interleave_arg->as_datum();
+                if (interleave_datum.get_type() == datum_t::type_t::R_BOOL) {
+                    interleave = interleave_datum.as_bool();
+                } else {
+                    interleave=false;
+                    field = interleave_datum;
+                    order_by_field = true;
+                }
+            } else if (interleave_arg->get_type().is_convertible(val_t::type_t::FUNC)) {
+                crash("TODO");
+            }
         }
 
         counted_t<datum_stream_t> union_stream;
@@ -583,8 +597,13 @@ private:
             union_stream = make_counted<union_datum_stream_t>(
                 env->env, std::move(streams), backtrace());
         } else {
-            union_stream = make_counted<ordered_union_datum_stream_t>(
-                std::move(streams), backtrace());
+            if (order_by_field) {
+                union_stream = make_counted<ordered_union_datum_stream_t>(
+                    std::move(streams), datum_string_t(field.as_str()), backtrace());
+            } else {
+                union_stream = make_counted<ordered_union_datum_stream_t>(
+                    std::move(streams), backtrace());
+            }
         }
         return new_val(env->env, union_stream);
     }

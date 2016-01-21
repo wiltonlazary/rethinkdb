@@ -266,6 +266,10 @@ class ordered_union_datum_stream_t : public eager_datum_stream_t {
 public:
     ordered_union_datum_stream_t(std::vector<counted_t<datum_stream_t> > &&_streams,
                                  backtrace_id_t bt);
+    ordered_union_datum_stream_t(std::vector<counted_t<datum_stream_t> > &&_streams,
+                                 datum_string_t _field,
+                                 backtrace_id_t bt);
+
     virtual std::vector<datum_t>
     next_raw_batch(env_t *env, const batchspec_t &batchspec);
 
@@ -288,6 +292,11 @@ private:
 
     feed_type_t union_type;
     bool is_array_ordered_union, is_infinite_ordered_union;
+    bool is_ordered_by_field;
+    datum_string_t field;
+
+    std::vector<datum_t> merge_cache;
+    bool do_prelim_cache;
 };
 
 class union_datum_stream_t : public datum_stream_t, public home_thread_mixin_t {
