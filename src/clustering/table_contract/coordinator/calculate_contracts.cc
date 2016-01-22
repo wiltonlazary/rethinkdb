@@ -278,11 +278,22 @@ contract_t calculate_contract(
     other servers. */
     std::set<server_id_t> visible_voters;
     for (const server_id_t &server : new_c.replicas) {
-        if (new_c.voters.count(server) == 0 &&
+        // TODO! Are we sure it's save to include `temp_voters` here?
+        //  they are not in the raft voters list, so I think that's rather dangerous.
+        // TODO! Solve this differently and more explicitly. We should explicitly make
+        //  sure that we never make a server primary that's not a true voter.
+        //  Furthermore we must never stage a server for hand_over as long as it's not
+        //  visible, since then we would get stuck (since that would stop us from
+        //  committing temp_voters).
+        // TODO! Experimental change:
+        if (new_c.voters.count(server) == 0) {
+            continue;
+        }
+        /*if (new_c.voters.count(server) == 0 &&
                 (!static_cast<bool>(new_c.temp_voters) ||
                     new_c.temp_voters->count(server) == 0)) {
             continue;
-        }
+        }*/
         if (invisible_to_majority_of_set(server, new_c.voters, connections_map)) {
             continue;
         }
