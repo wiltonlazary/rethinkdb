@@ -351,7 +351,7 @@ void multi_table_manager_t::on_action(
             logINF("Ignored the timestamp on an action that makes us active. "
                    "Delaying sync.");
             dont_sync_before_second =
-                ticks_to_secs(get_ticks()) + static_cast<double>(randint(10));
+                ticks_to_secs(get_ticks()) + static_cast<double>(randint(4000)) / 1000.0;
         }
     }
 
