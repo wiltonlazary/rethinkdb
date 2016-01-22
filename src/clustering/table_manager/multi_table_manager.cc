@@ -19,6 +19,7 @@ multi_table_manager_t::multi_table_manager_t(
         const base_path_t &_base_path,
         io_backender_t *_io_backender,
         perfmon_collection_repo_t *_perfmon_collection_repo) :
+    dont_sync_before_second(0.0),
     is_proxy_server(false),
     server_id(_server_id),
     mailbox_manager(_mailbox_manager),
@@ -341,6 +342,16 @@ void multi_table_manager_t::on_action(
                 send(mailbox_manager, ack_addr);
             }
             return;
+        } else if (!timestamp.supersedes(current_timestamp)) {
+            /* If we accept this action only because we ignored the timestamp, there's
+            a chance of getting into an oscillation pattern with another server.
+            To break that up, we don't sync anything out for a randomized time.
+            This is obviously a hack and will go away when we address
+            https://github.com/rethinkdb/rethinkdb/issues/4719 */
+            logINF("Ignored the timestamp on an action that makes us active. "
+                   "Delaying sync.");
+            dont_sync_before_second =
+                ticks_to_secs(get_ticks()) + static_cast<double>(randint(20));
         }
     }
 
@@ -632,6 +643,11 @@ void multi_table_manager_t::schedule_sync(
     coro_t::spawn_sometime(
     [this, keepalive /* important to capture */, table_id, table]() {
         try {
+            double delay = dont_sync_before_second - ticks_to_secs(get_ticks());
+            if (delay > 0.0) {
+                nap(static_cast<int64_t>(delay * 1000.0), keepalive.get_drain_signal());
+            }
+
             mutex_assertion_t::acq_t global_mutex_acq(&mutex);
             while (!table->to_sync_set.empty()) {
                 std::set<peer_id_t> to_sync_set;
