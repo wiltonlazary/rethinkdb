@@ -1,6 +1,6 @@
 from __future__ import print_function
 
-import atexit, copy, itertools, os, re, sys, time, warnings
+import atexit, copy, inspect, itertools, os, re, sys, time, warnings
 from datetime import datetime, tzinfo, timedelta # used by time tests
 
 stashedPath = copy.copy(sys.path)
@@ -224,8 +224,11 @@ def compare(expected, result, options=None):
     
     # == compare based on type of expected
     
-    if type(expected) == type(int):
-        expected = expected()
+    if inspect.isclass(expected):
+        try:
+            expected = expected()
+        except Exception as e:
+            return FalseStr('Expected was a class that can not easily be instantiated: %s' % str(e))
     
     # -- explicit type
     if options['explicit_type'] and not isinstance(result, options['explicit_type']):
@@ -263,7 +266,7 @@ def compare(expected, result, options=None):
         if result == expected:
             return True
         else:
-            return 'value %r was not the expected %s' % (result, expected)
+            return FalseStr('value %r was not the expected %s' % (result, expected))
     
     # -- dict
     if isinstance(expected, dict):

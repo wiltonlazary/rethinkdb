@@ -1,7 +1,13 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 import unittest
 from driver import bag, compare, err, err_regex, partial, uuid
+
+try:
+    unicode
+except NameError:
+    unicode = str
 
 class PythonTestDriverTest(unittest.TestCase):
     
@@ -10,6 +16,21 @@ class PythonTestDriverTest(unittest.TestCase):
     
     def compareFalse(self, expected, result, options=None):
         self.assertFalse(compare(expected, result, options=options))
+    
+    def test_string(self):
+        
+        # simple
+        self.compare('a', 'a')
+        self.compare('a', unicode('a'))
+        self.compare('á', 'á')
+        self.compare('something longer\nwith two lines', 'something longer\nwith two lines')
+        
+        self.compareFalse('a', 'b')
+        self.compareFalse('a', 1)
+        self.compareFalse('a', [])
+        self.compareFalse('a', None)
+        self.compareFalse('a', ['a'])
+        self.compareFalse('a', {'a':1})
     
     def test_array(self):
         
