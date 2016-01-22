@@ -643,13 +643,19 @@ void multi_table_manager_t::schedule_sync(
     coro_t::spawn_sometime(
     [this, keepalive /* important to capture */, table_id, table]() {
         try {
-            double delay = dont_sync_before_second - ticks_to_secs(get_ticks());
-            if (delay > 0.0) {
-                nap(static_cast<int64_t>(delay * 1000.0), keepalive.get_drain_signal());
-            }
-
             mutex_assertion_t::acq_t global_mutex_acq(&mutex);
             while (!table->to_sync_set.empty()) {
+                double delay = dont_sync_before_second - ticks_to_secs(get_ticks());
+                if (delay > 0.0) {
+                    global_mutex_acq.reset();
+                    nap(static_cast<int64_t>(delay * 1000.0),
+                        keepalive.get_drain_signal());
+                    global_mutex_acq.reset(&mutex);
+                    if (table->to_sync_set.empty()) {
+                        break;
+                    }
+                }
+
                 std::set<peer_id_t> to_sync_set;
                 std::swap(table->to_sync_set, to_sync_set);
                 rwlock_in_line_t table_lock_in_line(&table->access_rwlock, access_t::write);
