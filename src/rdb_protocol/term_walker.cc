@@ -94,7 +94,12 @@ private:
                 rcheck_src(bt,
                     prev_frame != nullptr
                     && (prev_frame->type == Term::ORDER_BY
-                        || prev_frame->type == Term::UNION),
+                        || prev_frame->type == Term::UNION
+                        || (prev_frame->prev_frame->type == Term::UNION
+                            && prev_frame->type == Term::MAKE_ARRAY)
+                        || (prev_frame->prev_frame->type == Term::UNION
+                            && prev_frame->type == Term::FUNC)
+                    ),
                     base_exc_t::LOGIC,
                     strprintf("%s may only be used as an argument to ORDER_BY or UNION.",
                               (type == Term::ASC ? "ASC" : "DESC")));

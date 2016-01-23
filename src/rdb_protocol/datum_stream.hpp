@@ -22,6 +22,7 @@
 #include "rdb_protocol/changefeed.hpp"
 #include "rdb_protocol/context.hpp"
 #include "rdb_protocol/math_utils.hpp"
+#include "rdb_protocol/order_util.hpp"
 #include "rdb_protocol/protocol.hpp"
 #include "rdb_protocol/real_table.hpp"
 #include "rdb_protocol/shards.hpp"
@@ -262,13 +263,16 @@ private:
 struct coro_info_t;
 class coro_stream_t;
 
+class args_t;
+
 class ordered_union_datum_stream_t : public eager_datum_stream_t {
 public:
     ordered_union_datum_stream_t(std::vector<counted_t<datum_stream_t> > &&_streams,
                                  backtrace_id_t bt);
     ordered_union_datum_stream_t(std::vector<counted_t<datum_stream_t> > &&_streams,
-                                 datum_string_t _field,
-                                 raw_term_t r_term,
+                                 scope_env_t *_scope_env,
+                                 raw_term_t r_interleave,
+                                 std::vector<scoped_ptr_t<val_t>> &&interleave,
                                  backtrace_id_t bt);
 
     virtual std::vector<datum_t>
@@ -289,18 +293,16 @@ public:
     }
 
 private:
-    enum order_direction_t {ASC, DESC};
     std::deque<counted_t<datum_stream_t>> streams;
 
     feed_type_t union_type;
     bool is_array_ordered_union, is_infinite_ordered_union;
     bool is_ordered_by_field;
-    datum_string_t field;
 
     std::vector<datum_t> merge_cache;
     bool do_prelim_cache;
 
-    order_direction_t merge_order;
+    std::vector<std::pair<order_direction_t, counted_t<const func_t> > > comparisons;
 };
 
 class union_datum_stream_t : public datum_stream_t, public home_thread_mixin_t {

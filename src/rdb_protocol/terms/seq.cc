@@ -562,6 +562,7 @@ private:
     between_null_t null_behavior;
 };
 
+
 class union_term_t : public op_term_t {
 public:
     union_term_t(compile_env_t *env, const raw_term_t &term)
@@ -573,28 +574,41 @@ private:
             streams.push_back(args->arg(env, i)->as_seq(env->env));
         }
         scoped_ptr_t<val_t> interleave_arg = args->optarg(env, "interleave");
+        boost::optional<raw_term_t> r_interleave_arg = get_src().optarg("interleave");
+
+        std::vector<scoped_ptr_t<val_t>> evaluated_interleave_args;
+
         bool interleave = true;
         bool order_by_field = false;
-        datum_t field;
 
         if (interleave_arg) {
-            if (interleave_arg->get_type().is_convertible(val_t::type_t::FUNC)) {
-                interleave_arg = interleave_arg->as_func()->call(env->env);
-                r_sanity_check(interleave_arg.has());
-            }
             if (interleave_arg->get_type().is_convertible(val_t::type_t::DATUM)) {
                 datum_t interleave_datum = interleave_arg->as_datum();
                 if (interleave_datum.get_type() == datum_t::type_t::R_BOOL) {
                     interleave = interleave_datum.as_bool();
                 } else {
+                    // It's either one datum, or an array of datums that evaluate to fields
+                    if (interleave_datum.get_type() != datum_t::type_t::R_ARRAY) {
+                        evaluated_interleave_args.push_back(make_scoped<val_t>(interleave_datum, backtrace()));
+                    } else {
+                        // It's an array of datums
+                        for (size_t i = 0; i < interleave_datum.arr_size(); ++i) {
+                            datum_t interleave_el = interleave_datum.get(i, THROW);
+                            evaluated_interleave_args.push_back(make_scoped<val_t>(interleave_el, backtrace()));
+                        }
+                    }
                     // Handle as an order by a field name in ordered_union_datum_stream
-                    interleave=false;
-                    field = interleave_datum;
+                    interleave = false;
                     order_by_field = true;
                 }
+            } else {
+                // Argument is a single function
+                interleave = false;
+                order_by_field = true;
+                r_sanity_check(interleave_arg->get_type().is_convertible(val_t::type_t::FUNC));
+                evaluated_interleave_args.push_back(interleave_arg->as_func()->call(env->env));
             }
         }
-
         counted_t<datum_stream_t> union_stream;
         if (interleave) {
             union_stream = make_counted<union_datum_stream_t>(
@@ -603,7 +617,7 @@ private:
             // We can't use the coroutine implementation for these
             if (order_by_field) {
                 union_stream = make_counted<ordered_union_datum_stream_t>(
-                    std::move(streams), datum_string_t(field.as_str()), get_src(), backtrace());
+                    std::move(streams), env, std::move(*r_interleave_arg), std::move(evaluated_interleave_args), backtrace());
             } else {
                 union_stream = make_counted<ordered_union_datum_stream_t>(
                     std::move(streams), backtrace());

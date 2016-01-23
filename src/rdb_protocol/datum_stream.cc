@@ -1693,19 +1693,20 @@ ordered_union_datum_stream_t::ordered_union_datum_stream_t(
     for (auto &&stream : _streams) {
         streams.push_back(std::move(stream));
     }
+    comparisons = std::vector<std::pair<order_direction_t, counted_t<const func_t>>>();
 }
 
 ordered_union_datum_stream_t::ordered_union_datum_stream_t(
     std::vector<counted_t<datum_stream_t> > &&_streams,
-    datum_string_t _field,
-    raw_term_t r_term,
+    scope_env_t *,
+    raw_term_t r_interleave,
+    std::vector<scoped_ptr_t<val_t>> &&interleave,
     backtrace_id_t bt)
     : eager_datum_stream_t(bt),
       union_type(feed_type_t::not_feed),
       is_array_ordered_union(true),
       is_infinite_ordered_union(false),
       is_ordered_by_field(true),
-      field(_field),
       do_prelim_cache(true) {
     for (const auto &stream : _streams) {
         union_type = union_of(union_type, stream->cfeed_type());
@@ -1716,14 +1717,10 @@ ordered_union_datum_stream_t::ordered_union_datum_stream_t(
         streams.push_back(std::move(stream));
     }
 
-    // This is hacky, but seems to be roughly how it's handled in order_by
-    boost::optional<raw_term_t> raw_field = r_term.optarg("interleave");
-    r_sanity_check(raw_field);
-    if ((*raw_field).type() == Term::DESC) {
-        merge_order = DESC;
-    } else {
-        merge_order = ASC;
-    }
+    comparisons = std::move(
+        build_comparisons_from_optional_term(nullptr,
+                                             r_interleave,
+                                             std::move(interleave)));
 }
 
 std::vector<datum_t> ordered_union_datum_stream_t::next_raw_batch(env_t *env, const batchspec_t &batchspec) {
@@ -1740,14 +1737,22 @@ std::vector<datum_t> ordered_union_datum_stream_t::next_raw_batch(env_t *env, co
     batchspec_t batchspec_inner = batchspec_t::default_for(batch_type_t::NORMAL);
 
     if (is_ordered_by_field) {
+        profile::sampler_t sampler("Merging in union.", env->trace);
+
+        lt_cmp_t cmp(comparisons);
+
         if (do_prelim_cache) {
             for (auto &stream : streams) {
                 merge_cache.push_back(std::move(stream->next(env, batchspec_inner)));
             }
             do_prelim_cache = false;
         }
+        int default_datum_pos = 0;
         while (!is_exhausted()) {
-            int min_datum_pos = 0;
+            int min_datum_pos = default_datum_pos;
+            while (!merge_cache[min_datum_pos].has()) {
+                min_datum_pos++;
+            }
             for (size_t i = 0; i < merge_cache.size();++i) {
                 if (merge_cache[i].has()) {
                     min_datum_pos = i;
@@ -1756,9 +1761,7 @@ std::vector<datum_t> ordered_union_datum_stream_t::next_raw_batch(env_t *env, co
             }
             for (size_t i = 0;i < merge_cache.size();++i) {
                 if (merge_cache[i].has()) {
-                    bool cmp_result = (merge_cache[i].get_field(field).cmp(
-                                           merge_cache[min_datum_pos].get_field(field))) < 0;
-                    cmp_result = cmp_result != (merge_order == DESC);
+                    bool cmp_result = cmp(env, &sampler, merge_cache[i], merge_cache[min_datum_pos]);
                     if (cmp_result) {
                         min_datum_pos = i;
                     }
@@ -1766,14 +1769,24 @@ std::vector<datum_t> ordered_union_datum_stream_t::next_raw_batch(env_t *env, co
             }
             r_sanity_check(merge_cache[min_datum_pos].has());
             batcher.note_el(merge_cache[min_datum_pos]);
-            batch.push_back(std::move(merge_cache[min_datum_pos]));
+
+            datum_t datum_on_deck = std::move(merge_cache[min_datum_pos]);
 
             if (!streams[min_datum_pos]->is_exhausted()) {
                 merge_cache[min_datum_pos] = std::move(
                     streams[min_datum_pos]->next(env, batchspec_inner));
+
+                // Enforce ordering in merge step
+                // Ordering of this check is backwards because cmp does strict <
+                rcheck(!cmp(env, &sampler, merge_cache[min_datum_pos], datum_on_deck),
+                       base_exc_t::LOGIC,
+                       "The streams given as arguments are not ordered by given ordering.");
             } else {
                 merge_cache[min_datum_pos] = datum_t();
             }
+
+            batch.push_back(std::move(datum_on_deck));
+
             if (batcher.should_send_batch()) {
                 break;
             }
