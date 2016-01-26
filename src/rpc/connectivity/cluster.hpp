@@ -259,6 +259,8 @@ public:
         a single connection per server. */
         server_id_t server_id;
         std::set<server_id_t> servers;
+        /* The last successful connection and rate of connections per server. */
+        std::map<server_id_t, std::pair<ticks_t, double>> server_rate_limit;
 
         /* `attempt_table` is a table of all the host:port pairs we're currently
         trying to connect to or have connected to. If we are told to connect to

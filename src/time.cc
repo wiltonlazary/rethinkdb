@@ -38,8 +38,8 @@ microtime_t current_microtime() {
 
 #endif
 
-ticks_t secs_to_ticks(time_t secs) {
-    return static_cast<ticks_t>(secs) * BILLION;
+ticks_t secs_to_ticks(double secs) {
+    return secs * BILLION;
 }
 
 #ifdef __MACH__

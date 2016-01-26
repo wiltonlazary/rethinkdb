@@ -961,6 +961,38 @@ void connectivity_cluster_t::run_t::handle(
         }
     }
 
+    // Mapping of server to a pair of last successful connection and rate
+    std::map<server_id_t, std::pair<ticks_t, double>>::iterator rate_limit =
+        server_rate_limit.find(server_id);
+    if (rate_limit != server_rate_limit.end()) {
+        // Use ticks as they are monotonically increasing
+        ticks_t current_ticks = get_ticks();
+
+        // The rate is incremented every time we successfully accept a connection, and
+        // decremented once every `seconds_per_rate_reduction`. We then calculate a
+        // delay by taking 1.5 to the power of said rate, and reject connections that
+        // reconnect before the delay is expired.
+        constexpr double seconds_per_rate_reduction = 1800;
+        double current_rate = std::max(
+            0.0,
+            rate_limit->second.second -
+                (ticks_to_secs(current_ticks - rate_limit->second.first) /
+                    seconds_per_rate_reduction));
+
+        double delay = std::pow(1.5, current_rate) - 1;
+        if (rate_limit->second.first + secs_to_ticks(delay) <= current_ticks) {
+            rate_limit->second = std::make_pair(current_ticks, current_rate);
+        } else {
+            logWRN(
+                "The rate-limiting rejected the connection from %s",
+                uuid_to_str(remote_server_id).c_str());
+            return;
+        }
+    } else {
+        // Haven't previously seen this server, add an entry for it
+        server_rate_limit[server_id] = std::make_pair(get_ticks(), 1);
+    }
+
     // Receive id, host/ports.
     peer_id_t other_id;
     std::set<host_and_port_t> other_peer_addr_hosts;
