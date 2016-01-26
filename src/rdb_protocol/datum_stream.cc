@@ -1731,14 +1731,14 @@ std::vector<datum_t> ordered_union_datum_stream_t::next_raw_batch(env_t *env, co
         while (!is_exhausted()) {
             int min_datum_pos = 0;
 
-            for (size_t i = 0; i < merge_cache.size();++i) {
+            for (size_t i = 0; i < merge_cache.size(); ++i) {
                 if (merge_cache[i].has()) {
                     min_datum_pos = i;
                     break;
                 }
             }
 
-            for (size_t i = 0; i < merge_cache.size();++i) {
+            for (size_t i = 0; i < merge_cache.size(); ++i) {
                 if (merge_cache[i].has()) {
                     bool cmp_result = cmp(env, &sampler, merge_cache[i], merge_cache[min_datum_pos]);
                     if (cmp_result) {

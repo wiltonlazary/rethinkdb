@@ -1,3 +1,4 @@
+
 // Copyright 2010-2015 RethinkDB, all rights reserved.
 #ifndef RDB_PROTOCOL_ORDER_UTIL_HPP_
 #define RDB_PROTOCOL_ORDER_UTIL_HPP_
@@ -54,8 +55,7 @@ private:
         comparisons;
 };
 
-}
-// namespace ql
+} // namespace ql
 
 #endif
 // RDB_PROTOCOL_ORDER_UTIL_HPP_
