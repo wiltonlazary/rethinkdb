@@ -1728,19 +1728,17 @@ std::vector<datum_t> ordered_union_datum_stream_t::next_raw_batch(env_t *env, co
             }
             do_prelim_cache = false;
         }
-        int default_datum_pos = 0;
         while (!is_exhausted()) {
-            int min_datum_pos = default_datum_pos;
-            while (!merge_cache[min_datum_pos].has()) {
-                min_datum_pos++;
-            }
+            int min_datum_pos = 0;
+
             for (size_t i = 0; i < merge_cache.size();++i) {
                 if (merge_cache[i].has()) {
                     min_datum_pos = i;
                     break;
                 }
             }
-            for (size_t i = 0;i < merge_cache.size();++i) {
+
+            for (size_t i = 0; i < merge_cache.size();++i) {
                 if (merge_cache[i].has()) {
                     bool cmp_result = cmp(env, &sampler, merge_cache[i], merge_cache[min_datum_pos]);
                     if (cmp_result) {
@@ -1748,6 +1746,7 @@ std::vector<datum_t> ordered_union_datum_stream_t::next_raw_batch(env_t *env, co
                     }
                 }
             }
+
             r_sanity_check(merge_cache[min_datum_pos].has());
             batcher.note_el(merge_cache[min_datum_pos]);
 
