@@ -990,8 +990,7 @@ void connectivity_cluster_t::run_t::handle(
             auto reason = handshake_result_t::error(
                 handshake_result_code_t::RATE_LIMIT,
                 strprintf(
-                    "The rate-limiting rejected the connection from %s, peer blocked "
-                    "for another %.2f seconds",
+                    "%s blocked for another %.2f seconds",
                     uuid_to_str(remote_server_id).c_str(),
                     delay_seconds -
                         ticks_to_secs(current_ticks - rate_limit->second.first)));
