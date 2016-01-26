@@ -29,9 +29,15 @@ std::vector<std::pair<order_direction_t, counted_t<const func_t> > >
 build_comparisons_from_raw_term(const term_t *target, scope_env_t *env, args_t *args, const raw_term_t &raw_term);
 
 std::vector<std::pair<order_direction_t, counted_t<const func_t> > >
-build_comparisons_from_optional_term(const term_t *target,
-                                     const raw_term_t &raw_term,
-                                     std::vector<scoped_ptr_t<val_t>> &&fields);
+build_comparisons_from_optional_terms(const term_t *target,
+                                     scope_env_t *env,
+                                     std::vector<scoped_ptr_t<val_t> > &&args,
+                                     const raw_term_t &raw_term);
+std::vector<std::pair<order_direction_t, counted_t<const func_t> > >
+build_comparisons_from_single_term(const term_t *target,
+                                   scope_env_t *,
+                                   scoped_ptr_t<val_t> &&arg,
+                                   const raw_term_t &raw_term);
 
 class lt_cmp_t {
 public:

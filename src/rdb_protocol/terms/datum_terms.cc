@@ -42,6 +42,7 @@ class make_array_term_t : public op_term_t {
 public:
     make_array_term_t(compile_env_t *env, const raw_term_t &term)
         : op_term_t(env, term, argspec_t(0, -1)) { }
+
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
         datum_array_builder_t acc(env->env->limits());
@@ -49,7 +50,7 @@ private:
         {
             profile::sampler_t sampler("Evaluating elements in make_array.", env->env->trace);
             for (size_t i = 0; i < args->num_args(); ++i) {
-                acc.add(args->arg(env, i)->as_datum());
+                //                acc.add(args->arg(env, i)->as_datum());
                 sampler.new_sample();
             }
         }

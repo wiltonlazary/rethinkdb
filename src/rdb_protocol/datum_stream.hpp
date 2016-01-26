@@ -270,9 +270,7 @@ public:
     ordered_union_datum_stream_t(std::vector<counted_t<datum_stream_t> > &&_streams,
                                  backtrace_id_t bt);
     ordered_union_datum_stream_t(std::vector<counted_t<datum_stream_t> > &&_streams,
-                                 scope_env_t *_scope_env,
-                                 raw_term_t r_interleave,
-                                 std::vector<scoped_ptr_t<val_t>> &&interleave,
+                                 std::vector<std::pair<order_direction_t, counted_t<const func_t> > > _comparisons,
                                  backtrace_id_t bt);
 
     virtual std::vector<datum_t>

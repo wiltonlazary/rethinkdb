@@ -1698,9 +1698,7 @@ ordered_union_datum_stream_t::ordered_union_datum_stream_t(
 
 ordered_union_datum_stream_t::ordered_union_datum_stream_t(
     std::vector<counted_t<datum_stream_t> > &&_streams,
-    scope_env_t *,
-    raw_term_t r_interleave,
-    std::vector<scoped_ptr_t<val_t>> &&interleave,
+    std::vector<std::pair<order_direction_t, counted_t<const func_t> > > _comparisons,
     backtrace_id_t bt)
     : eager_datum_stream_t(bt),
       union_type(feed_type_t::not_feed),
@@ -1717,10 +1715,7 @@ ordered_union_datum_stream_t::ordered_union_datum_stream_t(
         streams.push_back(std::move(stream));
     }
 
-    comparisons = std::move(
-        build_comparisons_from_optional_term(nullptr,
-                                             r_interleave,
-                                             std::move(interleave)));
+    comparisons = std::move(_comparisons);
 }
 
 std::vector<datum_t> ordered_union_datum_stream_t::next_raw_batch(env_t *env, const batchspec_t &batchspec) {
