@@ -327,19 +327,29 @@ void multi_table_manager_t::on_action(
             case table_t::status_t::SHUTTING_DOWN:   /* fall through */
             default: unreachable();
         }
-        /* If we are inactive and are told to become active, we ignore the
-        timestamp. The `base_table_config_t` in our inactive state might be
-        a left-over from an emergency repair that none of the currently active
-        servers has seen. In that case we would have no chance to become active
-        again for this table until another emergency repair happened
-        (which might be impossible, if the table is otherwise still available). */
-        // TODO! Explain why we *must* only sync if the epoch is different.
-        //  ... this is absolutely crucial.
-        bool ignore_timestamp =
-            table->status == table_t::status_t::INACTIVE
-            && action_status == action_status_t::ACTIVE
-            && timestamp.epoch != current_timestamp.epoch;
-        if (!ignore_timestamp && !timestamp.supersedes(current_timestamp)) {
+        /* Rejecting old actions is absolutely critical for correctness.
+        ACTIVE actions contain the Raft member ID. If we accepted an INACTIVE and then
+        an ACTIVE action in the wrong order, we might swipe away our Raft state due to
+        the INACTIVE action, and then become active again *with an old Raft ID* that
+        we had been active with before. This will violate Raft invariants, and can lead
+        to split-brain configurations and data loss. */
+        if (!timestamp.supersedes(current_timestamp)) {
+            /* If we are inactive and are told to become active, we print a special
+            message. The `base_table_config_t` in our inactive state might be
+            a left-over from an emergency repair that none of the currently active
+            servers has seen. In that case we would have no chance to become active
+            again for this table until another emergency repair happened
+            (which might be impossible, if the table is otherwise still available). */
+            bool outdated_activation =
+                table->status == table_t::status_t::INACTIVE &&
+                action_status == action_status_t::ACTIVE &&
+                timestamp.epoch != current_timestamp.epoch;
+            if (outdated_activation) {
+                logINF("Table %s: Not adding a replica on this server because the "
+                       "active configuration conflicts with a more recent inactive "
+                       "configuration.",
+                    uuid_to_str(table_id).c_str());
+            }
             if (!ack_addr.is_nil()) {
                 send(mailbox_manager, ack_addr);
             }
