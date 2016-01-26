@@ -39,7 +39,7 @@ microtime_t current_microtime() {
 #endif
 
 ticks_t secs_to_ticks(double secs) {
-    return secs * BILLION;
+    return static_cast<ticks_t>(secs * BILLION);
 }
 
 #ifdef __MACH__
