@@ -96,10 +96,7 @@ private:
                     && (prev_frame->type == Term::ORDER_BY
                         || prev_frame->type == Term::UNION
                         || (prev_frame->prev_frame->type == Term::UNION
-                            && (prev_frame->type == Term::MAKE_ARRAY || prev_frame->type == Term::FUNC))
-                        || (prev_frame->prev_frame->prev_frame->type == Term::UNION &&
-                            prev_frame->prev_frame->type == Term::MAKE_ARRAY &&
-                            prev_frame->type == Term::FUNC)
+                            && (prev_frame->type == Term::MAKE_ARRAY))
                     ),
                     base_exc_t::LOGIC,
                     strprintf("%s may only be used as an argument to ORDER_BY or UNION.",
@@ -152,7 +149,7 @@ private:
             if (args != nullptr) {
                 r_sanity_check(args->IsArray());
                 for (size_t i = 0; i < args->Size(); ++i) {
-                    backtrace_id_t child_bt 
+                    backtrace_id_t child_bt
                         = make_bt(bt, datum_t(static_cast<double>(i)));
                     walker_frame_t child_frame(parent, i == 0, this);
                     call_with_enough_stack([&]() {

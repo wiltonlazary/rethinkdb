@@ -574,12 +574,12 @@ private:
         for (size_t i = 0; i < args->num_args(); ++i) {
             streams.push_back(args->arg(env, i)->as_seq(env->env));
         }
-        scoped_ptr_t<val_t> interleave_arg = args->optarg(env, "interleave");
+
         boost::optional<raw_term_t> r_interleave_arg_op = get_src().optarg("interleave");
 
         std::vector<scoped_ptr_t<val_t>> evaluated_interleave_args;
 
-        bool interleave = false;
+        bool interleave = true;
         bool order_by_field = false;
 
         counted_t<datum_stream_t> union_stream;
@@ -594,7 +594,13 @@ private:
 
                 raw_term_t array_raw_term = r_interleave_arg;
 
-                counted_t<const term_t> interleave_term = optarg_term(env, "interleave");
+                counted_t<const term_t> interleave_term;
+                // Steal arguments from an array as an optarg, to allow functions in array
+                std::map<std::string, counted_t<const term_t> >::const_iterator it
+                    = optargs.find("interleave");
+                r_sanity_check(it != optargs.end());
+                interleave_term = it->second;
+
                 counted_t<const op_term_t> interleave_op_term(
                     static_cast<const op_term_t *>(interleave_term.get()));
                 const std::vector<counted_t<const term_t> > &array_args = interleave_op_term->get_original_args();
@@ -612,6 +618,7 @@ private:
                                                           array_raw_term),
                     backtrace());
             } else {
+                scoped_ptr_t<val_t> interleave_arg = args->optarg(env, "interleave");
                 // A single element, either a bool or a term as above
                 datum_t interleave_datum;
                 bool use_as_term = true;
@@ -624,6 +631,9 @@ private:
                     }
                 }
                 if (use_as_term) {
+                    interleave = false;
+                    order_by_field = true;
+
                     union_stream = make_counted<ordered_union_datum_stream_t>(
                         std::move(streams),
                         build_comparisons_from_single_term(this,
@@ -631,9 +641,6 @@ private:
                                                            std::move(interleave_arg),
                                                            r_interleave_arg),
                         backtrace());
-
-                    interleave = false;
-                    order_by_field = true;
                 }
             }
         }
@@ -644,7 +651,9 @@ private:
         } else {
             if (!order_by_field) {
                 union_stream = make_counted<ordered_union_datum_stream_t>(
-                    std::move(streams), backtrace());
+                    std::move(streams),
+                    std::vector<std::pair<order_direction_t, counted_t<const func_t>>>(),
+                    backtrace());
             }
         }
         return new_val(env->env, union_stream);

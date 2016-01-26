@@ -1679,33 +1679,14 @@ private:
 
 ordered_union_datum_stream_t::ordered_union_datum_stream_t(
     std::vector<counted_t<datum_stream_t> > &&_streams,
-    backtrace_id_t bt)
-    : eager_datum_stream_t(bt),
-      union_type(feed_type_t::not_feed),
-      is_array_ordered_union(true),
-      is_infinite_ordered_union(false),
-      is_ordered_by_field(false) {
-   for (const auto &stream : _streams) {
-        union_type = union_of(union_type, stream->cfeed_type());
-        is_infinite_ordered_union |= stream->is_infinite();
-        is_array_ordered_union &= stream->is_array();
-    }
-    for (auto &&stream : _streams) {
-        streams.push_back(std::move(stream));
-    }
-    comparisons = std::vector<std::pair<order_direction_t, counted_t<const func_t>>>();
-}
-
-ordered_union_datum_stream_t::ordered_union_datum_stream_t(
-    std::vector<counted_t<datum_stream_t> > &&_streams,
     std::vector<std::pair<order_direction_t, counted_t<const func_t> > > _comparisons,
     backtrace_id_t bt)
     : eager_datum_stream_t(bt),
       union_type(feed_type_t::not_feed),
       is_array_ordered_union(true),
       is_infinite_ordered_union(false),
-      is_ordered_by_field(true),
-      do_prelim_cache(true) {
+      comparisons(std::move(_comparisons)) {
+
     for (const auto &stream : _streams) {
         union_type = union_of(union_type, stream->cfeed_type());
         is_infinite_ordered_union |= stream->is_infinite();
@@ -1715,7 +1696,12 @@ ordered_union_datum_stream_t::ordered_union_datum_stream_t(
         streams.push_back(std::move(stream));
     }
 
-    comparisons = std::move(_comparisons);
+    if (comparisons.size() == 0) {
+        is_ordered_by_field = false;
+    } else {
+        is_ordered_by_field = true;
+        do_prelim_cache = true;
+    }
 }
 
 std::vector<datum_t> ordered_union_datum_stream_t::next_raw_batch(env_t *env, const batchspec_t &batchspec) {

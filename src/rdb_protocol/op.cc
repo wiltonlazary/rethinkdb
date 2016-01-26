@@ -238,15 +238,6 @@ scoped_ptr_t<val_t> op_term_t::optarg(scope_env_t *env, const std::string &key) 
     return env->env->get_optarg(env->env, key);
 }
 
-counted_t<const term_t> op_term_t::optarg_term(scope_env_t *, const std::string &key) const {
-    std::map<std::string, counted_t<const term_t> >::const_iterator it
-        = optargs.find(key);
-    if (it != optargs.end()) {
-        return it->second;
-    }
-    r_sanity_fail();
-}
-
 counted_t<const func_term_t> op_term_t::lazy_literal_optarg(
         compile_env_t *env, const std::string &key) const {
     std::map<std::string, counted_t<const term_t> >::const_iterator it =

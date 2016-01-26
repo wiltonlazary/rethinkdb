@@ -268,8 +268,6 @@ class args_t;
 class ordered_union_datum_stream_t : public eager_datum_stream_t {
 public:
     ordered_union_datum_stream_t(std::vector<counted_t<datum_stream_t> > &&_streams,
-                                 backtrace_id_t bt);
-    ordered_union_datum_stream_t(std::vector<counted_t<datum_stream_t> > &&_streams,
                                  std::vector<std::pair<order_direction_t, counted_t<const func_t> > > _comparisons,
                                  backtrace_id_t bt);
 

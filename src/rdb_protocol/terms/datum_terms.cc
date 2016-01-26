@@ -50,7 +50,7 @@ private:
         {
             profile::sampler_t sampler("Evaluating elements in make_array.", env->env->trace);
             for (size_t i = 0; i < args->num_args(); ++i) {
-                //                acc.add(args->arg(env, i)->as_datum());
+                acc.add(args->arg(env, i)->as_datum());
                 sampler.new_sample();
             }
         }
