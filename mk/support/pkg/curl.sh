@@ -23,6 +23,12 @@ pkg_install-include () {
     make -C "$build_dir/include" install
 }
 
+pkg_install-include-windows () {
+    pkg_copy_src_to_build
+
+    error "not implemented"
+}
+
 pkg_install () {
     pkg_copy_src_to_build
 

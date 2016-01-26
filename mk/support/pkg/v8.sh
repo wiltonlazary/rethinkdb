@@ -6,12 +6,12 @@ src_url=http://commondatastorage.googleapis.com/chromium-browser-official/v8-$ve
 
 pkg_install-include () {
     pkg_copy_src_to_build
-    
+
     rm -rf "$install_dir/include"
     mkdir -p "$install_dir/include"
     cp -RL "$src_dir/include/." "$install_dir/include"
     sed -i.bak 's/include\///' "$install_dir/include/libplatform/libplatform.h"
-    
+
     # -- assemble the icu headers
     if [[ "$CROSS_COMPILING" = 1 ]]; then
         ( cross_build_env; in_dir "$build_dir/third_party/icu" ./configure --prefix="$(niceabspath "$install_dir")" --enable-static "$@" )
@@ -24,6 +24,12 @@ pkg_install-include () {
         sed -i.bak $'$a\\\ninstall-headers:' "$file"
     done
     in_dir "$build_dir/third_party/icu/source" make install-headers-recursive
+}
+
+pkg_install-include-windows () {
+    pkg_copy_src_to_build
+
+    error "not implemented"
 }
 
 pkg_install () {
