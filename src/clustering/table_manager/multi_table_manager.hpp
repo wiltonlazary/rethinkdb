@@ -374,11 +374,6 @@ private:
         table_t *table,
         const peer_id_t &peer_id);
 
-    /* As a work-around for https://github.com/rethinkdb/rethinkdb/issues/4719 ,
-    we sometimes have to pause syncing for a few seconds. `dont_sync_before_second`
-    contains the value of `ticks_to_secs(get_ticks())` at which we may sync again. */
-    double dont_sync_before_second;
-
     /* If we're a proxy server, then `is_proxy_server` will be `true`; `server_id` will
     be `nil_uuid()`; `persistence_interface` will be `nullptr`; `base_path` will be
     empty; and `io_backender` will be `nullptr`. */

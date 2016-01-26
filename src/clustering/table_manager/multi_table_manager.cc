@@ -19,7 +19,6 @@ multi_table_manager_t::multi_table_manager_t(
         const base_path_t &_base_path,
         io_backender_t *_io_backender,
         perfmon_collection_repo_t *_perfmon_collection_repo) :
-    dont_sync_before_second(0.0),
     is_proxy_server(false),
     server_id(_server_id),
     mailbox_manager(_mailbox_manager),
@@ -334,24 +333,17 @@ void multi_table_manager_t::on_action(
         servers has seen. In that case we would have no chance to become active
         again for this table until another emergency repair happened
         (which might be impossible, if the table is otherwise still available). */
+        // TODO! Explain why we *must* only sync if the epoch is different.
+        //  ... this is absolutely crucial.
         bool ignore_timestamp =
             table->status == table_t::status_t::INACTIVE
-            && action_status == action_status_t::ACTIVE;
+            && action_status == action_status_t::ACTIVE
+            && timestamp.epoch != current_timestamp.epoch;
         if (!ignore_timestamp && !timestamp.supersedes(current_timestamp)) {
             if (!ack_addr.is_nil()) {
                 send(mailbox_manager, ack_addr);
             }
             return;
-        } else if (!timestamp.supersedes(current_timestamp)) {
-            /* If we accept this action only because we ignored the timestamp, there's
-            a chance of getting into an oscillation pattern with another server.
-            To break that up, we don't sync anything out for a randomized time.
-            This is obviously a hack and will go away when we address
-            https://github.com/rethinkdb/rethinkdb/issues/4719 */
-            logINF("Ignored the timestamp on an action that makes us active. "
-                   "Delaying sync.");
-            dont_sync_before_second =
-                ticks_to_secs(get_ticks()) + static_cast<double>(randint(4000)) / 1000.0;
         }
     }
 
@@ -431,7 +423,6 @@ void multi_table_manager_t::on_action(
             /* We are being demoted; we used to be hosting this table, but no longer are.
             But we still keep a record of the table's name, etc. just like every other
             server that's not hosting the table. */
-            // TODO! Also the raft state...
 
             table->active.reset();
 
@@ -646,17 +637,6 @@ void multi_table_manager_t::schedule_sync(
         try {
             mutex_assertion_t::acq_t global_mutex_acq(&mutex);
             while (!table->to_sync_set.empty()) {
-                double delay = dont_sync_before_second - ticks_to_secs(get_ticks());
-                if (delay > 0.0) {
-                    global_mutex_acq.reset();
-                    nap(static_cast<int64_t>(delay * 1000.0),
-                        keepalive.get_drain_signal());
-                    global_mutex_acq.reset(&mutex);
-                    if (table->to_sync_set.empty()) {
-                        break;
-                    }
-                }
-
                 std::set<peer_id_t> to_sync_set;
                 std::swap(table->to_sync_set, to_sync_set);
                 rwlock_in_line_t table_lock_in_line(&table->access_rwlock, access_t::write);
