@@ -250,7 +250,8 @@ void real_table_persistence_interface_t::write_metadata_inactive(
         mdprefix_table_inactive().suffix(uuid_to_str(table_id)),
         state,
         &non_interruptor);
-    table_raft_storage_interface_t::erase(&write_txn, table_id);
+    // TODO! Can't do this.
+    //table_raft_storage_interface_t::erase(&write_txn, table_id);
     real_branch_history_manager_t::erase(&write_txn, table_id);
 }
 

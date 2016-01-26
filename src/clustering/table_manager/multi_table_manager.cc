@@ -431,6 +431,7 @@ void multi_table_manager_t::on_action(
             /* We are being demoted; we used to be hosting this table, but no longer are.
             But we still keep a record of the table's name, etc. just like every other
             server that's not hosting the table. */
+            // TODO! Also the raft state...
 
             table->active.reset();
 
