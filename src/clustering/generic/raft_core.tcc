@@ -1477,10 +1477,10 @@ bool raft_member_t<state_t>::candidate_run_election(
     }
 
     typename raft_rpc_request_t<state_t>::request_vote_t request;
-    request_copy.term = this->ps().current_term;
-    request_copy.candidate_id = this_member_id;
-    request_copy.last_log_index = this->ps().log.get_latest_index();
-    request_copy.last_log_term =
+    request.term = this->ps().current_term;
+    request.candidate_id = this_member_id;
+    request.last_log_index = this->ps().log.get_latest_index();
+    request.last_log_term =
         this->ps().log.get_entry_term(this->ps().log.get_latest_index());
 
     /* Raft paper, Section 5.2: "[The candidate] issues RequestVote RPCs in parallel to
@@ -1495,7 +1495,7 @@ bool raft_member_t<state_t>::candidate_run_election(
 
         auto_drainer_t::lock_t request_vote_keepalive(request_vote_drainer.get());
         coro_t::spawn_sometime([this, &votes_for_us, &we_won_the_election, peer,
-                &request_copy, request_vote_keepalive /* important to capture */]() {
+                &request, request_vote_keepalive /* important to capture */]() {
             try {
                 exponential_backoff_t backoff(100, 1000);
                 while (true) {
