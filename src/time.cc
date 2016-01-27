@@ -19,8 +19,8 @@ microtime_t current_microtime() {
     return uint64_t(t.tv_sec) * MILLION + t.tv_usec;
 }
 
-ticks_t secs_to_ticks(time_t secs) {
-    return static_cast<ticks_t>(secs) * BILLION;
+ticks_t secs_to_ticks(double secs) {
+    return static_cast<ticks_t>(secs * BILLION);
 }
 
 #ifdef __MACH__
