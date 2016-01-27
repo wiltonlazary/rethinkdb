@@ -20,7 +20,10 @@ init () {
     min_browserify_version=3.0.0
     max_browserify_version=12.0.1
     min_python_version=2.6.0
+
     min_msbuild_version=14.0
+    min_nmake_version=14.0
+    min_cl_version=19.0
 
     must_fetch_list='bluebird v8'
     please_fetch_list="handlebars gtest re2 $must_fetch_list"
@@ -41,7 +44,7 @@ init () {
     default_allocator_osx=system
     default_allocator_mingw=system
 
-    allowed_arg_vars="CXXFLAGS LDFLAGS PLATFORM"
+    allowed_arg_vars="CXXFLAGS LDFLAGS PLATFORM MSBUILD VCVARSALL"
 }
 
 # The main configuration steps
@@ -188,8 +191,10 @@ configure_unixlike () {
 }
 
 configure_windows () {
-    require MSBuild
-    check_msbuild
+    for tool in msbuild vcvarsall; do
+        require $tool
+        check_vs_bin $tool
+    done
     require Platform
     var PLATFORM ${requested_platform:-Win32}
     var COMPILER MSC
@@ -327,7 +332,7 @@ read_args () {
             --prefix) $has_arg; arg_prefix=$arg ;;
             --sysconfdir) $has_arg; arg_sysconfdir=$arg ;;
             --localstatedir) $has_arg; arg_localstatedir=$arg ;;
-            --platform) $has_arg; requested_platform=$arg ;;
+            --windows-platform) $has_arg; requested_platform=$arg ;;
             --help) show_help; exit ;;
             -*) die "Unknown option '$option'" ;;
             *) if contains "$all_deps" "$(lc $option)"; then
@@ -401,7 +406,7 @@ EOF
   --enable-precompiled-web
   --disable-precompiled-web Use precompiled web assets located in precompiled/web (default: autodetect)
   --ccache                Speed up the build using ccache
-  --platform              Windows platform: Win32 (32 bit) or x64 (64 bit)
+  --windows-platform      Windows platform: Win32 (32 bit, default) or x64 (64 bit)
 EOF
 }
 
@@ -679,8 +684,8 @@ test_bin_version () {
     test -z "$min$max$invalid" && return 0
     local output
     local ver
-    if output=$("$2" ${3:---version} 2>&1) &&
-       ver=$(echo "$output" | extract_version_string) &&
+    output=$("$2" ${3:---version} 2>&1)
+    if ver=$(echo "$output" | extract_version_string) &&
        test -n "$ver" ;
     then
         local version=$(read_version "$ver")
@@ -789,7 +794,7 @@ check_bin () {
 
 # Invoke pkg.sh with the required environment variables
 pkg () {
-    FETCH_LIST="$FETCH_LIST" bash $root/mk/support/pkg/pkg.sh "$@"
+    FETCH_LIST="$FETCH_LIST" PLATFORM="${PLATFORM:-}" bash $root/mk/support/pkg/pkg.sh "$@"
 }
 
 # add_fetch <name>
@@ -1249,14 +1254,24 @@ check_admin_deps () {
     macro "GULP_BIN_DEP" "\$(SUPPORT_BUILD_DIR)/admin-deps_$version/bin/gulp"
 }
 
-check_msbuild () {
-    # TODO: where else does msbuild hide?
-    MSBUILD=${MSBUILD:-/cygdrive/c/Program\ Files\ \(x86\)/MSBuild/14.0/Bin/MSBuild.exe}
-    if test -x "$MSBUILD"; then
-       test_bin_version msbuild "$MSBUILD" /version
-       var MSBUILD "$MSBUILD"
+check_vs_bin () {
+    local ucname=$(uc $1)
+    local exe=${!ucname:-}
+    if [[ -z "$exe" ]] || ! lookup "$arg_vars" $ucname exe; then
+        # TODO: what is a better way to find these?
+        for it in /cygdrive/*/Program\ Files*/{MSBuild/14.0/Bin,Microsoft\ Visual\ Studio\ 14.0/VC{,/bin}}/$1.{exe,bat}; do
+            case "$it" in
+                *\**) ;;
+                *) exe=$it; break;;
+            esac
+        done
+    fi
+
+    if [[ -n "$exe" ]]; then
+        test_bin_version $1 "$exe" /version
+        var $ucname "$exe"
     else
-        not_found MSBUILD
+        not_found $1
     fi
 }
 

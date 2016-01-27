@@ -59,33 +59,40 @@ pkg_remove_tmp_fetch_dir () {
     rm -rf "$tmp_dir"
 }
 
-
-
 pkg_fetch_archive () {
     pkg_make_tmp_fetch_dir
 
-    local archive="${src_url##*/}"
-    local url
+    local archive_name="${src_url##*/}"
+    local archive="$cache_dir/$archive_name"
+    local actual_sha1
 
-    if ! geturl "$src_url" > "$tmp_dir/$archive"; then
-       if [[ -n "${src_url_backup:-}" ]]; then
-           geturl "$src_url_backup" > "$tmp_dir/$archive"
-           url="$src_url_backup"
-       fi
-       exit 1
-    else
-        url="$src_url"
+    if [[ -e "$archive" ]]; then
+        actual_sha1=`getsha1 "$archive"`
+        if [[ "$actual_sha1" != "$src_url_sha1" ]]; then
+            echo "warning: cached file has wrong hash, deleting. (Expected $src_url_sha1, actual $actual_sha1)."
+            rm "$archive"
+        fi
     fi
 
-    if [[ -n "${src_url_sha1:-}" ]]; then
-        local sha1
-        sha1=`getsha1 "$tmp_dir/$archive"`
-        if [[ "$sha1" != "$src_url_sha1" ]]; then
-            error "downloaded file has wrong hash: expected $src_url_sha1 but found $sha1 for $url ($tmp_dir/archive)"
+    if [[ ! -e "$archive" ]]; then
+        local url
+
+        mkdir -p "$cache_dir"
+
+        if ! geturl "$src_url" > "$archive"; then
+            if [[ -n "${src_url_backup:-}" ]]; then
+                geturl "$src_url_backup" > "$archive"
+                url="$src_url_backup"
+            fi
+            exit 1
+        else
+            url="$src_url"
         fi
-    elif sha1=`getsha1 "$tmp_dir/$archive"`; then
-        echo "notice: missing expected hash for '$url', add this line to '$pkg_dir/$pg.sh':"
-        echo "  src_url_sha1=$sha1"
+
+        actual_sha1=`getsha1 "$archive"`
+        if [[ "$actual_sha1" != "$src_url_sha1" ]]; then
+            error "downloaded file has wrong hash: expected '$src_url_sha1' but found '$actual_sha1' for $url ($tmp_dir/archive)"
+        fi
     fi
 
     local ext
@@ -95,7 +102,7 @@ pkg_fetch_archive () {
         *.tar.bz2) ext=tar.bz2; in_dir "$tmp_dir" tar -xjf "$archive" ;;
         *.tar.xz)  ext=tar.xz;  in_dir "$tmp_dir" tar -xJf "$archive" ;;
         *.zip)     ext=zip;     in_dir "$tmp_dir" unzip    "$archive" ;;
-        *) error "don't know how to extract $archive"
+        *) error "don't know how to extract $archive_name"
     esac
 
     set -- "$tmp_dir"/*/
@@ -104,14 +111,18 @@ pkg_fetch_archive () {
         error "invalid archive contents: $archive"
     fi
 
-    test -e "$src_dir" && rm -rf "$src_dir"
+    pkg_patch "$1"
 
+    test -e "$src_dir" && rm -rf "$src_dir"
     mv "$1" "$src_dir"
 
-    mkdir -p "$external_dir"/cache/
-    mv "$tmp_dir"/archive "$external_dir"/cache/
-
     pkg_remove_tmp_fetch_dir
+}
+
+pkg_patch () {
+    for patch in "$pkg_dir"/patch/"$pkg"_*.patch; do # lexical order
+        in_dir "$1" patch -fp1 < "$patch"
+    done
 }
 
 pkg_fetch_git () {
@@ -130,10 +141,6 @@ pkg_fetch () {
     fi
 }
 
-pkg_fetch-windows () {
-    pkg_fetch "$@"
-}
-
 pkg_move_tmp_to_src () {
     test -e "$src_dir" && rm -rf "$src_dir"
     mv "$tmp_dir" "$src_dir"
@@ -148,7 +155,7 @@ pkg_install-include () {
     test -e "$install_dir/include" && rm -rf "$install_dir/include"
     if [[ -e "$src_dir/include" ]]; then
         mkdir -p "$install_dir/include"
-        cp -RL "$src_dir/include/." "$install_dir/include"
+        cp -vRL "$src_dir/include/." "$install_dir/include"
     fi
 }
 
@@ -206,6 +213,18 @@ cross_build_env () {
     unset LD
 }
 
+with_vs_env () {
+    local vcvarsall="$(cygpath --windows --short-name "$VCVARSALL")"
+
+    local machine
+    case "$PLATFORM" in
+        Win32) machine=x86 ;;
+        x64) machine=x64 ;;
+    esac
+
+    cmd /c "$vcvarsall" "$machine" "&&" "$@"
+}
+
 error () {
     echo "$0: ${pkg:-unknown}: $*" >&2
     exit 1
@@ -257,16 +276,9 @@ load_pkg () {
     fi
 
     src_dir=$(niceabspath "$external_dir/$pkg""_$version")
-    if [ "$OS" = Windows ]; then
-        if [ "$DEBUG" = 1 ]; then
-            install_dir=$(niceabspath "$root_build_dir/external/$PLATFORM/Debug/$pkg""_$version")
-        else
-            install_dir=$(niceabspath "$root_build_dir/external/$PLATFORM/Release/$pkg""_$version")
-        fi
-    else
-        install_dir=$(niceabspath "$root_build_dir/external/$pkg""_$version")
-    fi
+    install_dir=$(niceabspath "$root_build_dir/external/$pkg""_$version")
     build_dir=$(niceabspath "$install_dir/build")
+    cache_dir=$(niceabspath "$external_dir/.cache")
 }
 
 contains () {
@@ -337,7 +349,6 @@ root_dir=$(niceabspath "$pkg_dir/../../..")
 conf_dir=$(niceabspath "$pkg_dir/../config")
 external_dir=$(niceabspath "$pkg_dir/../../../external")
 root_build_dir=${BUILD_ROOT_DIR:-$(niceabspath "$pkg_dir/../../../build")}
-windows_deps=$root_build_dir/windows_deps
 
 # These variables should be passed to this script from support/build.mk
 WGET=${WGET:-}
@@ -351,8 +362,28 @@ OS=${OS:-}
 # Read the command
 cmd=$1
 shift
+
+# Windows-specific settings
 if [ "$OS" = "Windows" ]; then
-    cmd=$cmd-windows
+    case "$cmd" in
+        install|install-include) cmd=$cmd-windows
+    esac
+
+    if [[ "${DEBUG:-}" = 1 ]]; then
+        CONFIGURATION=Debug
+    else
+        CONFIGURATION=Release
+    fi
+
+    if [[ "$PLATFORM" = "Win32" ]]; then
+        VS_OUTPUT_DIR=$CONFIGURATION
+    else
+        VS_OUTPUT_DIR=$PLATFORM/$CONFIGURATION
+    fi
+
+    windows_deps=$root_build_dir/windows_deps
+    windows_deps_libs=$windows_deps/lib/$PLATFORM/$CONFIGURATION
+    mkdir -p "$windows_deps_libs"
 fi
 
 # Load the package

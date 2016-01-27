@@ -24,7 +24,7 @@ PKG_MAKEFLAGS = $(if $(JOBSERVER_FDS_FLAG), -j) $(JOBSERVER_FDS_FLAG)
 
 PKG_SCRIPT_VARIABLES := WGET CURL NPM OS FETCH_LIST BUILD_ROOT_DIR PTHREAD_LIBS CROSS_COMPILING CXX
 ifeq (Windows,$(OS))
-  PKG_SCRIPT_VARIABLES += DEBUG PLATFORM
+  PKG_SCRIPT_VARIABLES += DEBUG PLATFORM MSBUILD VCVARSALL
 endif
 
 PKG_SCRIPT = $(foreach v, $(PKG_SCRIPT_VARIABLES), $v='$($v)') MAKEFLAGS='$(PKG_MAKEFLAGS)' $/mk/support/pkg/pkg.sh
@@ -84,7 +84,7 @@ $(SUPPORT_SRC_DIR)/$2_$3: | $(foreach dep, $(filter node,$($2_DEPENDS)), $(SUPPO
 # Build a single package
 .PHONY: support-$2 support-$2_$3
 support-$2: support-$2_$3
-support-$2_$3: $1
+support-$2_$3: $(SUPPORT_BUILD_DIR)/$2_$3/install.witness
 
 # Clean a single package
 .PHONY: clean-$2_$3
