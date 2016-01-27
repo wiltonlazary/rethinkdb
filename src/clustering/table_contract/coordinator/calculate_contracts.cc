@@ -251,14 +251,8 @@ contract_t calculate_contract(
         acks from a majority of both `voters` and `temp_voters` before acking writes to
         the client, *and* it has ensured that every write that was acked before that
         policy was implemented has been backfilled to a majority of `temp_voters`. So we
-        can't switch voters unless the primary reports `primary_running`.
-        As an additional restriction, we don't commit `temp_voters` if we're in the
-        process of handing over the `primary`. The reason is that the `primary_ready`
-        status from the old primary has a different meaning in that case, and doesn't
-        actually guarantee acked writes from the required majorities (see
-        `primary_execution_t::is_contract_ackable` in `exec_primary.cc`). */
+        can't switch voters unless the primary reports `primary_running`. */
         if (static_cast<bool>(old_c.primary) &&
-                !static_cast<bool>(old_c.primary->hand_over) &&
                 acks.count(old_c.primary->server) == 1 &&
                 acks.at(old_c.primary->server).state ==
                     contract_ack_t::state_t::primary_ready) {
