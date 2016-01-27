@@ -151,7 +151,7 @@ raft_member_t<state_t>::~raft_member_t() {
 
 template<class state_t>
 raft_persistent_state_t<state_t> raft_member_t<state_t>::get_state_for_init(
-        new_mutex_acq_t &mutex_acq_proof) {
+        const new_mutex_acq_t &mutex_acq_proof) {
     mutex_acq_proof.guarantee_is_holding(&mutex);
     /* This implementation deviates from the Raft paper in that we initialize new peers
     joining the cluster by copying the log, snapshot, etc. from an existing peer, instead

@@ -608,7 +608,7 @@ public:
     `mutex_acq_proof` must be acquired through the `get_mutex_acq()` method below.
     This is separate so that `get_state_for_init()` doesn't need to block. */
     raft_persistent_state_t<state_t> get_state_for_init(
-        new_mutex_acq_t &mutex_acq_proof);
+        const  new_mutex_acq_t &mutex_acq_proof);
 
     scoped_ptr_t<new_mutex_acq_t> get_mutex_acq() {
         return make_scoped<new_mutex_acq_t>(&mutex);
