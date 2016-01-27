@@ -2,6 +2,7 @@
 version=7.40.0
 
 src_url=http://curl.haxx.se/download/curl-$version.tar.bz2
+src_url_sha1=
 
 pkg_configure () {
     local prefix
@@ -24,9 +25,33 @@ pkg_install-include () {
 }
 
 pkg_install-include-windows () {
+    mkdir -p "$windows_deps/include/curl"
+    cp -vL "$src_dir/include/curl"/*.h  "$windows_deps/include/curl/"
+    mkdir -p "$install_dir/include"
+}
+
+pkg_install-windows () {
     pkg_copy_src_to_build
 
-    error "not implemented"
+    local flags out_config out_suffix machine
+    if [[ "$DEBUG" = 1 ]]; then
+        flags=DEBUG=yes
+        out_config=debug
+        out_suffix=_debug
+    else
+        flags=
+        out_config=release
+        out_suffix=
+    fi
+    case "$PLATFORM" in
+        Win32) machine=x86 ;;
+        x64) machine=x64 ;;
+    esac
+
+    in_dir "$build_dir/winbuild" with_vs_env \
+      nmake /f Makefile.vc mode=static MACHINE=$machine RTLIBCFG=static $flags
+
+    cp "$build_dir/builds/libcurl-vc-$machine-$out_config-static-ipv6-sspi-winssl/lib/libcurl_a${out_suffix}.lib" "$windows_deps_libs/libcurl.lib"
 }
 
 pkg_install () {
@@ -42,11 +67,13 @@ pkg_install () {
 }
 
 pkg_depends () {
-    local deps='libidn zlib'
-    if will_fetch openssl; then
-        echo $deps openssl
-    else
-        echo $deps
+    if [[ "$OS" != Windows ]]; then
+        local deps='libidn zlib'
+        if will_fetch openssl; then
+            echo $deps openssl
+        else
+            echo $deps
+        fi
     fi
 }
 

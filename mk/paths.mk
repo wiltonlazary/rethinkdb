@@ -9,17 +9,7 @@ PACKAGING_DIR := $(TOP)/packaging
 PACKAGES_DIR := $(BUILD_ROOT_DIR)/packages
 JS_BUILD_DIR := $(TOP)/build/drivers/javascript
 SUPPORT_SRC_DIR := $(TOP)/external
-
-ifeq (Windows,$(OS))
-  ifeq (1,$(DEBUG))
-    SUPPORT_BUILD_DIR := $(BUILD_ROOT_DIR)/external/$(PLATFORM)/Debug
-  else
-    SUPPORT_BUILD_DIR := $(BUILD_ROOT_DIR)/external/$(PLATFORM)/Release
-  endif
-else
-  SUPPORT_BUILD_DIR := $(BUILD_ROOT_DIR)/external
-endif
-
+SUPPORT_BUILD_DIR := $(BUILD_ROOT_DIR)/external
 SUPPORT_LOG_DIR := $(SUPPORT_BUILD_DIR)
 
 # If the BUILD_DIR is not set, generate a name that depends on the different settings
