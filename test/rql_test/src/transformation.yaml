@@ -123,8 +123,18 @@ tests:
     - py: r.range(0, 1000).fold(0, lambda acc, _: acc.add(1), emit=lambda old,row,acc: [acc]).coerce_to("array")
       ot: [x for x in range(1, 1001)]
 
+    # Empty stream test.
     - py: tbl.get_all().fold(0, lambda acc, _: acc.add(1), emit=lambda old,row,acc: [acc])
       ot: []
+
+    - py: r.range(0, 10).fold(0, lambda acc, _: acc.add(1), emit=lambda old,row,acc: acc)
+      ot: err("ReqlQueryLogicError", "Expected type ARRAY but found NUMBER.")
+
+    - py: r.range(0, 10).fold(0, lambda acc, _: acc.add(1), emit=lambda old,row,acc: r.range())
+      ot: err("ReqlQueryLogicError", "Expected type DATUM but found SEQUENCE:")
+
+    - py: r.range(0, 10).fold(0, lambda acc, _: acc.add(1), emit=lambda old,row,acc: [acc]).changes()
+      ot: err("ReqlQueryLogicError", "Cannot call `changes` on an eager stream.")
 
     # Concat-map
     - py: tbl.concat_map(lambda row:[])
