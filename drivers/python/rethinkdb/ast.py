@@ -426,7 +426,7 @@ class RqlQuery(object):
             # `func_wrap` only the last argument before optional arguments
             # Also `func_wrap` keyword arguments
 
-            #Nice syntax not supported by python2.6
+            # Nice syntax not supported by python2.6
             kwfuncargs = {}
             for arg_name in kwargs:
                 kwfuncargs[arg_name] = func_wrap(kwargs[arg_name])

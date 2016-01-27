@@ -394,29 +394,23 @@ public:
                         datum_t base,
                         counted_t<const func_t> &&_acc_func,
                         counted_t<const func_t> &&_emit_func,
-                        backtrace_id_t bt);
-
-    fold_datum_stream_t(counted_t<datum_stream_t> &&stream,
-                        datum_t base,
-                        counted_t<const func_t> &&_acc_func,
-                        counted_t<const func_t> &&_emit_func,
                         counted_t<const func_t> &&_final_emit_func,
                         backtrace_id_t bt);
 
-    virtual std::vector<datum_t>
+    std::vector<datum_t>
     next_raw_batch(env_t *env, const batchspec_t &batchspec);
 
-    virtual bool is_array() const {
+    bool is_array() const final {
         return is_array_fold;
     }
 
-    virtual bool is_exhausted() const;
+    bool is_exhausted() const final;
 
-    virtual feed_type_t cfeed_type() const {
+    feed_type_t cfeed_type() const final {
         return union_type;
     }
 
-    virtual bool is_infinite() const {
+    bool is_infinite() const final {
         return is_infinite_fold;
     }
 

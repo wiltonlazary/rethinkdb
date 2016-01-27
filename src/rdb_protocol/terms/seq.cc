@@ -209,9 +209,14 @@ private:
 class fold_term_t : public grouped_seq_op_term_t {
 public:
     fold_term_t(compile_env_t *env, const raw_term_t &term)
-      : grouped_seq_op_term_t(env, term, argspec_t(3), optargspec_t({"emit", "final_emit"})) { }
+      : grouped_seq_op_term_t(env,
+                              term,
+                              argspec_t(3),
+                              optargspec_t({"emit", "final_emit"})) { }
 private:
-    virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
+    virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env,
+                                          args_t *args,
+                                          eval_flags_t) const {
         counted_t<datum_stream_t> stream = args->arg(env, 0)->as_seq(env->env);
 
         datum_t base = args->arg(env, 1)->as_datum();
@@ -226,19 +231,12 @@ private:
                    strprintf("The accumulator function passed to `fold`"
                              " should expect 2 arguments"));
         }
-        bool use_emit = false;
-        bool use_final_emit = false;
-        scoped_ptr_t<val_t> emit_arg;
-        scoped_ptr_t<val_t> final_emit_arg;
-        if ((emit_arg = args->optarg(env, "emit"))) {
-            use_emit = true;
-        }
-        if ((final_emit_arg = args->optarg(env, "final_emit"))) {
-            use_final_emit = true;
-        }
 
-        if (!use_emit) {
-            //Handle case without emit function
+        scoped_ptr_t<val_t> emit_arg = args->optarg(env, "emit");
+        scoped_ptr_t<val_t> final_emit_arg = args->optarg(env, "final_emit");
+
+        if (!emit_arg.has()) {
+            // Handle case without emit function.
             datum_t result = base;
             batchspec_t batchspec = batchspec_t::user(batch_type_t::TERMINAL, env->env);
             {
@@ -255,10 +253,9 @@ private:
                 }
             }
 
-            if (use_final_emit) {
+            if (final_emit_arg.has()) {
                 datum_t final_result;
-                std::vector<datum_t> final_args;
-                final_args.push_back(std::move(result));
+                std::vector<datum_t> final_args{std::move(result)};
 
                 counted_t<const func_t> final_emit_func = final_emit_arg->as_func();
                 final_result = final_emit_func->call(env->env, final_args)->as_datum();
@@ -270,7 +267,7 @@ private:
         } else {
             counted_t<const func_t> emit_func = emit_arg->as_func();
             counted_t<datum_stream_t> fold_stream;
-            if (use_final_emit) {
+            if (final_emit_arg.has()) {
                 counted_t<const func_t> final_emit_func = final_emit_arg->as_func();
                 fold_stream
                     = make_counted<fold_datum_stream_t>(std::move(stream),
@@ -285,6 +282,7 @@ private:
                                                         base,
                                                         std::move(acc_func),
                                                         std::move(emit_func),
+                                                        counted_t<const func_t>(),
                                                         backtrace());
             }
             return new_val(env->env, fold_stream);

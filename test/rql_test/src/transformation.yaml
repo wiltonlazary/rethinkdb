@@ -114,6 +114,18 @@ tests:
     - py: tbl.filter("id").fold(0, lambda acc, _: acc.add(1), emit=lambda old,row,acc: r.branch(old.mod(20).eq(0),[row],[])).coerce_to("array")
       ot: [{u'a': 0, u'id': 20}, {u'a': 3, u'id': 15}, {u'a': 2, u'id': 46}, {u'a': 2, u'id': 78}, {u'a': 2, u'id': 90}]
 
+    - py: r.range().fold(0, lambda acc, _: acc.add(1), emit=lambda old,row,acc: [acc]).limit(10)
+      ot: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+    - py: r.range().fold(0, lambda acc, _: acc.add(1), emit=lambda old,row,acc: [acc]).map(lambda doc: 1).reduce(lambda l, r: l+r)
+      ot: err("ReqlQueryLogicError", "Cannot use an infinite stream with an aggregation function (`reduce`, `count`, etc.) or coerce it to an array.")
+
+    - py: r.range(0, 1000).fold(0, lambda acc, _: acc.add(1), emit=lambda old,row,acc: [acc]).coerce_to("array")
+      ot: [x for x in range(1, 1001)]
+
+    - py: tbl.get_all().fold(0, lambda acc, _: acc.add(1), emit=lambda old,row,acc: [acc])
+      ot: []
+
     # Concat-map
     - py: tbl.concat_map(lambda row:[])
       js: tbl.concatMap(function(row) { return []; })
