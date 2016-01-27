@@ -681,7 +681,8 @@ enum class handshake_result_code_t {
     UNRECOGNIZED_VERSION = 1,
     INCOMPATIBLE_ARCH = 2,
     INCOMPATIBLE_BUILD = 3,
-    UNKNOWN_ERROR = 4
+    RATE_LIMIT = 4,
+    UNKNOWN_ERROR = 5
 };
 
 class handshake_result_t {
@@ -718,6 +719,8 @@ private:
                 return "incompatible architecture";
             case handshake_result_code_t::INCOMPATIBLE_BUILD:
                 return "incompatible build mode";
+            case handshake_result_code_t::RATE_LIMIT:
+                return "rate limit";
             case handshake_result_code_t::UNKNOWN_ERROR:
                 unreachable();
             default:
@@ -959,6 +962,41 @@ void connectivity_cluster_t::run_t::handle(
         }
     }
 
+    // Use ticks as they are monotonically increasing
+    ticks_t current_ticks = get_ticks();
+    std::pair<ticks_t, double> new_rate_limit = std::make_pair(current_ticks, 1);
+
+    // Mapping of server to a pair of last successful connection time and rate
+    std::map<server_id_t, std::pair<ticks_t, double>>::iterator rate_limit =
+        server_rate_limit.find(server_id);
+    if (rate_limit != server_rate_limit.end()) {
+        // The rate is incremented every time we successfully accept a connection, and
+        // decremented once every `seconds_per_rate_reduction`. We then calculate a
+        // delay by taking 1.5 to the power of said rate, and reject connections that
+        // reconnect before the delay is expired.
+        constexpr double seconds_per_rate_reduction = 1800;
+        double new_rate = std::max(
+            0.0,
+            rate_limit->second.second -
+                (ticks_to_secs(current_ticks - rate_limit->second.first) /
+                    seconds_per_rate_reduction));
+
+        double delay_seconds = std::pow(1.5, new_rate) - 1;
+        if (rate_limit->second.first + secs_to_ticks(delay_seconds) <= current_ticks) {
+            new_rate_limit.second = new_rate + 1;
+        } else {
+            auto reason = handshake_result_t::error(
+                handshake_result_code_t::RATE_LIMIT,
+                strprintf(
+                    "%s blocked for another %.2f seconds",
+                    uuid_to_str(remote_server_id).c_str(),
+                    delay_seconds -
+                        ticks_to_secs(current_ticks - rate_limit->second.first)));
+            fail_handshake(conn, peername, reason);
+            return;
+        }
+    }
+
     // Receive id, host/ports.
     peer_id_t other_id;
     std::set<host_and_port_t> other_peer_addr_hosts;
@@ -1128,6 +1166,9 @@ void connectivity_cluster_t::run_t::handle(
         }
         *successful_join = true;
     }
+
+    // Update the rate limit now that we've successfully connected
+    server_rate_limit[server_id] = std::move(new_rate_limit);
 
     /* For each peer that our new friend told us about that we don't already
     know about, start a new connection. If the cluster is shutting down, skip

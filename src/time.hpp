@@ -19,7 +19,7 @@ bool operator<=(const struct timespec &t1, const struct timespec &t2);
 bool operator>=(const struct timespec &t1, const struct timespec &t2);
 
 typedef uint64_t ticks_t;
-ticks_t secs_to_ticks(time_t secs);
+ticks_t secs_to_ticks(double secs);
 ticks_t get_ticks();
 time_t get_secs();
 double ticks_to_secs(ticks_t ticks);
