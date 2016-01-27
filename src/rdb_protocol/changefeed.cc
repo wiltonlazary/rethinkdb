@@ -1427,6 +1427,7 @@ private:
 };
 
 class range_sub_t;
+class empty_sub_t;
 class point_sub_t;
 class limit_sub_t;
 
@@ -1440,6 +1441,9 @@ public:
 
     void add_range_sub(range_sub_t *sub) THROWS_NOTHING;
     void del_range_sub(range_sub_t *sub) THROWS_NOTHING;
+
+    void add_empty_sub(empty_sub_t *sub) THROWS_NOTHING;
+    void del_empty_sub(empty_sub_t *sub) THROWS_NOTHING;
 
     void add_limit_sub(limit_sub_t *sub, const uuid_u &uuid) THROWS_NOTHING;
     void del_limit_sub(limit_sub_t *sub, const uuid_u &uuid) THROWS_NOTHING;
@@ -1499,6 +1503,8 @@ private:
 
     std::map<store_key_t, std::vector<std::set<point_sub_t *> > > point_subs;
     rwlock_t point_subs_lock;
+    std::vector<std::set<empty_sub_t *> > empty_subs;
+    rwlock_t empty_subs_lock;
     std::vector<std::set<range_sub_t *> > range_subs;
     rwlock_t range_subs_lock;
     std::map<uuid_u, std::vector<std::set<limit_sub_t *> > > limit_subs;
@@ -1689,6 +1695,77 @@ void real_feed_t::constructor_cb() {
         lock.reset();
     }
 }
+
+class empty_sub_t : public flat_sub_t {
+public:
+    empty_sub_t(feed_t *feed,
+                configured_limits_t limits,
+                const datum_t &squash,
+                bool include_states)
+    // There will never be any changes, safe to start squashing right away.
+    : flat_sub_t(init_squashing_queue_t::YES,
+                 feed, std::move(limits), squash, include_states),
+      state(state_t::INITIALIZING),
+      sent_state(state_t::NONE),
+      include_initial(false) {
+        feed->add_empty_sub(this);
+    }
+    virtual ~empty_sub_t() {
+        destructor_cleanup(std::bind(&feed_t::del_empty_sub, feed, this));
+    }
+    feed_type_t cfeed_type() const final { return feed_type_t::stream; }
+    bool update_stamp(const uuid_u &, uint64_t) final {
+        r_sanity_fail();
+    }
+    datum_t pop_el() final {
+        if (state != sent_state && include_states) {
+            sent_state = state;
+            state = state_t::READY;
+            return state_datum(sent_state);
+        }
+        r_sanity_fail();
+    }
+    bool has_el() final {
+        return (include_states && state != sent_state);
+    }
+    counted_t<datum_stream_t> to_stream(
+        env_t *,
+        std::string,
+        namespace_interface_t *,
+        const client_t::addr_t &,
+        counted_t<datum_stream_t> maybe_src,
+        scoped_ptr_t<subscription_t> &&self,
+        backtrace_id_t bt) final {
+        assert_thread();
+        r_sanity_check(self.get() == this);
+        include_initial = maybe_src.has();
+        if (!include_initial) {
+            state = state_t::READY;
+        }
+        return make_counted<stream_t<subscription_t> >(std::move(self), bt);
+    }
+    virtual counted_t<datum_stream_t> to_artificial_stream(
+        const uuid_u &,
+        const std::string &,
+        const std::vector<datum_t> &,
+        bool _include_initial,
+        scoped_ptr_t<subscription_t> &&self,
+        backtrace_id_t bt) {
+        assert_thread();
+        r_sanity_check(self.get() == this);
+        include_initial = _include_initial;
+        if (!include_initial) {
+            state = state_t::READY;
+        }
+        return make_counted<stream_t<subscription_t> >(std::move(self), bt);
+    }
+
+private:
+    state_t state, sent_state;
+    bool include_initial;
+    auto_drainer_t *get_drainer() final { return &drainer; }
+    auto_drainer_t drainer;
+};
 
 class point_sub_t : public flat_sub_t {
 public:
@@ -1927,6 +2004,9 @@ public:
         // `r.current_index` term we'll need to make this smarter.
         return changefeed::apply_ops(val, ops, env.get(), datum_t());
     }
+    boost::optional<datum_t> maybe_apply_ops(datum_t val) {
+        return has_ops() ? apply_ops(std::move(val)) : std::move(val);
+    }
 
     bool update_stamp(const uuid_u &uuid, uint64_t new_stamp) final {
         guarantee(active());
@@ -1941,7 +2021,10 @@ public:
     datum_t pop_el() final {
         if (state != sent_state && include_states) {
             sent_state = state;
-            return state_datum(state);
+            if (artificial_include_initial && artificial_initial_vals.size() == 0) {
+                state = state_t::READY;
+            }
+            return state_datum(sent_state);
         }
         if (artificial_initial_vals.size() != 0) {
             datum_t d = artificial_initial_vals.back();
@@ -2040,11 +2123,14 @@ public:
         next_stamps[uuid] = 0;
         if (artificial_include_initial) {
             state = state_t::INITIALIZING;
+            datum_string_t pk(pkey_name);
             for (auto it = initial_vals.rbegin(); it != initial_vals.rend(); ++it) {
-                for (size_t i = 0;
-                     i < spec.datumspec.copies(it->get_field(datum_string_t(pkey_name)));
-                     ++i) {
-                    artificial_initial_vals.push_back(*it);
+                if (boost::optional<datum_t> d = maybe_apply_ops(*it)) {
+                    for (size_t i = 0;
+                         i < spec.datumspec.copies(it->get_field(pk));
+                         ++i) {
+                        artificial_initial_vals.push_back(*d);
+                    }
                 }
             }
         }
@@ -2990,6 +3076,7 @@ keyspec_t::~keyspec_t() { }
 
 RDB_MAKE_SERIALIZABLE_4_FOR_CLUSTER(
     keyspec_t::range_t, transforms, sindex, sorting, datumspec);
+RDB_MAKE_SERIALIZABLE_0_FOR_CLUSTER(keyspec_t::empty_t);
 RDB_MAKE_SERIALIZABLE_2_FOR_CLUSTER(keyspec_t::limit_t, range, limit);
 RDB_MAKE_SERIALIZABLE_1_FOR_CLUSTER(keyspec_t::point_t, key);
 
@@ -3089,6 +3176,20 @@ void feed_t::del_range_sub(range_sub_t *sub) THROWS_NOTHING {
     del_sub_with_lock(&range_subs_lock, [this, sub]() {
             return range_subs[sub->home_thread().threadnum].erase(sub);
         });
+}
+
+// If this throws we might leak the increment to `num_subs`.
+void feed_t::add_empty_sub(empty_sub_t *sub) THROWS_NOTHING {
+    add_sub_with_lock(&empty_subs_lock, [this, sub]() {
+        empty_subs[sub->home_thread().threadnum].insert(sub);
+    });
+}
+
+// Can't throw because it's called in a destructor.
+void feed_t::del_empty_sub(empty_sub_t *sub) THROWS_NOTHING {
+    del_sub_with_lock(&empty_subs_lock, [this, sub]() {
+        return empty_subs[sub->home_thread().threadnum].erase(sub);
+    });
 }
 
 // If this throws we might leak the increment to `num_subs`.
@@ -3248,6 +3349,15 @@ void feed_t::stop_subs(const auto_drainer_t::lock_t &lock) {
         }
     }
     {
+        rwlock_in_line_t spot(&empty_subs_lock, access_t::write);
+        spot.write_signal()->wait_lazily_unordered();
+        each_sub_in_vec<empty_sub_t>(empty_subs, &spot, lock, f);
+        for (auto &&set : empty_subs) {
+            num_subs -= set.size();
+            set.clear();
+        }
+    }
+    {
         rwlock_in_line_t spot(&point_subs_lock, access_t::write);
         spot.write_signal()->wait_lazily_unordered();
         each_point_sub_with_lock(&spot, f);
@@ -3272,7 +3382,11 @@ void feed_t::stop_subs(const auto_drainer_t::lock_t &lock) {
     r_sanity_check(num_subs == 0);
 }
 
-feed_t::feed_t() : detached(false), num_subs(0), range_subs(get_num_threads()) { }
+feed_t::feed_t()
+  : detached(false),
+    num_subs(0),
+    empty_subs(get_num_threads()),
+    range_subs(get_num_threads()) { }
 
 feed_t::~feed_t() {
     guarantee(num_subs == 0);
@@ -3315,6 +3429,9 @@ scoped_ptr_t<subscription_t> new_sub(
               env(_env) { }
         subscription_t *operator()(const keyspec_t::range_t &range) const {
             return new range_sub_t(feed, limits, *squash, include_states, env, range);
+        }
+        subscription_t *operator()(const keyspec_t::empty_t &) const {
+            return new empty_sub_t(feed, limits, *squash, include_states);
         }
         subscription_t *operator()(const keyspec_t::limit_t &limit) const {
             return new limit_sub_t(feed, limits, *squash, include_states, limit);
