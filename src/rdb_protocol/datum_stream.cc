@@ -2020,15 +2020,20 @@ fold_datum_stream_t::next_raw_batch(env_t *env, const batchspec_t &batchspec) {
     std::vector<datum_t> batch;
     batcher_t batcher = batchspec.to_batcher();
 
-    // TODO: Create an inner batchspec as in `map_datum_stream_t` when we add folding over multiple streams.
+    // TODO: Create an inner batchspec as in `map_datum_stream_t`
+    // when we add folding over multiple streams.
 
     while (!is_exhausted() && !batcher.should_send_batch()) {
         datum_t row = stream->next(env, batchspec);
-        datum_t new_acc = acc_func->call(env, std::vector<datum_t>{acc, row})->as_datum();
+        datum_t new_acc = acc_func->call(
+            env,
+            std::vector<datum_t>{acc, row})->as_datum();
 
         r_sanity_check(new_acc.has());
 
-        datum_t emit_elem = emit_func->call(env, std::vector<datum_t>{acc, row, new_acc})->as_datum();
+        datum_t emit_elem = emit_func->call(
+            env,
+            std::vector<datum_t>{acc, row, new_acc})->as_datum();
 
         r_sanity_check(emit_elem.has());
 
@@ -2044,10 +2049,13 @@ fold_datum_stream_t::next_raw_batch(env_t *env, const batchspec_t &batchspec) {
     if (is_exhausted() && do_final_emit) {
         std::vector<datum_t> final_emit_args;
         final_emit_args.push_back(acc);
-        datum_t final_emit_elem = final_emit_func->call(env, final_emit_args)->as_datum();
+        datum_t final_emit_elem = final_emit_func->call(
+            env,
+            final_emit_args)->as_datum();
         batch.push_back(std::move(final_emit_elem));
 
-        // So that calling `next_batch` on an exhausted stream returns nothing, as expected.
+        // So that calling `next_batch` on an exhausted stream returns nothing,
+        // as expected.
         do_final_emit = false;
     }
 
