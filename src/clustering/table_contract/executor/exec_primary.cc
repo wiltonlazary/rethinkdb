@@ -587,7 +587,21 @@ bool primary_execution_t::is_contract_ackable(
         counted_t<contract_info_t> contract_info, const std::set<server_id_t> &servers) {
     /* If it's a regular contract, we can ack it as soon as we send a sync to a quorum of
     replicas. If it's a hand-over contract, we also need to ensure that we performed a
-    sync with the new primary. */
+    sync with the new primary.
+
+    If we return `true` from this function, we are going to send a `primary_ready` ack
+    to the coordinator. The coordinator relies on this status for two things:
+    * if the we are in a configuration with `temp_voters`, the coordinator is going to
+     use the `primary_ready` ack as a confirmation that a majority of `voters` as well as
+     a majority of `temp_voters` have up-to-date data. Thus it will be able to safely
+     turn `temp_voters` into `voters` (this is critical for correctness).
+    * if we currently have a `hand_over` primary set, the coordinator will wait for the
+     `primary_ready` ack before it shuts down the current primary (us).
+     Our stricter criteria for `hand_over` configurations is to make sure that when the
+     time comes to start up a new primary, the `hand_over` primary is up to date and
+     actually eligible to become a primary.
+     (the additional criteria is not critical for correctness, but makes sure that the
+     transition to the new primary goes through smoothly) */
     if (static_cast<bool>(contract_info->contract.primary->hand_over) &&
         servers.count(*contract_info->contract.primary->hand_over) != 1) {
         return false;
