@@ -61,6 +61,14 @@ public:
     virtual ~term_t();
     const raw_term_t &get_src() const;
     virtual void accumulate_captures(var_captures_t *captures) const = 0;
+protected:
+    // Union term is a friend so we can steal arguments from an array in an optarg.
+    friend class union_term_t;
+    virtual const std::vector<counted_t<const term_t> > &get_original_args() const {
+        rfail(base_exc_t::INTERNAL,
+               "This is in term_t to allow stealing args from an"
+               "optarg in union_term_t. Only call this on an op_term_t.");
+    }
 private:
     // The `src` member contains pointers to the original query and must not exceed
     // the lifetime of that query object.

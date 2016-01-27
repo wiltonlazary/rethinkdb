@@ -1679,13 +1679,18 @@ private:
 
 ordered_union_datum_stream_t::ordered_union_datum_stream_t(
     std::vector<counted_t<datum_stream_t> > &&_streams,
-    std::vector<std::pair<order_direction_t, counted_t<const func_t> > > _comparisons,
+    std::vector<std::pair<order_direction_t, counted_t<const func_t> > > &&_comparisons,
+    env_t  *env,
     backtrace_id_t bt)
     : eager_datum_stream_t(bt),
       union_type(feed_type_t::not_feed),
       is_array_ordered_union(true),
       is_infinite_ordered_union(false),
-      comparisons(std::move(_comparisons)) {
+      is_ordered_by_field(_comparisons.size() != 0),
+      do_prelim_cache(true),
+      lt(_comparisons),
+      sampler("Merging in union.", env->trace),
+      merge_cache(merge_less{env, &sampler, &lt}) {
 
     for (const auto &stream : _streams) {
         union_type = union_of(union_type, stream->cfeed_type());
@@ -1695,16 +1700,11 @@ ordered_union_datum_stream_t::ordered_union_datum_stream_t(
     for (auto &&stream : _streams) {
         streams.push_back(std::move(stream));
     }
-
-    if (comparisons.size() == 0) {
-        is_ordered_by_field = false;
-    } else {
-        is_ordered_by_field = true;
-        do_prelim_cache = true;
-    }
 }
 
-std::vector<datum_t> ordered_union_datum_stream_t::next_raw_batch(env_t *env, const batchspec_t &batchspec) {
+std::vector<datum_t> ordered_union_datum_stream_t::next_raw_batch(
+    env_t *env,
+    const batchspec_t &batchspec) {
     rcheck(!is_infinite_ordered_union
            || batchspec.get_batch_type() == batch_type_t::NORMAL
            || batchspec.get_batch_type() == batch_type_t::NORMAL_FIRST,
@@ -1713,77 +1713,51 @@ std::vector<datum_t> ordered_union_datum_stream_t::next_raw_batch(env_t *env, co
     std::vector<datum_t> batch;
     batcher_t batcher = batchspec.to_batcher();
 
-    // We need a separate batchspec for the streams to prevent calling `stream->next`
-    // with a `batch_type_t::TERMINAL` on an infinite stream.
-    batchspec_t batchspec_inner = batchspec_t::default_for(batch_type_t::NORMAL);
-
     if (is_ordered_by_field) {
-        profile::sampler_t sampler("Merging in union.", env->trace);
-
-        lt_cmp_t cmp(comparisons);
-
         if (do_prelim_cache) {
-            for (auto &stream : streams) {
-                merge_cache.push_back(std::move(stream->next(env, batchspec_inner)));
+            for (auto &&stream : streams) {
+                if (stream.has()) {
+                    merge_cache.push(
+                        merge_cache_item_t(stream->next(env, batchspec),
+                                           stream));
+                }
             }
             do_prelim_cache = false;
         }
-        while (!is_exhausted()) {
-            int min_datum_pos = 0;
 
-            for (size_t i = 0; i < merge_cache.size(); ++i) {
-                if (merge_cache[i].has()) {
-                    min_datum_pos = i;
-                    break;
-                }
-            }
+        while (merge_cache.size() > 0 && !batcher.should_send_batch()) {
+            merge_cache_item_t el = std::move(merge_cache.top());
+            merge_cache.pop();
 
-            for (size_t i = 0; i < merge_cache.size(); ++i) {
-                if (merge_cache[i].has()) {
-                    bool cmp_result = cmp(env, &sampler, merge_cache[i], merge_cache[min_datum_pos]);
-                    if (cmp_result) {
-                        min_datum_pos = i;
-                    }
-                }
-            }
+            datum_t datum_on_deck = std::move(el.value);
 
-            r_sanity_check(merge_cache[min_datum_pos].has());
-            batcher.note_el(merge_cache[min_datum_pos]);
-
-            datum_t datum_on_deck = std::move(merge_cache[min_datum_pos]);
-
-            if (!streams[min_datum_pos]->is_exhausted()) {
-                merge_cache[min_datum_pos] = std::move(
-                    streams[min_datum_pos]->next(env, batchspec_inner));
+            if (!el.source->is_exhausted()) {
+                datum_t next_datum = el.source->next(env, batchspec);
 
                 // Enforce ordering in merge step
-                // Ordering of this check is backwards because cmp does strict <
-                rcheck(!cmp(env, &sampler, merge_cache[min_datum_pos], datum_on_deck),
+                // Ordering of this check is backwards because lt does strict <
+                rcheck(!lt(env, &sampler, next_datum, datum_on_deck),
                        base_exc_t::LOGIC,
                        "The streams given as arguments are not ordered by given ordering.");
-            } else {
-                merge_cache[min_datum_pos] = datum_t();
+
+                merge_cache.push(
+                    merge_cache_item_t(std::move(next_datum),
+                                       el.source));
             }
 
+            batcher.note_el(datum_on_deck);
             batch.push_back(std::move(datum_on_deck));
-
-            if (batcher.should_send_batch()) {
-                break;
-            }
         }
     } else {
-        while (!streams.front()->is_exhausted()) {
-            datum_t row = streams.front()->next(env, batchspec_inner);
+        while (!streams.empty()
+               && !streams.front()->is_exhausted()
+               && !batcher.should_send_batch()) {
+            datum_t row = streams.front()->next(env, batchspec);
             batcher.note_el(row);
             batch.push_back(std::move(row));
 
             if (streams.front()->is_exhausted()) {
-                if (streams.size() > 1) {
-                    streams.pop_front();
-                }
-            }
-            if (batcher.should_send_batch()) {
-                break;
+                streams.pop_front();
             }
         }
     }
@@ -1792,14 +1766,12 @@ std::vector<datum_t> ordered_union_datum_stream_t::next_raw_batch(env_t *env, co
 
 bool ordered_union_datum_stream_t::is_exhausted() const {
     if (is_ordered_by_field) {
-        for (auto datum : merge_cache) {
-            if (datum.has()) {
-                return false;
-            }
+        if (merge_cache.size() == 0 && !do_prelim_cache) {
+            return batch_cache_exhausted();
         }
-        return batch_cache_exhausted();
+        return false;
     } else {
-        if (streams.size() == 1 && streams.front()->is_exhausted()) {
+        if (streams.empty()) {
             return batch_cache_exhausted();
         }
         return false;

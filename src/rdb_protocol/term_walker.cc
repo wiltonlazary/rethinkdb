@@ -95,7 +95,8 @@ private:
                     prev_frame != nullptr
                     && (prev_frame->type == Term::ORDER_BY
                         || prev_frame->type == Term::UNION
-                        || (prev_frame->prev_frame->type == Term::UNION
+                        || (prev_frame->prev_frame != nullptr
+                            && prev_frame->prev_frame->type == Term::UNION
                             && (prev_frame->type == Term::MAKE_ARRAY))
                     ),
                     base_exc_t::LOGIC,

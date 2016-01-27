@@ -268,37 +268,66 @@ class args_t;
 class ordered_union_datum_stream_t : public eager_datum_stream_t {
 public:
     ordered_union_datum_stream_t(std::vector<counted_t<datum_stream_t> > &&_streams,
-                                 std::vector<std::pair<order_direction_t, counted_t<const func_t> > > _comparisons,
+                                 std::vector<
+                                 std::pair<order_direction_t,
+                                           counted_t<const func_t> > > &&_comparisons,
+                                 env_t *env,
                                  backtrace_id_t bt);
 
     virtual std::vector<datum_t>
-    next_raw_batch(env_t *env, const batchspec_t &batchspec);
+    next_raw_batch(env_t *env, const batchspec_t &batchspec) final;
 
-    virtual bool is_array() const {
+    virtual bool is_array() const final {
         return is_array_ordered_union;
     }
 
-    virtual bool is_exhausted() const;
+    virtual bool is_exhausted() const final;
 
-    virtual feed_type_t cfeed_type() const {
+    virtual feed_type_t cfeed_type() const final {
         return union_type;
     }
 
-    virtual bool is_infinite() const {
+    virtual bool is_infinite() const final {
         return is_infinite_ordered_union;
     }
 
 private:
-    std::deque<counted_t<datum_stream_t>> streams;
+    std::deque<counted_t<datum_stream_t> > streams;
 
     feed_type_t union_type;
     bool is_array_ordered_union, is_infinite_ordered_union;
     bool is_ordered_by_field;
 
-    std::vector<datum_t> merge_cache;
     bool do_prelim_cache;
 
-    std::vector<std::pair<order_direction_t, counted_t<const func_t> > > comparisons;
+    lt_cmp_t lt;
+    profile::sampler_t sampler;
+
+    struct merge_cache_item_t {
+        datum_t value;
+        counted_t<datum_stream_t> source;
+
+        merge_cache_item_t(datum_t _value, counted_t<datum_stream_t> _source)
+            : value(_value), source(_source) { }
+    };
+
+    struct merge_less {
+        env_t *merge_env;
+        profile::sampler_t *merge_sampler;
+        lt_cmp_t *merge_lt_cmp;
+        merge_less(env_t * _env, profile::sampler_t *_sampler, lt_cmp_t * _cmp)
+            : merge_env(_env), merge_sampler(_sampler), merge_lt_cmp(_cmp) { }
+        bool operator()(const merge_cache_item_t &a, const merge_cache_item_t &b) {
+            return !merge_lt_cmp->operator()(merge_env,
+                                             merge_sampler,
+                                             a.value,
+                                             b.value);
+        }
+    };
+
+    std::priority_queue<merge_cache_item_t,
+                        std::vector<merge_cache_item_t>,
+                        merge_less> merge_cache;
 };
 
 class union_datum_stream_t : public datum_stream_t, public home_thread_mixin_t {
