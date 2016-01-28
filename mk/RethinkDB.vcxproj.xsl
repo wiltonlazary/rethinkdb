@@ -9,23 +9,8 @@
   <xsl:template match="/config">
     <Project DefaultTargets="Build" ToolsVersion="14.0">
       <xsl:if test="@ImproveParallelBuild = 'yes'">
-        <xsl:call-template name="UNDUPOBJ" />
+        <xsl:attribute name="InitialTargets">UNDUPOBJ</xsl:attribute>
       </xsl:if>
-
-      <PropertyGroup Label="Globals">
-        <ProjectGuid>{CB045D34-1C67-473B-ABAB-83F0D630596D}</ProjectGuid>
-        <Keyword>Win32Proj</Keyword>
-        <OutDir>build\$(Platform)\$(Configuration)\</OutDir>
-        <IntDir>build\$(Platform)\$(Configuration)\</IntDir>
-        <WindowsTargetPlatformVersion>
-          <xsl:value-of select="target/@version" />
-        </WindowsTargetPlatformVersion>
-      </PropertyGroup>
-      <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
-      <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
-      <ImportGroup Label="ExtensionSettings" />
-      <ImportGroup Label="Shared" />
-      <PropertyGroup Label="UserMacros" />
 
       <ItemGroup Label="ProjectConfigurations">
         <xsl:for-each select="build">
@@ -36,10 +21,20 @@
         </xsl:for-each>
       </ItemGroup>
 
-      <xsl:for-each select="build">
-        <xsl:variable name="config-tuple" select="concat(@configuration, '|', @platform)" />
+      <PropertyGroup Label="Globals">
+        <ProjectGuid>{CB045D34-1C67-473B-ABAB-83F0D630596D}</ProjectGuid>
+        <Keyword>Win32Proj</Keyword>
+        <OutDir>build\$(Platform)\$(Configuration)\</OutDir>
+        <IntDir>build\$(Platform)\$(Configuration)\</IntDir>
+        <WindowsTargetPlatformVersion>
+          <xsl:value-of select="target/@version" />
+        </WindowsTargetPlatformVersion>
+      </PropertyGroup>
 
-        <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='{$config-tuple}'" Label="Configuration">
+      <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+      <xsl:for-each select="build">
+        <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='{@configuration}|{@platform}'" Label="Configuration">
           <ConfigurationType>Application</ConfigurationType>
           <UseDebugLibraries>
             <xsl:choose>
@@ -51,18 +46,28 @@
             <xsl:value-of select="/config/target/@toolset" />
           </PlatformToolset>
         </PropertyGroup>
+      </xsl:for-each>
 
-        <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='{$config-tuple}'">
+      <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+      <ImportGroup Label="ExtensionSettings" />
+      <ImportGroup Label="Shared" />
+
+      <xsl:for-each select="build">
+        <ImportGroup Condition="'$(Configuration)|$(Platform)'=='{@configuration}|{@platform}'" Label="PropertySheets">
+          <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+        </ImportGroup>
+      </xsl:for-each>
+
+      <PropertyGroup Label="UserMacros" />
+
+      <xsl:for-each select="build">
+        <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='{@configuration}|{@platform}'">
           <LinkIncremental>true</LinkIncremental>
           <IncludePath>$(ProjectDir)\precompiled\proto;$(ProjectDir)\src;$(IncludePath)</IncludePath>
           <LibraryPath>$(ProjectDir)\build\windows_deps\lib\<xsl:value-of select="@platform" />\<xsl:value-of select="@configuration" />;$(LibraryPath)</LibraryPath>
         </PropertyGroup>
 
-        <ImportGroup Condition="'$(Configuration)|$(Platform)'=='{$config-tuple}'" Label="PropertySheets">
-          <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-        </ImportGroup>
-
-        <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='{$config-tuple}'">
+        <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='{@configuration}|{@platform}'">
           <ClCompile>
             <PreprocessorDefinitions>
               WIN32;
@@ -73,6 +78,10 @@
               COMPILER_MSVC;
               RAPIDJSON_HAS_STDSTRING;
               V8_NEEDS_BUFFER_ALLOCATOR;
+              BOOST_DATE_TIME_NO_LIB;
+              <xsl:if test="@configuration = 'Release'">
+                NDEBUG;
+              </xsl:if>
             </PreprocessorDefinitions>
 
             <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
@@ -132,6 +141,7 @@
             <GenerateDebugInformation>true</GenerateDebugInformation>
             <SubSystem>Console</SubSystem>
             <AdditionalDependencies>
+              %(AdditionalDependencies);
               dbghelp.lib; iphlpapi.lib; WS2_32.lib; winmm.lib;
               curl.lib;
               libprotobuf.lib;
@@ -144,7 +154,6 @@
               <xsl:if test="@configuration = 'Debug'">
                 gtest.lib;
               </xsl:if>
-              %(AdditionalDependencies)
             </AdditionalDependencies>
             <EntryPointSymbol>mainCRTStartup</EntryPointSymbol>
             <AdditionalOptions>
@@ -156,7 +165,7 @@
           </Link>
         </ItemDefinitionGroup>
 
-        <ItemGroup Condition="'$(Configuration)|$(Platform)'=='{$config-tuple}'">
+        <ItemGroup Condition="'$(Configuration)|$(Platform)'=='{@configuration}|{@platform}'">
           <ClCompile Include="precompiled\web_assets\web_assets.cc" />
           <ClCompile Include="precompiled\proto\rdb_protocol\ql2.pb.cc" />
           <ClCompile Include="src\**\*.cc">
@@ -178,13 +187,15 @@
         <None Include="src\rdb_protocol\ql2_extensions.proto" />
       </ItemGroup>
       <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-      <ImportGroup Label="ExtensionTargets">
-      </ImportGroup>
+      <ImportGroup Label="ExtensionTargets" />
+
+      <xsl:if test="@ImproveParallelBuild = 'yes'">
+        <xsl:call-template name="UNDUPOBJ" />
+      </xsl:if>
     </Project>
   </xsl:template>
 
   <xsl:template name="UNDUPOBJ">
-    <xsl:attribute name="InitialTargets">UNDUPOBJ</xsl:attribute>
     <!-- copied from -->
     <!-- http://stackoverflow.com/questions/3729515/visual-studio-2010-2008-cant-handle-source-files-with-identical-names-in-diff/26935613 -->
     <!-- relevant topics -->

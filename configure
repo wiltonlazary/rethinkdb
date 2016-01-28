@@ -44,7 +44,7 @@ init () {
     default_allocator_osx=system
     default_allocator_mingw=system
 
-    allowed_arg_vars="CXXFLAGS LDFLAGS PLATFORM MSBUILD VCVARSALL"
+    allowed_arg_vars="CXXFLAGS LDFLAGS PLATFORM MSBUILD VCVARSALL NMAKE"
 }
 
 # The main configuration steps
@@ -191,7 +191,7 @@ configure_unixlike () {
 }
 
 configure_windows () {
-    for tool in msbuild vcvarsall; do
+    for tool in msbuild vcvarsall cmake; do
         require $tool
         check_vs_bin $tool
     done
@@ -205,7 +205,7 @@ configure_windows () {
     var CXX false
     require Precompiled assets
     check_precompiled
-    for pkg in protobuf curl v8 zlib re2 openssl gtest; do
+    for pkg in protobuf curl v8 zlib re2 openssl gtest boost; do
         require_dep $pkg
         fetch_lib $pkg
     done
@@ -1259,7 +1259,7 @@ check_vs_bin () {
     local exe=${!ucname:-}
     if [[ -z "$exe" ]] || ! lookup "$arg_vars" $ucname exe; then
         # TODO: what is a better way to find these?
-        for it in /cygdrive/*/Program\ Files*/{MSBuild/14.0/Bin,Microsoft\ Visual\ Studio\ 14.0/VC{,/bin}}/$1.{exe,bat}; do
+        for it in /cygdrive/*/Program\ Files*/{MSBuild/14.0,Microsoft\ Visual\ Studio\ 14.0/VC,CMake*}{,/bin}/$1.{exe,bat}; do
             case "$it" in
                 *\**) ;;
                 *) exe=$it; break;;

@@ -45,6 +45,8 @@ pkg_install () (
 )
 
 pkg_install-windows () {
+    pkg_copy_src_to_build
+
     for project in libprotobuf libprotoc protoc; do
         in_dir "$build_dir" "$MSBUILD" /nologo /maxcpucount /p:Configuration=$CONFIGURATION /p:Platform=$PLATFORM vsprojects\\$project.vcxproj
     done
