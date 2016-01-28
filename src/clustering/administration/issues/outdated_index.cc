@@ -75,6 +75,7 @@ outdated_index_issue_tracker_t::outdated_index_issue_tracker_t(
 bool outdated_index_issue_tracker_t::is_acceptable_outdated(const sindex_config_t &sindex_config) {
     if (sindex_config.func.is_simple_selector()) {
         switch(sindex_config.func_version) {
+            //
         case reql_version_t::v1_16:
         case reql_version_t::v2_0:
         case reql_version_t::v2_1:

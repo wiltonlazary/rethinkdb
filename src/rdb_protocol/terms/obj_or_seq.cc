@@ -277,7 +277,10 @@ public:
     get_field_term_t(compile_env_t *env, const raw_term_t &term)
         : obj_or_seq_op_term_t(env, term, SKIP_MAP, argspec_t(2)) { }
 
-    bool is_simple_selector() const final { return true; }
+    bool is_simple_selector() const final {
+        return recursive_is_simple_selector();
+    }
+
 private:
     virtual scoped_ptr_t<val_t> obj_eval(
         scope_env_t *env, args_t *args, const scoped_ptr_t<val_t> &v0) const {
@@ -294,7 +297,10 @@ public:
                                 optargspec_t({"_NO_RECURSE_"})),
           impl(this, SKIP_MAP, std::set<std::string>()) {}
 
-    bool is_simple_selector() const { return true; }
+    bool is_simple_selector() const {
+        return recursive_is_simple_selector();
+    }
+
 private:
     scoped_ptr_t<val_t> obj_eval_dereferenced(
         const scoped_ptr_t<val_t> &v0, const scoped_ptr_t<val_t> &v1) const {

@@ -14,6 +14,14 @@ public:
               datum(term.datum(configured_limits_t::unlimited, reql_version_t::LATEST)) {
         r_sanity_check(datum.has());
     }
+
+    bool is_simple_selector() const {
+        if (datum.get_type() == datum_t::type_t::R_STR) {
+            return true;
+        }
+        return false;
+    }
+
 private:
     virtual void accumulate_captures(var_captures_t *) const { /* do nothing */ }
     virtual deterministic_t is_deterministic() const { return deterministic_t::always; }
@@ -58,17 +66,7 @@ private:
     virtual const char *name() const { return "make_array"; }
 
     bool is_simple_selector() const {
-        if (get_src().num_args() == 0) {
-            return false;
-        }
-        for (size_t i = 0; i < get_src().num_args() ; ++i) {
-            Term::TermType a = get_src().arg(i).type();
-            if (a != Term::GET_FIELD
-                && a != Term::BRACKET) {
-                return false;
-            }
-        }
-        return true;
+        return recursive_is_simple_selector();
     }
 };
 
