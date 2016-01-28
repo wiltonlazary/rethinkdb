@@ -552,8 +552,9 @@ void multi_table_manager_t::do_sync(
         boost::optional<raft_persistent_state_t<table_raft_state_t> >
             initial_raft_state;
         {
-            scoped_ptr_t<new_mutex_acq_t> raft_mutex_acq =
-                table.active->get_raft()->get_mutex_acq();
+            cond_t non_interruptor;
+            raft_member_t<table_raft_state_t>::change_lock_t raft_change_lock(
+                table.active->get_raft(), &non_interruptor);
             table.active->get_raft()->get_committed_state()->apply_read(
                 [&](const raft_member_t<table_raft_state_t>::state_and_config_t *st) {
                     timestamp.log_index = st->log_index;
@@ -563,7 +564,7 @@ void multi_table_manager_t::do_sync(
                         raft_member_id = boost::make_optional(it->second);
                         initial_raft_state = boost::make_optional(
                             table.active->get_raft()->get_state_for_init(
-                                *raft_mutex_acq));
+                                raft_change_lock));
                     } else {
                         action_status = action_status_t::INACTIVE;
                         basic_config =

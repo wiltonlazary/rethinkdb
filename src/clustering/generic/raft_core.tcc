@@ -151,8 +151,8 @@ raft_member_t<state_t>::~raft_member_t() {
 
 template<class state_t>
 raft_persistent_state_t<state_t> raft_member_t<state_t>::get_state_for_init(
-        const new_mutex_acq_t &mutex_acq_proof) {
-    mutex_acq_proof.guarantee_is_holding(&mutex);
+        const change_lock_t &change_lock_proof) {
+    change_lock_proof.mutex_acq.guarantee_is_holding(&mutex);
     /* This implementation deviates from the Raft paper in that we initialize new peers
     joining the cluster by copying the log, snapshot, etc. from an existing peer, instead
     of starting the new peer with a blank state. */
@@ -673,12 +673,35 @@ void raft_member_t<state_t>::on_append_entries_rpc(
         }
     }
 
-    /* Raft paper, Figure 2: "Append any new entries not already in the log" */
+    /* Raft paper, Figure 2: "Append any new entries not already in the log"
+
+    Our implementation performs both the truncation of a conflicting log suffix and
+    appending any new entries in the same atomic operation through
+    `write_log_replace_tail`.
+
+    There are three valid cases that we need to consider:
+    * Our own log is an extension of the log the leader sent us, or the logs are equal.
+     In that case we will have `conflict == false` and
+     `first_nonmatching_index == request.entries.get_latest_index()`
+     and `first_nonmatching_index <= ps().log.get_latest_index()`.
+     There is nothing to do for us.
+    * The log the leader sent us is an extension of our own log.
+     We will have `conflict == false` and
+     `first_nonmatching_index == ps().log.get_latest_index() + 1`.
+     In this case `write_log_replace_tail` is going to append the entries from `request`
+     starting at `first_nonmatching_index`.
+    * The log the leader sent us and our own log have some matching prefix (potentially
+     of length zero), followed by entries that are different between both logs.
+     We will have `conflict == true` and
+     `ps().log.prev_index < first_nonmatching_index <= ps().log.get_latest_index()`.
+     In this case we truncate our own log starting at `first_nonmatching_index`, and
+     replace it by the suffix of the `request` log starting at `first_nonmatching_index`.
+    */
     if (conflict || first_nonmatching_index > ps().log.get_latest_index()) {
         /* The Leader Completeness property ensures that the leader has all committed log
-        entries. */
-        guarantee(first_nonmatching_index > ps().commit_index ||
-            request.entries.get_latest_index() >= ps().commit_index);
+        entries. We must never truncate our log to become shorter than the current
+        `commit_index`. */
+        guarantee(first_nonmatching_index > ps().commit_index);
         storage->write_log_replace_tail(
             request.entries, first_nonmatching_index);
     }
@@ -947,6 +970,13 @@ bool raft_member_t<state_t>::on_rpc_from_leader(
         if (mode != mode_t::follower) {
             candidate_or_leader_become_follower(mutex_acq);
         }
+        /* Note that we become a follower before we update the term.
+        We do this so that if we're currently a candidate in `candidate_run_election`,
+        we don't change the Raft state in the middle of its execution.
+        Doing so might not actually do any harm in our current implementation, but
+        it's probably safer to avoid the risk.
+        `candidate_or_leader_become_follower` will force `candidate_run_election` to
+        finish before we get here. */
         update_term(request_term, raft_member_id_t(), mutex_acq);
         /* Continue processing the RPC as follower */
     }
