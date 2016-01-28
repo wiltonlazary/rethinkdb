@@ -65,7 +65,7 @@ pkg_install-include-windows () {
         done
     done
     sed -i.bak 's|include/||' "$windows_deps/include/libplatform/libplatform.h"
-    mkdir "$install_dir/include"
+    mkdir -p "$install_dir/include"
 }
 
 pkg_install-windows () {
@@ -81,6 +81,8 @@ pkg_install-windows () {
     in_dir "$build_dir" python 'build/gyp_v8' $gyp_flags
 
     in_dir "$build_dir" "$MSBUILD" /nologo /maxcpucount /p:Configuration=$CONFIGURATION 'build\All.sln'
+
+    cp "$build_dir/build/$CONFIGURATION/lib"/{v8,icu}*.lib "$windows_deps_libs/"
 }
 
 pkg_install () {

@@ -50,7 +50,8 @@ pkg_install-windows () {
 
     in_dir "$build_dir" with_vs_env perl Configure $config no-asm
     in_dir "$build_dir" with_vs_env 'ms\do_'$script
-    in_dir "$build_dir" with_vs_env nmake -f 'ms\nt.mak' clean all
+    in_dir "$build_dir" with_vs_env nmake -f 'ms\nt.mak' clean || :
+    in_dir "$build_dir" with_vs_env nmake -f 'ms\nt.mak'
 
     cp "$build_dir/out32"/{ssleay32,libeay32}.lib "$windows_deps_libs/"
 }

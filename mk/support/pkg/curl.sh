@@ -51,7 +51,7 @@ pkg_install-windows () {
     in_dir "$build_dir/winbuild" with_vs_env \
       nmake /f Makefile.vc mode=static MACHINE=$machine RTLIBCFG=static $flags
 
-    cp "$build_dir/builds/libcurl-vc-$machine-$out_config-static-ipv6-sspi-winssl/lib/libcurl_a${out_suffix}.lib" "$windows_deps_libs/libcurl.lib"
+    cp "$build_dir/builds/libcurl-vc-$machine-$out_config-static-ipv6-sspi-winssl/lib/libcurl_a${out_suffix}.lib" "$windows_deps_libs/curl.lib"
 }
 
 pkg_install () {

@@ -10,10 +10,6 @@ int main(int argc, char **argv) {
 #endif
     startup_shutdown_t startup_shutdown;
 
-#ifdef _WIN32
-    extproc_maybe_run_worker(argc, argv);
-#endif
-
     ::testing::InitGoogleTest(&argc, argv);
     int ret = RUN_ALL_TESTS();
 
