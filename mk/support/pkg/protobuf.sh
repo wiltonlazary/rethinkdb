@@ -5,10 +5,9 @@ src_url=http://protobuf.googlecode.com/files/protobuf-$version.tar.bz2
 src_url_sha1=62c10dcdac4b69cc8c6bb19f73db40c264cb2726
 
 pkg_install-include () {
-    pkg_copy_src_to_build
-    in_dir "$build_dir/src" find . -name \*.h | while read -r file; do
+    in_dir "$src_dir/src" find . -name \*.h | while read -r file; do
         mkdir -p "$install_dir/include/$(dirname "$file")"
-        cp -avf "$build_dir/src/$file" "$install_dir/include/$file"
+        cp -af "$src_dir/src/$file" "$install_dir/include/$file"
     done
 }
 
@@ -49,6 +48,6 @@ pkg_install-windows () {
     for project in libprotobuf libprotoc protoc; do
         in_dir "$build_dir" "$MSBUILD" /nologo /maxcpucount /p:Configuration=$CONFIGURATION /p:Platform=$PLATFORM vsprojects\\$project.vcxproj
     done
- 
+
     cp "$build_dir/vsprojects/$VS_OUTPUT_DIR/libprotobuf.lib" "$windows_deps_libs/"
 }

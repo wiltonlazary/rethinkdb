@@ -22,7 +22,7 @@ ifeq (1,$(DEBUG))
   SOURCES := $(filter-out $(SOURCE_DIR)/unittest/%,$(SOURCES))
 endif
 
-LIB_DEPS := $(foreach dep, $(FETCH_LIST), $(SUPPORT_BUILD_DIR)/$(dep)_$($(dep)_VERSION)/install.witness)
+LIB_DEPS := $(foreach dep, $(FETCH_LIST), $(SUPPORT_BUILD_DIR)/$(dep)_$($(dep)_VERSION)/$(INSTALL_WITNESS))
 
 MSBUILD_FLAGS := /nologo /maxcpucount
 MSBUILD_FLAGS += /p:Configuration=$(CONFIGURATION)

@@ -794,7 +794,7 @@ check_bin () {
 
 # Invoke pkg.sh with the required environment variables
 pkg () {
-    FETCH_LIST="$FETCH_LIST" PLATFORM="${PLATFORM:-}" bash $root/mk/support/pkg/pkg.sh "$@"
+    FETCH_LIST="$FETCH_LIST" PLATFORM="${PLATFORM:-}" OS="$OS" bash $root/mk/support/pkg/pkg.sh "$@"
 }
 
 # add_fetch <name>

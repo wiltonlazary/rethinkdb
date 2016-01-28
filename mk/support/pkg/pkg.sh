@@ -121,7 +121,10 @@ pkg_fetch_archive () {
 
 pkg_patch () {
     for patch in "$pkg_dir"/patch/"$pkg"_*.patch; do # lexical order
-        in_dir "$1" patch -fp1 < "$patch"
+        case "$patch" in
+            *_\*.patch) ;;
+            *) in_dir "$1" patch -fp1 < "$patch" ;;
+        esac
     done
 }
 
