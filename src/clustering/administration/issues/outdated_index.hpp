@@ -47,8 +47,8 @@ public:
                                      const cluster_semilattice_metadata_t &metadata,
                                      signal_t *interruptor);
 
-private:
     static bool is_acceptable_outdated(const sindex_config_t &sindex_config);
+private:
     table_meta_client_t *table_meta_client;
     DISABLE_COPYING(outdated_index_issue_tracker_t);
 };

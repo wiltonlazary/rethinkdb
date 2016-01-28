@@ -148,6 +148,11 @@ protected:
                 return false;
             }
         }
+        for (const auto &optarg_pair : optargs) {
+            if (!optarg_pair.second->is_simple_selector()) {
+                return false;
+            }
+        }
         return true;
     }
 
