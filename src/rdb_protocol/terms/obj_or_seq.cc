@@ -293,6 +293,8 @@ public:
         : grouped_seq_op_term_t(env, term, argspec_t(2),
                                 optargspec_t({"_NO_RECURSE_"})),
           impl(this, SKIP_MAP, std::set<std::string>()) {}
+
+    bool is_simple_selector() const { return true; }
 private:
     scoped_ptr_t<val_t> obj_eval_dereferenced(
         const scoped_ptr_t<val_t> &v0, const scoped_ptr_t<val_t> &v1) const {

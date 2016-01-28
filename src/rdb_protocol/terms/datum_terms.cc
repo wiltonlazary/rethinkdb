@@ -56,6 +56,20 @@ private:
         return new_val(std::move(acc).to_datum());
     }
     virtual const char *name() const { return "make_array"; }
+
+    bool is_simple_selector() const {
+        if (get_src().num_args() == 0) {
+            return false;
+        }
+        for (size_t i = 0; i < get_src().num_args() ; ++i) {
+            Term::TermType a = get_src().arg(i).type();
+            if (a != Term::GET_FIELD
+                && a != Term::BRACKET) {
+                return false;
+            }
+        }
+        return true;
+    }
 };
 
 class make_obj_term_t : public term_t {
