@@ -26,7 +26,7 @@ template <class> class optional;
 
 class cluster_message_handler_t;
 class co_semaphore_t;
-class heartbeat_semilattice_metadata_t;
+class connectivity_semilattice_metadata_t;
 template <class> class semilattice_read_view_t;
 
 /* Uncomment this to enable message profiling. Message profiling will keep track of how
@@ -179,7 +179,7 @@ public:
               int port,
               int client_port,
               boost::shared_ptr<semilattice_read_view_t<
-                  heartbeat_semilattice_metadata_t> > heartbeat_sl_view)
+                  connectivity_semilattice_metadata_t> > connectivity_sl_view)
             THROWS_ONLY(address_in_use_exc_t, tcp_socket_exc_t);
 
         ~run_t();
@@ -293,8 +293,8 @@ public:
         /* For picking random threads */
         rng_t rng;
 
-        boost::shared_ptr<semilattice_read_view_t<heartbeat_semilattice_metadata_t> >
-            heartbeat_sl_view;
+        boost::shared_ptr<semilattice_read_view_t<connectivity_semilattice_metadata_t> >
+            connectivity_sl_view;
 
         auto_drainer_t drainer;
 

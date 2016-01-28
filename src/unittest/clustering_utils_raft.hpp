@@ -143,8 +143,9 @@ private:
 
     connectivity_cluster_t connectivity_cluster;
     mailbox_manager_t mailbox_manager;
-    heartbeat_semilattice_metadata_t heartbeat_semilattice_metadata;
-    dummy_semilattice_controller_t<heartbeat_semilattice_metadata_t> heartbeat_manager;
+    connectivity_semilattice_metadata_t connectivity_semilattice_metadata;
+    dummy_semilattice_controller_t<connectivity_semilattice_metadata_t>
+        connectivity_manager;
     connectivity_cluster_t::run_t connectivity_cluster_run;
 
     std::map<raft_member_id_t, scoped_ptr_t<member_info_t> > members;

@@ -8,11 +8,13 @@ cluster_config_artificial_table_backend_t::cluster_config_artificial_table_backe
         boost::shared_ptr<semilattice_readwrite_view_t<
             auth_semilattice_metadata_t> > _auth_sl_view,
         boost::shared_ptr<semilattice_readwrite_view_t<
-            heartbeat_semilattice_metadata_t> > _heartbeat_sl_view) :
+            connectivity_semilattice_metadata_t> > _connectivity_sl_view) :
     auth_doc(_auth_sl_view),
-    heartbeat_doc(_heartbeat_sl_view) {
+    heartbeat_doc(_connectivity_sl_view),
+    rate_limit_doc(_connectivity_sl_view) {
     docs["auth"] = &auth_doc;
     docs["heartbeat"] = &heartbeat_doc;
+    docs["rate_limit"] = &rate_limit_doc;
 }
 
 cluster_config_artificial_table_backend_t::~cluster_config_artificial_table_backend_t() {
@@ -254,7 +256,7 @@ bool cluster_config_artificial_table_backend_t::heartbeat_doc_t::write(
     if (!converter.get("heartbeat_timeout_secs", &heartbeat_timeout_datum, error_out)) {
         return false;
     }
-    double heartbeat_timeout;
+    double heartbeat_timeout = 0;
     if (heartbeat_timeout_datum.get_type() == ql::datum_t::R_NUM) {
         heartbeat_timeout = heartbeat_timeout_datum.as_num();
         if (heartbeat_timeout < 2) {
@@ -276,7 +278,7 @@ bool cluster_config_artificial_table_backend_t::heartbeat_doc_t::write(
 
     {
         on_thread_t thread_switcher(sl_view->home_thread());
-        heartbeat_semilattice_metadata_t metadata = sl_view->get();
+        connectivity_semilattice_metadata_t metadata = sl_view->get();
         metadata.heartbeat_timeout.set(heartbeat_timeout * 1000);
         sl_view->join(metadata);
     }
@@ -289,7 +291,83 @@ cluster_config_artificial_table_backend_t::heartbeat_doc_t::set_notification_cal
         const std::function<void()> &fun) {
     if (static_cast<bool>(fun)) {
         subs = make_scoped<semilattice_read_view_t<
-            heartbeat_semilattice_metadata_t>::subscription_t>(fun, sl_view);
+            connectivity_semilattice_metadata_t>::subscription_t>(fun, sl_view);
+    } else {
+        subs.reset();
+    }
+}
+
+bool cluster_config_artificial_table_backend_t::rate_limit_doc_t::read(
+        UNUSED signal_t *interruptor,
+        ql::datum_t *row_out,
+        UNUSED admin_err_t *error_out) {
+    on_thread_t thread_switcher(sl_view->home_thread());
+    double rate_limit = sl_view->get().rate_limit.get_ref();
+    ql::datum_object_builder_t obj_builder;
+    obj_builder.overwrite("id", ql::datum_t("rate_limit"));
+    obj_builder.overwrite(
+        "connection_rate_limit_secs",
+        rate_limit == 0
+            ? ql::datum_t::null()
+            : ql::datum_t(rate_limit));
+    *row_out = std::move(obj_builder).to_datum();
+    return true;
+}
+
+bool cluster_config_artificial_table_backend_t::rate_limit_doc_t::write(
+        UNUSED signal_t *interruptor,
+        ql::datum_t *row_inout,
+        admin_err_t *error_out) {
+    converter_from_datum_object_t converter;
+    admin_err_t dummy_error;
+    if (!converter.init(*row_inout, &dummy_error)) {
+        crash("artificial_table_t should guarantee input is an object");
+    }
+    ql::datum_t dummy_pkey;
+    if (!converter.get("id", &dummy_pkey, &dummy_error)) {
+        crash("artificial_table_t should guarantee primary key is present and correct");
+    }
+
+    ql::datum_t rate_limit_datum;
+    if (!converter.get("connection_rate_limit_secs", &rate_limit_datum, error_out)) {
+        return false;
+    }
+    double rate_limit = 0;
+    if (rate_limit_datum.get_type() == ql::datum_t::R_NUM) {
+        rate_limit = rate_limit_datum.as_num();
+        if (rate_limit <= 0) {
+            *error_out = admin_err_t{
+                "The rate limit must be greater than zero",
+                query_state_t::FAILED};
+            return false;
+        }
+    } else if (rate_limit_datum.get_type() != ql::datum_t::R_NULL) {
+        *error_out = admin_err_t{
+            "Expected a null or a number; got " + rate_limit_datum.print(),
+            query_state_t::FAILED};
+        return false;
+    }
+
+    if (!converter.check_no_extra_keys(error_out)) {
+        return false;
+    }
+
+    {
+        on_thread_t thread_switcher(sl_view->home_thread());
+        connectivity_semilattice_metadata_t metadata = sl_view->get();
+        metadata.rate_limit.set(rate_limit);
+        sl_view->join(metadata);
+    }
+
+    return true;
+}
+
+void
+cluster_config_artificial_table_backend_t::rate_limit_doc_t::set_notification_callback(
+        const std::function<void()> &fun) {
+    if (static_cast<bool>(fun)) {
+        subs = make_scoped<semilattice_read_view_t<
+            connectivity_semilattice_metadata_t>::subscription_t>(fun, sl_view);
     } else {
         subs.reset();
     }

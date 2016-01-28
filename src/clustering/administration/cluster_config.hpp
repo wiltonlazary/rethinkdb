@@ -26,7 +26,7 @@ public:
             boost::shared_ptr<semilattice_readwrite_view_t<
                 auth_semilattice_metadata_t> > _auth_sl_view,
             boost::shared_ptr<semilattice_readwrite_view_t<
-                heartbeat_semilattice_metadata_t> > _heartbeat_sl_view);
+                connectivity_semilattice_metadata_t> > _connectivity_sl_view);
     ~cluster_config_artificial_table_backend_t();
 
     std::string get_primary_key_name();
@@ -97,7 +97,7 @@ private:
     class heartbeat_doc_t : public doc_t {
     public:
         explicit heartbeat_doc_t(boost::shared_ptr<semilattice_readwrite_view_t<
-            heartbeat_semilattice_metadata_t> > _sl_view) : sl_view(_sl_view) { }
+            connectivity_semilattice_metadata_t> > _sl_view) : sl_view(_sl_view) { }
         bool read(
                 signal_t *interruptor,
                 ql::datum_t *row_out,
@@ -109,14 +109,40 @@ private:
         void set_notification_callback(const std::function<void()> &fun);
     private:
         boost::shared_ptr<
-            semilattice_readwrite_view_t<heartbeat_semilattice_metadata_t> > sl_view;
+            semilattice_readwrite_view_t<connectivity_semilattice_metadata_t> > sl_view;
         scoped_ptr_t<
-                semilattice_read_view_t<heartbeat_semilattice_metadata_t>::subscription_t
+                semilattice_read_view_t<
+                    connectivity_semilattice_metadata_t
+                >::subscription_t
+            > subs;
+    };
+
+    class rate_limit_doc_t : public doc_t {
+    public:
+        explicit rate_limit_doc_t(boost::shared_ptr<semilattice_readwrite_view_t<
+            connectivity_semilattice_metadata_t> > _sl_view) : sl_view(_sl_view) { }
+        bool read(
+                signal_t *interruptor,
+                ql::datum_t *row_out,
+                admin_err_t *error_out);
+        bool write(
+                signal_t *interruptor,
+                ql::datum_t *row_out,
+                admin_err_t *error_out);
+        void set_notification_callback(const std::function<void()> &fun);
+    private:
+        boost::shared_ptr<
+            semilattice_readwrite_view_t<connectivity_semilattice_metadata_t> > sl_view;
+        scoped_ptr_t<
+                semilattice_read_view_t<
+                    connectivity_semilattice_metadata_t
+                >::subscription_t
             > subs;
     };
 
     auth_doc_t auth_doc;
     heartbeat_doc_t heartbeat_doc;
+    rate_limit_doc_t rate_limit_doc;
 
     std::map<std::string, doc_t *> docs;
 };

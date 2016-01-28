@@ -27,10 +27,10 @@ dummy_raft_cluster_t::dummy_raft_cluster_t(
         const dummy_raft_state_t &initial_state,
         std::vector<raft_member_id_t> *member_ids_out) :
     mailbox_manager(&connectivity_cluster, 'M'),
-    heartbeat_manager(heartbeat_semilattice_metadata),
+    connectivity_manager(connectivity_semilattice_metadata),
     connectivity_cluster_run(&connectivity_cluster, generate_uuid(),
         get_unittest_addresses(), peer_address_t(), ANY_PORT, 0,
-        heartbeat_manager.get_view()),
+        connectivity_manager.get_view()),
     check_invariants_timer(100, [this]() {
         coro_t::spawn_sometime(std::bind(
             &dummy_raft_cluster_t::check_invariants,

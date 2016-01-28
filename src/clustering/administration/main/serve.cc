@@ -113,15 +113,15 @@ bool do_serve(io_backender_t *io_backender,
 
         cluster_semilattice_metadata_t cluster_metadata;
         auth_semilattice_metadata_t auth_metadata;
-        heartbeat_semilattice_metadata_t heartbeat_metadata;
+        connectivity_semilattice_metadata_t connectivity_metadata;
         server_id_t server_id = generate_uuid();
         if (metadata_file != nullptr) {
             cond_t non_interruptor;
             metadata_file_t::read_txn_t txn(metadata_file, &non_interruptor);
             cluster_metadata = txn.read(mdkey_cluster_semilattices(), &non_interruptor);
             auth_metadata = txn.read(mdkey_auth_semilattices(), &non_interruptor);
-            heartbeat_metadata = txn.read(
-                mdkey_heartbeat_semilattices(), &non_interruptor);
+            connectivity_metadata = txn.read(
+                mdkey_connectivity_semilattices(), &non_interruptor);
             server_id = txn.read(mdkey_server_id(), &non_interruptor);
         }
 
@@ -138,15 +138,15 @@ bool do_serve(io_backender_t *io_backender,
         mailbox_manager_t mailbox_manager(&connectivity_cluster, 'M');
 
         /* `semilattice_manager_cluster`, `semilattice_manager_auth`, and
-        `semilattice_manager_heartbeat` are responsible for syncing the semilattice
+        `semilattice_manager_connectivity` are responsible for syncing the semilattice
         metadata between servers over the network. */
         semilattice_manager_t<cluster_semilattice_metadata_t>
             semilattice_manager_cluster(&connectivity_cluster, 'S', cluster_metadata);
         semilattice_manager_t<auth_semilattice_metadata_t>
             semilattice_manager_auth(&connectivity_cluster, 'A', auth_metadata);
-        semilattice_manager_t<heartbeat_semilattice_metadata_t>
-            semilattice_manager_heartbeat(
-                &connectivity_cluster, 'Y', heartbeat_metadata);
+        semilattice_manager_t<connectivity_semilattice_metadata_t>
+            semilattice_manager_connectivity(
+                &connectivity_cluster, 'Y', connectivity_metadata);
 
         /* The `directory_*_read_manager_t`s are responsible for receiving directory
         updates over the network from other servers. */
@@ -217,7 +217,7 @@ bool do_serve(io_backender_t *io_backender,
                 serve_info.ports.canonical_addresses,
                 serve_info.ports.port,
                 serve_info.ports.client_port,
-                semilattice_manager_heartbeat.get_root_view()));
+                semilattice_manager_connectivity.get_root_view()));
         } catch (const address_in_use_exc_t &ex) {
             throw address_in_use_exc_t(strprintf("Could not bind to cluster port: %s", ex.what()));
         }
@@ -339,7 +339,7 @@ bool do_serve(io_backender_t *io_backender,
                 &real_reql_cluster_interface,
                 semilattice_manager_cluster.get_root_view(),
                 semilattice_manager_auth.get_root_view(),
-                semilattice_manager_heartbeat.get_root_view(),
+                semilattice_manager_connectivity.get_root_view(),
                 directory_read_manager.get_root_view(),
                 directory_read_manager.get_root_map_view(),
                 &table_meta_client,
@@ -507,14 +507,14 @@ bool do_serve(io_backender_t *io_backender,
                     });
 
                 /* `cluster_metadata_persister`, `auth_metadata_persister`, and
-                `heartbeat_semilattice_metadata_t` are responsible for syncing the
+                `connectivity_semilattice_metadata_t` are responsible for syncing the
                 semilattice metadata to disk. */
                 scoped_ptr_t<semilattice_persister_t<cluster_semilattice_metadata_t> >
                     cluster_metadata_persister;
                 scoped_ptr_t<semilattice_persister_t<auth_semilattice_metadata_t> >
                     auth_metadata_persister;
-                scoped_ptr_t<semilattice_persister_t<heartbeat_semilattice_metadata_t> >
-                    heartbeat_metadata_persister;
+                scoped_ptr_t<semilattice_persister_t<connectivity_semilattice_metadata_t> >
+                    connectivity_metadata_persister;
 
                 if (i_am_a_server) {
                     cluster_metadata_persister.init(
@@ -527,11 +527,11 @@ bool do_serve(io_backender_t *io_backender,
                             metadata_file,
                             mdkey_auth_semilattices(),
                             semilattice_manager_auth.get_root_view()));
-                    heartbeat_metadata_persister.init(
-                        new semilattice_persister_t<heartbeat_semilattice_metadata_t>(
+                    connectivity_metadata_persister.init(
+                        new semilattice_persister_t<connectivity_semilattice_metadata_t>(
                             metadata_file,
-                            mdkey_heartbeat_semilattices(),
-                            semilattice_manager_heartbeat.get_root_view()));
+                            mdkey_connectivity_semilattices(),
+                            semilattice_manager_connectivity.get_root_view()));
                 }
 
                 {

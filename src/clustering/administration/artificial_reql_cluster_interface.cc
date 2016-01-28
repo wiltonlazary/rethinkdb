@@ -405,7 +405,7 @@ admin_artificial_tables_t::admin_artificial_tables_t(
         boost::shared_ptr<semilattice_readwrite_view_t<
             auth_semilattice_metadata_t> > _auth_view,
         boost::shared_ptr<semilattice_readwrite_view_t<
-            heartbeat_semilattice_metadata_t> > _heartbeat_view,
+            connectivity_semilattice_metadata_t> > _connectivity_view,
         clone_ptr_t< watchable_t< change_tracking_map_t<peer_id_t,
             cluster_directory_metadata_t> > > _directory_view,
         watchable_map_t<peer_id_t, cluster_directory_metadata_t> *_directory_map_view,
@@ -417,7 +417,7 @@ admin_artificial_tables_t::admin_artificial_tables_t(
         std::pair<artificial_table_backend_t *, artificial_table_backend_t *> > backends;
 
     cluster_config_backend.init(new cluster_config_artificial_table_backend_t(
-        _auth_view, _heartbeat_view));
+        _auth_view, _connectivity_view));
     backends[name_string_t::guarantee_valid("cluster_config")] =
         std::make_pair(cluster_config_backend.get(), cluster_config_backend.get());
 

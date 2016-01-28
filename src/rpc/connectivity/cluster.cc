@@ -216,8 +216,8 @@ connectivity_cluster_t::run_t::run_t(
         const peer_address_t &canonical_addresses,
         int port,
         int client_port,
-        boost::shared_ptr<semilattice_read_view_t<heartbeat_semilattice_metadata_t> >
-            _heartbeat_sl_view)
+        boost::shared_ptr<semilattice_read_view_t<connectivity_semilattice_metadata_t> >
+            _connectivity_sl_view)
         THROWS_ONLY(address_in_use_exc_t, tcp_socket_exc_t) :
     parent(_parent),
     server_id(_server_id),
@@ -254,7 +254,7 @@ connectivity_cluster_t::run_t::run_t(
     `connection_map` and again notify any listeners. */
     connection_to_ourself(this, parent->me, NULL, routing_table[parent->me]),
 
-    heartbeat_sl_view(_heartbeat_sl_view),
+    connectivity_sl_view(_connectivity_sl_view),
 
     listener(new tcp_listener_t(
         cluster_listener_socket.get(),
@@ -423,8 +423,8 @@ public:
             connectivity_cluster_t::connection_t *connection_,
             auto_drainer_t::lock_t connection_keepalive_,
             const std::string &peer_str_,
-            clone_ptr_t<watchable_t<heartbeat_semilattice_metadata_t> >
-                heartbeat_sl_view_) :
+            clone_ptr_t<watchable_t<connectivity_semilattice_metadata_t> >
+                connectivity_sl_view_) :
         connection(connection_),
         connection_keepalive(connection_keepalive_),
         read_done(false),
@@ -432,15 +432,16 @@ public:
         intervals_since_last_read_done(0),
         peer_str(peer_str_),
         timeout(0),
-        heartbeat_sl_view(std::move(heartbeat_sl_view_)),
-        heartbeat_sl_view_sub(std::bind(&heartbeat_manager_t::on_heartbeat_change, this))
+        connectivity_sl_view(std::move(connectivity_sl_view_)),
+        connectivity_sl_view_sub(
+            std::bind(&heartbeat_manager_t::on_heartbeat_change, this))
     {
         connection->conn->set_keepalive_callback(this);
 
         // This will trigger the initialization of the timeout, and timer
-        watchable_t<heartbeat_semilattice_metadata_t>::freeze_t
-            freeze(heartbeat_sl_view);
-        heartbeat_sl_view_sub.reset(heartbeat_sl_view, &freeze);
+        watchable_t<connectivity_semilattice_metadata_t>::freeze_t
+            freeze(connectivity_sl_view);
+        connectivity_sl_view_sub.reset(connectivity_sl_view, &freeze);
     }
 
     ~heartbeat_manager_t() {
@@ -508,7 +509,7 @@ public:
 #endif
 
     void on_heartbeat_change() {
-        int64_t timeout_new = heartbeat_sl_view->get().heartbeat_timeout.get_ref();
+        int64_t timeout_new = connectivity_sl_view->get().heartbeat_timeout.get_ref();
         if (timeout == timeout_new) {
             /* The timeout hasn't changed, this could be due to the semilattice
                `versioned` changing without the value changing. */
@@ -543,8 +544,9 @@ private:
     auto_drainer_t drainer;
     scoped_ptr_t<repeating_timer_t> timer;
 
-    clone_ptr_t<watchable_t<heartbeat_semilattice_metadata_t> > heartbeat_sl_view;
-    watchable_subscription_t<heartbeat_semilattice_metadata_t> heartbeat_sl_view_sub;
+    clone_ptr_t<watchable_t<connectivity_semilattice_metadata_t> > connectivity_sl_view;
+    watchable_subscription_t<connectivity_semilattice_metadata_t>
+        connectivity_sl_view_sub;
 
     DISABLE_COPYING(heartbeat_manager_t);
 };
@@ -964,39 +966,64 @@ void connectivity_cluster_t::run_t::handle(
         }
     }
 
-    // Use ticks as they are monotonically increasing
-    ticks_t current_ticks = get_ticks();
-    std::pair<ticks_t, double> new_rate_limit = std::make_pair(current_ticks, 1);
+    double seconds_per_rate_reduction =
+        connectivity_sl_view->get().rate_limit.get_ref();
 
-    // Mapping of server to a pair of last successful connection time and rate
-    std::map<server_id_t, std::pair<ticks_t, double>>::iterator rate_limit =
-        server_rate_limit.find(server_id);
-    if (rate_limit != server_rate_limit.end()) {
-        // The rate is incremented every time we successfully accept a connection, and
-        // decremented once every `seconds_per_rate_reduction`. We then calculate a
-        // delay by taking 1.5 to the power of said rate, and reject connections that
-        // reconnect before the delay is expired.
-        constexpr double seconds_per_rate_reduction = 1800;
-        double new_rate = std::max(
-            0.0,
-            rate_limit->second.second -
-                (ticks_to_secs(current_ticks - rate_limit->second.first) /
-                    seconds_per_rate_reduction));
+    // This new rate limit will be set later when we've accepted the connection.
+    std::pair<ticks_t, double> new_rate_limit;
+    if (seconds_per_rate_reduction != 0) {
+        // Use ticks as they are monotonically increasing
+        ticks_t new_ticks = get_ticks();
 
-        double delay_seconds = std::pow(1.5, new_rate) - 1;
-        if (rate_limit->second.first + secs_to_ticks(delay_seconds) <= current_ticks) {
-            new_rate_limit.second = new_rate + 1;
+        auto new_rate_function = [&](ticks_t old_ticks, double old_rate) -> double {
+            return std::max(
+                0.0,
+                old_rate - (
+                    ticks_to_secs(new_ticks - old_ticks) / seconds_per_rate_reduction));
+        };
+
+        std::map<server_id_t, std::pair<ticks_t, double>>::const_iterator
+            rate_limit_iter = server_rate_limit.find(server_id);
+        if (rate_limit_iter != server_rate_limit.end()) {
+            double new_rate = new_rate_function(
+                rate_limit_iter->second.first, rate_limit_iter->second.second);
+
+            double delay_seconds = std::pow(1.5, new_rate) - 1;
+            if (rate_limit_iter->second.first + secs_to_ticks(delay_seconds) >
+                    new_ticks) {
+                auto reason = handshake_result_t::error(
+                    handshake_result_code_t::RATE_LIMIT,
+                    strprintf(
+                        "%s blocked for another %.2f seconds",
+                        uuid_to_str(remote_server_id).c_str(),
+                        delay_seconds -
+                            ticks_to_secs(new_ticks - rate_limit_iter->second.first)));
+                fail_handshake(conn, peername, reason);
+                return;
+            } else {
+                new_rate_limit = std::make_pair(new_ticks, new_rate + 1);
+            }
         } else {
-            auto reason = handshake_result_t::error(
-                handshake_result_code_t::RATE_LIMIT,
-                strprintf(
-                    "%s blocked for another %.2f seconds",
-                    uuid_to_str(remote_server_id).c_str(),
-                    delay_seconds -
-                        ticks_to_secs(current_ticks - rate_limit->second.first)));
-            fail_handshake(conn, peername, reason);
-            return;
+            // This is the first we've seen the server, add a new entry
+            new_rate_limit = std::make_pair(new_ticks, 1);
         }
+
+        // Here we prune our `server_rate_limit` map
+        rate_limit_iter = server_rate_limit.begin();
+        while (rate_limit_iter != server_rate_limit.end()) {
+            double new_rate = new_rate_function(
+                rate_limit_iter->second.first, rate_limit_iter->second.second);
+
+            ticks_t delay_ticks = secs_to_ticks(std::pow(1.5, new_rate) - 1);
+            if (rate_limit_iter->second.first + delay_ticks <= new_ticks) {
+                rate_limit_iter = server_rate_limit.erase(rate_limit_iter);
+            } else {
+                ++rate_limit_iter;
+            }
+        }
+    } else {
+        // Simply clear the `server_rate_limit` map, as a pruning step
+        server_rate_limit.clear();
     }
 
     // Receive id, host/ports.
@@ -1170,7 +1197,9 @@ void connectivity_cluster_t::run_t::handle(
     }
 
     // Update the rate limit now that we've successfully connected
-    server_rate_limit[server_id] = std::move(new_rate_limit);
+    if (seconds_per_rate_reduction != 0) {
+        server_rate_limit[server_id] = std::move(new_rate_limit);
+    }
 
     /* For each peer that our new friend told us about that we don't already
     know about, start a new connection. If the cluster is shutting down, skip
@@ -1199,11 +1228,11 @@ void connectivity_cluster_t::run_t::handle(
     cross_thread_signal_t connection_thread_drain_signal(
         drainer_lock.get_drain_signal(),
         chosen_thread.get_thread());
-    cross_thread_watchable_variable_t<heartbeat_semilattice_metadata_t>
-        cross_thread_heartbeat_sl_view(
-            clone_ptr_t<semilattice_watchable_t<heartbeat_semilattice_metadata_t> >(
-                new semilattice_watchable_t<heartbeat_semilattice_metadata_t>(
-                    heartbeat_sl_view)), chosen_thread.get_thread());
+    cross_thread_watchable_variable_t<connectivity_semilattice_metadata_t>
+        cross_thread_connectivity_sl_view(
+            clone_ptr_t<semilattice_watchable_t<connectivity_semilattice_metadata_t> >(
+                new semilattice_watchable_t<connectivity_semilattice_metadata_t>(
+                    connectivity_sl_view)), chosen_thread.get_thread());
 
     rethread_tcp_conn_stream_t unregister_conn(conn, INVALID_THREAD);
     on_thread_t conn_threader(chosen_thread.get_thread());
@@ -1227,7 +1256,7 @@ void connectivity_cluster_t::run_t::handle(
             &conn_structure,
             auto_drainer_t::lock_t(conn_structure.drainers.get()),
             peerstr,
-            cross_thread_heartbeat_sl_view.get_watchable());
+            cross_thread_connectivity_sl_view.get_watchable());
 
         /* Main message-handling loop: read messages off the connection until
         it's closed, which may be due to network events, or the other end

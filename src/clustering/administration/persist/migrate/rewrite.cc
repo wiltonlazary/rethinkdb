@@ -28,7 +28,7 @@ void rewrite_cluster_metadata(metadata_file_t::write_txn_t *txn,
                               signal_t *interruptor) {
     rewrite_values(mdkey_cluster_semilattices(), txn, interruptor);
     rewrite_values(mdkey_auth_semilattices(), txn, interruptor);
-    rewrite_values(mdkey_heartbeat_semilattices(), txn, interruptor);
+    rewrite_values(mdkey_connectivity_semilattices(), txn, interruptor);
     rewrite_values(mdkey_server_id(), txn, interruptor);
     rewrite_values(mdkey_server_config(), txn, interruptor);
 

@@ -242,14 +242,14 @@ public:
     simple_mailbox_cluster_t() :
         server_id(generate_uuid()),
         mailbox_manager(&connectivity_cluster, 'M'),
-        heartbeat_manager(heartbeat_semilattice_metadata),
+        connectivity_manager(connectivity_semilattice_metadata),
         connectivity_cluster_run(&connectivity_cluster,
                                  server_id,
                                  get_unittest_addresses(),
                                  peer_address_t(),
                                  ANY_PORT,
                                  0,
-                                 heartbeat_manager.get_view())
+                                 connectivity_manager.get_view())
         { }
     connectivity_cluster_t *get_connectivity_cluster() {
         return &connectivity_cluster;
@@ -273,8 +273,9 @@ private:
     connectivity_cluster_t connectivity_cluster;
     server_id_t server_id;
     mailbox_manager_t mailbox_manager;
-    heartbeat_semilattice_metadata_t heartbeat_semilattice_metadata;
-    dummy_semilattice_controller_t<heartbeat_semilattice_metadata_t> heartbeat_manager;
+    connectivity_semilattice_metadata_t connectivity_semilattice_metadata;
+    dummy_semilattice_controller_t<connectivity_semilattice_metadata_t>
+        connectivity_manager;
     connectivity_cluster_t::run_t connectivity_cluster_run;
 };
 
