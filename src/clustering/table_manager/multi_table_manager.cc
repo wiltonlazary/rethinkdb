@@ -345,10 +345,17 @@ void multi_table_manager_t::on_action(
                 action_status == action_status_t::ACTIVE &&
                 timestamp.epoch != current_timestamp.epoch;
             if (outdated_activation) {
-                logINF("Table %s: Not adding a replica on this server because the "
+                logWRN("Table %s (%s): Not adding a replica on this server because the "
                        "active configuration conflicts with a more recent inactive "
-                       "configuration.",
-                    uuid_to_str(table_id).c_str());
+                       "configuration. "
+                       "If you see replicas get stuck in the `transitioning` state "
+                       "after reconfiguring this table, you can try recovering by "
+                       "running `.reconfigure({emergencyRepair: '_debug_recommit'})` on "
+                       "it. Please make sure that the cluster is idle when running this "
+                       "operation. RethinkDB does not guarantee consistency during "
+                       "the emergency repair.",
+                       uuid_to_str(table_id).c_str(),
+                       table->basic_configs_entry->get_value().first.name.c_str());
             }
             if (!ack_addr.is_nil()) {
                 send(mailbox_manager, ack_addr);
