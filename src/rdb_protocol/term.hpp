@@ -61,6 +61,8 @@ public:
     virtual ~term_t();
     const raw_term_t &get_src() const;
     virtual void accumulate_captures(var_captures_t *captures) const = 0;
+
+    virtual bool is_simple_selector() const { return false; }
 private:
     // The `src` member contains pointers to the original query and must not exceed
     // the lifetime of that query object.

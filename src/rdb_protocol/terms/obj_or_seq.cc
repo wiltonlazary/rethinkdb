@@ -276,6 +276,8 @@ class get_field_term_t : public obj_or_seq_op_term_t {
 public:
     get_field_term_t(compile_env_t *env, const raw_term_t &term)
         : obj_or_seq_op_term_t(env, term, SKIP_MAP, argspec_t(2)) { }
+
+    bool is_simple_selector() const final { return true; }
 private:
     virtual scoped_ptr_t<val_t> obj_eval(
         scope_env_t *env, args_t *args, const scoped_ptr_t<val_t> &v0) const {
