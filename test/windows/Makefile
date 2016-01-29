@@ -1,4 +1,4 @@
-RT := ../../x64/Debug/RethinkDB.exe
+RT := $(firstword $(wildcard ../../build/Debug_*/RethinkDB.exe) false)
 LIST := $(RT) test --gtest_list_tests | perl -ne 'chop; chop; $$t = "$$1" if /^([^ ].*)/; print "$$t$$1\n" if /^  (.*)/'
 
 ifeq ($(V),1)
