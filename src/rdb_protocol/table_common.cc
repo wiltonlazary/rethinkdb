@@ -20,6 +20,18 @@ make_replacement_pair(ql::datum_t old_val, ql::datum_t new_val) {
     return std::move(values).to_datum();
 }
 
+MUST_USE ql::datum_t
+make_error_triple(ql::datum_t old_val, ql::datum_t new_val, const char* error_message) {
+    ql::datum_array_builder_t values(ql::configured_limits_t::unlimited);
+    ql::datum_object_builder_t error_triple;
+    bool conflict = error_triple.add("old_val", old_val)
+        || error_triple.add("new_val", new_val)
+        || error_triple.add("error", ql::datum_t(error_message));
+    guarantee(!conflict);
+    values.add(std::move(error_triple).to_datum());
+    return std::move(values).to_datum();
+}
+
 /* TODO: This looks an awful lot like `rcheck_valid_replace()`. Perhaps they should be
 combined. */
 void rcheck_row_replacement(
@@ -155,7 +167,9 @@ ql::datum_t make_row_replacement_error_stats(
             ql::datum_t(std::vector<ql::datum_t>(), ql::configured_limits_t::unlimited));
     } break;
     case return_changes_t::ALWAYS: {
-        UNUSED bool b = resp.add("changes", make_replacement_pair(old_row, old_row));
+        UNUSED bool b = resp.add("changes", make_error_triple(old_row,
+                                                              old_row,
+                                                              error_message));
     } break;
     default: unreachable();
     }
