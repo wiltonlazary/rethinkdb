@@ -193,7 +193,10 @@ class Cursor(object):
             del self.conn._cursor_cache[res.token]
 
     def __str__(self):
-        val_str = ', '.join(map(repr, self.items[:10]))
+        if len(self.items) > 10:
+            val_str = ', '.join(map(repr, [self.items[i] for i in range(0,10)]))
+        else:
+            val_str = ', '.join(map(repr, self.items))
         if len(self.items) > 10 or self.error is None:
             val_str += ', ...'
 
