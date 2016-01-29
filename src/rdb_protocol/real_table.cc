@@ -290,14 +290,6 @@ ql::datum_t real_table_t::write_batched_insert(
     return_changes_t return_changes,
     durability_requirement_t durability) {
 
-    // Enforce ordering for inserts in changes
-    std::unordered_map<std::string, int> pkey_to_pos;
-    for (size_t i = 0; i < inserts.size(); ++i) {
-        pkey_to_pos[
-            inserts[i].get_field(
-                get_pkey().c_str()).as_str().to_std()] = i;
-    }
-
     ql::datum_t stats((std::map<datum_string_t, ql::datum_t>()));
     std::set<std::string> conditions;
     std::vector<std::vector<ql::datum_t> > batches = split(std::move(inserts));
@@ -311,25 +303,6 @@ ql::datum_t real_table_t::write_batched_insert(
         r_sanity_check(dp != NULL);
         stats = stats.merge(*dp, ql::stats_merge, env->limits(), &conditions);
     }
-
-    std::vector<ql::datum_t> new_changes;
-    new_changes.reserve(pkey_to_pos.size());
-    ql::datum_t changes = stats.get_field("changes");
-    /*
-    for (size_t i = 0; i < changes.arr_size(); ++i) {
-        ql::datum_t change = changes.get(i);
-        std::string pkey_string = change.get_field("new_val").get_field(
-            get_pkey().c_str()).as_str().to_std();
-        new_changes[pkey_to_pos[pkey_string]] = change;
-    }
-    */
-    ql::datum_t new_changes_datum = ql::datum_t(std::move(new_changes), env->limits());
-    ql::datum_t new_stats_datum = ql::datum_t(
-        std::map<datum_string_t, ql::datum_t>{
-            std::pair<datum_string_t, ql::datum_t>{
-                datum_string_t("changes"),
-                new_changes_datum}});
-    stats.merge(new_stats_datum, ql::stats_merge, env->limits(), &conditions);
 
     ql::datum_object_builder_t result(stats);
     result.add_warnings(conditions, env->limits());
