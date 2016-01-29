@@ -72,7 +72,7 @@
             <PreprocessorDefinitions>
               WIN32;
               WINVER=<xsl:value-of select="/config/target/@winver" />;
-              _WIN32_WINNT=WINVER;
+              _WIN32_WINNT=<xsl:value-of select="/config/target/@winver" />;
               RETHINKDB_VERSION="<xsl:value-of select="/config/@RethinkDBVersion" />";
               _USE_MATH_DEFINES;
               COMPILER_MSVC;
@@ -141,7 +141,6 @@
             <GenerateDebugInformation>true</GenerateDebugInformation>
             <SubSystem>Console</SubSystem>
             <AdditionalDependencies>
-              %(AdditionalDependencies);
               dbghelp.lib; iphlpapi.lib; WS2_32.lib; winmm.lib;
               curl.lib;
               libprotobuf.lib;
@@ -154,10 +153,12 @@
               <xsl:if test="@configuration = 'Debug'">
                 gtest.lib;
               </xsl:if>
+              %(AdditionalDependencies);
             </AdditionalDependencies>
             <EntryPointSymbol>mainCRTStartup</EntryPointSymbol>
             <AdditionalOptions>
               /ignore:4099 <!-- type name first seen using 'objecttype1' now seen using 'objecttype2' -->
+              /NODEFAULTLIB:MSVCRT.lib <!-- work-around linker errors, possibly caused by openssl -->
             </AdditionalOptions>
             <xsl:if test="@platform = 'Win32'">
               <TargetMachine>MachineX86</TargetMachine>
