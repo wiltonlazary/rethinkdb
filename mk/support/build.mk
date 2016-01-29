@@ -31,13 +31,13 @@ PKG_SCRIPT = $(foreach v, $(PKG_SCRIPT_VARIABLES), $v='$($v)') MAKEFLAGS='$(PKG_
 PKG_SCRIPT_TRACE = TRACE=1 $(PKG_SCRIPT)
 PKG_RECURSIVE_MARKER := $(if $(findstring 0,$(JUST_SCAN_MAKEFILES)),$(if $(DRY_RUN),,+))
 
-ifeq (Windows,$(OS))
+ifneq (Windows,$(OS))
   INSTALL_WITNESS := install.witness
 else
   ifeq (1,$(DEBUG))
-    INSTALL_WITNESS := install.witness.$PLATFORM-Debug
+    INSTALL_WITNESS := install.witness.$(PLATFORM)-Debug
   else
-    INSTALL_WITNESS := install.witness.$PLATFORM-Release
+    INSTALL_WITNESS := install.witness.$(PLATFORM)-Release
   endif
 endif
 

@@ -34,9 +34,10 @@ pkg_install () {
 }
 
 pkg_install-windows () {
+    rm -rf "$build_dir"
     pkg_copy_src_to_build
 
-    local config script
+    local config script out
     case "$PLATFORM" in
         Win32) config=VC-WIN32 ;
                script=ms ;;
@@ -44,16 +45,17 @@ pkg_install-windows () {
              script=win64a ;;
     esac
 
+    out=out32
     if [[ "$DEBUG" = 1 ]]; then
         config=debug-$config
+        out=$out.dbg
     fi
 
     in_dir "$build_dir" with_vs_env perl Configure $config no-asm
     in_dir "$build_dir" with_vs_env 'ms\do_'$script
-    in_dir "$build_dir" with_vs_env nmake -f 'ms\nt.mak' clean || :
     in_dir "$build_dir" with_vs_env nmake -f 'ms\nt.mak'
 
-    cp "$build_dir/out32"/{ssleay32,libeay32}.lib "$windows_deps_libs/"
+    cp "$build_dir/$out"/{ssleay32,libeay32}.lib "$windows_deps_libs/"
 }
 
 pkg_link-flags () {

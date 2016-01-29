@@ -196,7 +196,7 @@ configure_windows () {
         check_vs_bin $tool
     done
     require Platform
-    var PLATFORM ${requested_platform:-Win32}
+    check_windows_platform
     var COMPILER MSC
     var DEFAULT_ALLOCATOR system
     var ALLOCATOR system
@@ -1291,6 +1291,21 @@ check_windows () {
         var OS Windows
     else
         windows=false
+    fi
+}
+
+check_windows_platform () {
+    if [[ -n "${requested_platform:-}" ]]; then
+        case "$requested_platform" in
+            x64) var PLATFORM x64 ;;
+            Win32) var PLATFORM Win32 ;;
+            *) error "invalid platform '$requested_platform', should be Win32 or x64"
+        esac
+    else
+        case "`uname -m`" in
+            *64*) var PLATFORM x64 ;;
+            *) var PLATFORM Win32 ;;
+        esac
     fi
 }
 
