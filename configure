@@ -209,6 +209,8 @@ configure_windows () {
         require_dep $pkg
         fetch_lib $pkg
     done
+    optional Python
+    check_bin python
 }
 
 # Entry point

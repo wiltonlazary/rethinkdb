@@ -41,11 +41,12 @@ include $(TOP)/mk/support/build.mk
 ifeq (Windows,$(OS))
 
 # Windows build
-include $(TOP)/mk/windows.mk
+include $/mk/windows.mk
+
+# Python driver
+include $/drivers/python/build.mk
 
 else # Windows
-
-$(error TODO ATN)
 
 # make install
 include $(TOP)/mk/install.mk
