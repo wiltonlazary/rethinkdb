@@ -25,7 +25,14 @@
         <ProjectGuid>{CB045D34-1C67-473B-ABAB-83F0D630596D}</ProjectGuid>
         <Keyword>Win32Proj</Keyword>
         <OutDir>build\$(Configuration)_$(Platform)\</OutDir>
-        <IntDir>build\$(Configuration)_$(Platform)\</IntDir>
+        <xsl:choose>
+          <xsl:when test="/config/unittest">
+            <IntDir>build\$(Configuration)_$(Platform)\unit\</IntDir>
+          </xsl:when>
+          <xsl:otherwise>
+            <IntDir>build\$(Configuration)_$(Platform)\</IntDir>
+          </xsl:otherwise>
+        </xsl:choose>
         <WindowsTargetPlatformVersion>
           <xsl:value-of select="target/@version" />
         </WindowsTargetPlatformVersion>
@@ -170,9 +177,16 @@
           <ClCompile Include="precompiled\web_assets\web_assets.cc" />
           <ClCompile Include="precompiled\proto\rdb_protocol\ql2.pb.cc" />
           <ClCompile Include="src\**\*.cc">
-            <xsl:if test="@configuration = 'Release'">
-              <xsl:attribute name="Exclude">src\unittest\**\*.cc</xsl:attribute>
-            </xsl:if>
+            <xsl:choose>
+              <xsl:when test="/config/unittest">
+                <xsl:message>UNIT</xsl:message>
+                <xsl:attribute name="Exclude">src\main.cc</xsl:attribute>
+              </xsl:when>
+              <xsl:otherwise>
+                <xsl:message>NOUNIT</xsl:message>
+                <xsl:attribute name="Exclude">src\unittest\**\*.cc</xsl:attribute>
+              </xsl:otherwise>
+            </xsl:choose>
           </ClCompile>
         </ItemGroup>
       </xsl:for-each>

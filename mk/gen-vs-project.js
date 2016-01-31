@@ -11,10 +11,19 @@ function load(path) {
     WScript.Quit()
 }
 
-xml = load("RethinkDB.vcxproj.xml");
-xsl = load("mk/RethinkDB.vcxproj.xsl");
+function add_unittest (xml) {
+    var node = new ActiveXObject("Msxml2.DOMDocument.6.0");
+    xml.documentElement.appendChild(xml.createNode(1, "unittest", ""));
+}
+
+xml = load("rethinkdb.vcxproj.xml");
+xsl = load("mk/rethinkdb.vcxproj.xsl");
 
 out = new ActiveXObject("Msxml2.DOMDocument.6.0");
-xml.transformNodeToObject(xsl, out);
 
-out.save("RethinkDB.vcxproj");
+xml.transformNodeToObject(xsl, out);
+out.save("rethinkdb.vcxproj");
+
+add_unittest(xml);
+xml.transformNodeToObject(xsl, out);
+out.save("rethinkdb-unittest.vcxproj");
