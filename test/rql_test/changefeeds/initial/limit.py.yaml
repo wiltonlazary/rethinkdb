@@ -139,8 +139,3 @@ tests:
       ot: partial([{'new_val':{'id':3, 'alpha':'r', 'updated':True}},
                    {'new_val':{'id':4, 'alpha':'q'}},
                    {'new_val':{'id':5, 'alpha':'p'}}])
-    
-
-
-
-      
