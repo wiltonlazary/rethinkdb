@@ -1,0 +1,146 @@
+desc: show that .limit.changefeeds work as expected with inital values
+table_variable_name: tbl
+
+# We do the following:
+#   1. Fill in some intial data 0/u-9/l
+#   2. Start the changefees, check initial values
+#   3. Add values 10/k-20/a and observe the changes
+#   4. Update values 3/r, 6/o, 15/f, 16/e, and 19/b with {'updated':True}, observe the changes
+#   5. Delete 4/q, 6/o, 16/e, and 18/c, observe the changes
+
+# 20 19 18 17 16 15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
+# a  b  c  d  e  f  g  h  i  j  k  l  m  n  o  p  q  r  s  t  u
+
+# note: on changefeeds `limit` always needs an ordered stream, so order_by is always required
+
+tests:
+    # -- create secondary index
+    
+    - py: tbl.index_create('alpha')
+      ot: {'created':1}
+    - py: tbl.index_wait()['ready']
+      ot: [True]
+    
+    # -- insert initial records - id: 0-9, alpha: u-l
+    
+    - py: tbl.insert(r.range(10).map({'id':r.row, 'alpha':r.expr('abcdefghijklmnopqrstu').slice(r.expr(21).sub(r.row).sub(1), r.expr(21).sub(r.row))}))
+      ot: partial({'errors':0, 'inserted':10})
+    
+    # -- start changefeeds
+    
+    - py:
+      # table.order_by.limit
+       - tableOrderbyLimitFeed = tbl.order_by(index='id').limit(15).changes(include_states=True, include_initial=True)
+       - tableOrderbyLimitFeedReversed = tbl.order_by(index=r.desc('id')).limit(15).changes(include_states=True, include_initial=True)
+       - tableOrderbyLimitFeedNoStates = tbl.order_by(index='id').limit(15).changes(include_states=False, include_initial=True)
+    
+    - py: tbl.limit(10).changes()
+      ot: err('ReqlQueryLogicError', 'Cannot get changes on the first elements of an unordered stream.')
+    
+    # -- read inital values
+    
+    - py:
+       - fetch(tableOrderbyLimitFeed, 1)
+       - fetch(tableOrderbyLimitFeedReversed, 1)
+      ot: [{"state": "initializing"}]
+    - py:
+       - fetch(tableOrderbyLimitFeed, 10)
+       - fetch(tableOrderbyLimitFeedReversed, 10)
+       - fetch(tableOrderbyLimitFeedNoStates)
+      ot: bag([{'new_val':{'id':0, 'alpha':'u'}}, {'new_val':{'id':1, 'alpha':'t'}}, # note: order is not guaranteed
+               {'new_val':{'id':2, 'alpha':'s'}}, {'new_val':{'id':3, 'alpha':'r'}},
+               {'new_val':{'id':4, 'alpha':'q'}}, {'new_val':{'id':5, 'alpha':'p'}},
+               {'new_val':{'id':6, 'alpha':'o'}}, {'new_val':{'id':7, 'alpha':'n'}},
+               {'new_val':{'id':8, 'alpha':'m'}}, {'new_val':{'id':9, 'alpha':'l'}}])
+    - py:
+       - fetch(tableOrderbyLimitFeed)
+       - fetch(tableOrderbyLimitFeedReversed)
+      ot: [{"state": "ready"}]
+    
+    # -- Add values 10/k-20/a
+    
+    - py: tbl.insert(r.range(10, 21).map({'id':r.row, 'alpha':r.expr('abcdefghijklmnopqrstu').slice(r.expr(21).sub(r.row).sub(1), r.expr(21).sub(r.row))}))
+      ot: partial({'errors':0, 'inserted':11})
+    
+    - py:
+        - fetch(tableOrderbyLimitFeed)
+        - fetch(tableOrderbyLimitFeedNoStates)
+      ot: partial([{'new_val':{'id':10, 'alpha':'k'}},
+                   {'new_val':{'id':11, 'alpha':'j'}},
+                   {'new_val':{'id':12, 'alpha':'i'}},
+                   {'new_val':{'id':13, 'alpha':'h'}},
+                   {'new_val':{'id':14, 'alpha':'g'}}])
+    
+     # removals and additions are paired in non-deterministic sets
+    - py: reversedInsertOutput = fetch(tableOrderbyLimitFeedReversed)
+      ot: partial([{'new_val':{'id':10, 'alpha':'k'}},
+                   {'new_val':{'id':11, 'alpha':'j'}},
+                   {'new_val':{'id':12, 'alpha':'i'}},
+                   {'new_val':{'id':13, 'alpha':'h'}},
+                   {'new_val':{'id':14, 'alpha':'g'}},
+                   {'new_val':{'id':15, 'alpha':'f'}},
+                   {'new_val':{'id':16, 'alpha':'e'}},
+                   {'new_val':{'id':17, 'alpha':'d'}},
+                   {'new_val':{'id':18, 'alpha':'c'}},
+                   {'new_val':{'id':19, 'alpha':'b'}},
+                   {'new_val':{'id':20, 'alpha':'a'}}])
+    - py: reversedInsertOutput # removals
+      ot: partial([{'old_val':{'id':0, 'alpha':'u'}},
+                   {'old_val':{'id':1, 'alpha':'t'}},
+                   {'old_val':{'id':2, 'alpha':'s'}},
+                   {'old_val':{'id':3, 'alpha':'r'}},
+                   {'old_val':{'id':4, 'alpha':'q'}},
+                   {'old_val':{'id':5, 'alpha':'p'}}])
+    
+    # -- Update values 3/r, 6/o, 15/f, 16/e, and 19/b with {'updated':True}
+    
+    - py: tbl.get_all(3, 6, 15, 16, 19).update({'updated':True}) # 3/r, 6/o, 15/f, 16/e, and 19/b
+      ot: partial({'errors':0, 'replaced':5})
+    
+    - py:
+        - fetch(tableOrderbyLimitFeed)
+        - fetch(tableOrderbyLimitFeedNoStates)
+      ot: bag([{'old_val':{'id':3,  'alpha':'r'}, 'new_val':{'id':3,  'alpha':'r', 'updated':True}},
+               {'old_val':{'id':6,  'alpha':'o'}, 'new_val':{'id':6,  'alpha':'o', 'updated':True}}])
+    
+    - py: fetch(tableOrderbyLimitFeedReversed)
+      ot: bag([{'old_val':{'id':6,  'alpha':'o'}, 'new_val':{'id':6,  'alpha':'o', 'updated':True}},
+               {'old_val':{'id':15, 'alpha':'f'}, 'new_val':{'id':15, 'alpha':'f', 'updated':True}},
+               {'old_val':{'id':16, 'alpha':'e'}, 'new_val':{'id':16, 'alpha':'e', 'updated':True}},
+               {'old_val':{'id':19, 'alpha':'b'}, 'new_val':{'id':19, 'alpha':'b', 'updated':True}}])
+        
+    # -- Delete 4/q, 6/o, 16/e, and 18/c
+    
+    - py: tbl.get_all(1, 6, 16, 18).delete() # 4/q, 6/o, 16/e, and 18/c
+      ot: partial({'errors':0, 'deleted':4})
+    
+    # tableOrderbyLimitFeed
+    - py: deleteOuput = fetch(tableOrderbyLimitFeed)
+      ot: partial([{'old_val':{'id':1, 'alpha':'t'}},
+                   {'old_val':{'id':6, 'alpha':'o', 'updated':True}}])
+    - py: deleteOuput
+      ot: partial([{'new_val':{'id':15, 'alpha':'f', 'updated':True}},
+                   {'new_val':{'id':17, 'alpha':'d'}}])
+    
+    # tableOrderbyLimitFeedNoStates
+    - py: NoStatesDeleteOuput = fetch(tableOrderbyLimitFeedNoStates)
+      ot: partial([{'old_val':{'id':1, 'alpha':'t'}},
+                   {'old_val':{'id':6, 'alpha':'o', 'updated':True}}])
+    - py: NoStatesDeleteOuput
+      ot: partial([{'new_val':{'id':15, 'alpha':'f', 'updated':True}},
+                   {'new_val':{'id':17, 'alpha':'d'}}])
+    
+    # tableOrderbyLimitFeedReversed
+    - py: reversedDeleteOutput = fetch(tableOrderbyLimitFeedReversed)
+      ot: partial([{'old_val':{'id':6,  'alpha':'o', 'updated':True}},
+                   {'old_val':{'id':16, 'alpha':'e', 'updated':True}},
+                   {'old_val':{'id':18, 'alpha':'c'}}])
+    - py: reversedDeleteOutput
+      ot: partial([{'new_val':{'id':3, 'alpha':'r', 'updated':True}},
+                   {'new_val':{'id':4, 'alpha':'q'}},
+                   {'new_val':{'id':5, 'alpha':'p'}}])
+    
+
+
+
+      
