@@ -194,6 +194,23 @@ class Cursor(object):
 
     def __str__(self):
         if len(self.items) > 10:
+            val_str = ',\n'.join(map(repr, [self.items[i] for i in range(0,10)]))
+        else:
+            val_str = ',\n'.join(map(repr, self.items))
+        if len(self.items) > 10 or self.error is None:
+            val_str += ', ...\n'
+
+        if self.error is None:
+            err_str = 'streaming'
+        elif isinstance(self.error, ReqlCursorEmpty):
+            err_str = 'done streaming'
+        else:
+            ERR_str = 'error: %s' % repr(self.error)
+
+        return "%s (%s):\n[\n%s\n]" % (object.__repr__(self), err_str, val_str)
+
+    def __repr__(self):
+        if len(self.items) > 10:
             val_str = ', '.join(map(repr, [self.items[i] for i in range(0,10)]))
         else:
             val_str = ', '.join(map(repr, self.items))
@@ -207,7 +224,13 @@ class Cursor(object):
         else:
             err_str = 'error: %s' % repr(self.error)
 
-        return "%s (%s):\n[%s]" % (object.__str__(self), err_str, val_str)
+        return "<%s.%s object at %s (%s):\n [%s]>" % (
+            self.__class__.__module__,
+            self.__class__.__name__,
+            hex(id(self)),
+            err_str,
+            val_str
+        )
 
     def _error(self, message):
         # Set an error and extend with a dummy response to trigger any waiters
