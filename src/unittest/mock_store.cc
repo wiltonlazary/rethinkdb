@@ -445,7 +445,7 @@ continue_bool_t mock_store_t::send_backfill(
                 The reason is that we need to tell the backfill receiver when it has
                 to start accepting streaming writes for a new region.
                 If we just update `table_cursor`, but don't send an empty range, the
-                receiver will keep clipping writes from that range but we'll never sent
+                receiver will keep clipping writes from that range but we'll never send
                 the new values in that range either, since we've already moved past it.
                 */
                 item_consumer->on_empty_range(metainfo_, table_cursor);
