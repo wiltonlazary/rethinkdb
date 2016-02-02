@@ -192,30 +192,13 @@ class Cursor(object):
         if self.outstanding_requests == 0 and self.error is not None:
             del self.conn._cursor_cache[res.token]
 
-    def __str__(self):
+    def __summary_string__(self, token, end_token):
         if len(self.items) > 10:
-            val_str = ',\n'.join(map(repr, [self.items[i] for i in range(0,10)]))
+            val_str = token.join(map(repr, [self.items[i] for i in range(0,10)]))
         else:
-            val_str = ',\n'.join(map(repr, self.items))
+            val_str = token.join(map(repr, self.items))
         if len(self.items) > 10 or self.error is None:
-            val_str += ', ...\n'
-
-        if self.error is None:
-            err_str = 'streaming'
-        elif isinstance(self.error, ReqlCursorEmpty):
-            err_str = 'done streaming'
-        else:
-            ERR_str = 'error: %s' % repr(self.error)
-
-        return "%s (%s):\n[\n%s\n]" % (object.__repr__(self), err_str, val_str)
-
-    def __repr__(self):
-        if len(self.items) > 10:
-            val_str = ', '.join(map(repr, [self.items[i] for i in range(0,10)]))
-        else:
-            val_str = ', '.join(map(repr, self.items))
-        if len(self.items) > 10 or self.error is None:
-            val_str += ', ...'
+            val_str += end_token
 
         if self.error is None:
             err_str = 'streaming'
@@ -224,6 +207,14 @@ class Cursor(object):
         else:
             err_str = 'error: %s' % repr(self.error)
 
+        return val_str, err_str
+
+    def __str__(self):
+        val_str, err_str = self.__summary_string__(",\n", ", ...\n")
+        return "%s (%s):\n[\n%s]" % (object.__repr__(self), err_str, val_str)
+
+    def __repr__(self):
+        val_str, err_str = self.__summary_string__(", ", ", ...")
         return "<%s.%s object at %s (%s):\n [%s]>" % (
             self.__class__.__module__,
             self.__class__.__name__,
