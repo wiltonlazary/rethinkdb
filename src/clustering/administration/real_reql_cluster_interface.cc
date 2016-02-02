@@ -134,12 +134,21 @@ bool real_reql_cluster_interface_t::db_drop_uuid(database_id_t db_id,
                                   "may not have been dropped.",
                                   "The database was not dropped, but some of the tables in it may or "
                                   "may not have been dropped.")
-                      }
+            }
         }
 
-        metadata.databases.databases.at(db_id).mark_deleted();
-        semilattice_root_view->join(metadata);
-        metadata = semilattice_root_view->get();
+        auto db_id_it = metadata.databases.databases.find(db_id);
+        if (db_id_it != metadata.databases.databases.end()
+            && !db_id_it->second.is_deleted()) {
+            db_id_it->second.mark_deleted();
+            semilattice_root_view->join(metadata);
+            metadata = semilattice_root_view->get();
+        } else {
+            *(error_out) = admin_err_t{
+                strprintf("The database was already deleted."),
+                query_state_t::FAILED};
+            return false;
+        }
     }
     wait_for_metadata_to_propagate(metadata, interruptor_on_caller);
 
