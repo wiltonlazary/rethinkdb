@@ -192,7 +192,7 @@ class Cursor(object):
         if self.outstanding_requests == 0 and self.error is not None:
             del self.conn._cursor_cache[res.token]
 
-    def __summary_string__(self, token, end_token):
+    def __summary_string(self, token, end_token):
         if len(self.items) > 10:
             val_str = token.join(map(repr, [self.items[i] for i in range(0,10)]))
         else:
@@ -210,11 +210,11 @@ class Cursor(object):
         return val_str, err_str
 
     def __str__(self):
-        val_str, err_str = self.__summary_string__(",\n", ", ...\n")
+        val_str, err_str = self.__summary_string(",\n", ", ...\n")
         return "%s (%s):\n[\n%s]" % (object.__repr__(self), err_str, val_str)
 
     def __repr__(self):
-        val_str, err_str = self.__summary_string__(", ", ", ...")
+        val_str, err_str = self.__summary_string(", ", ", ...")
         return "<%s.%s object at %s (%s):\n [%s]>" % (
             self.__class__.__module__,
             self.__class__.__name__,
