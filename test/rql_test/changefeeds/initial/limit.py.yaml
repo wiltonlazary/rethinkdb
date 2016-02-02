@@ -1,4 +1,4 @@
-desc: show that .limit.changefeeds work as expected with inital values
+desc: show that .limit.changefeeds work as expected with inital values on a primary key
 table_variable_name: tbl
 
 # We do the following:
@@ -14,22 +14,14 @@ table_variable_name: tbl
 # note: on changefeeds `limit` always needs an ordered stream, so order_by is always required
 
 tests:
-    # -- create secondary index
-    
-    - py: tbl.index_create('alpha')
-      ot: {'created':1}
-    - py: tbl.index_wait()['ready']
-      ot: [True]
-    
     # -- insert initial records - id: 0-9, alpha: u-l
     
-    - py: tbl.insert(r.range(10).map({'id':r.row, 'alpha':r.expr('abcdefghijklmnopqrstu').slice(r.expr(21).sub(r.row).sub(1), r.expr(21).sub(r.row))}))
+    - py: tbl.insert(r.range(10).map({'id':r.row, 'alpha':r.expr('utsrqponmlkjihgfedcba').slice(r.row, r.row.add(1))}))
       ot: partial({'errors':0, 'inserted':10})
     
     # -- start changefeeds
     
     - py:
-      # table.order_by.limit
        - tableOrderbyLimitFeed = tbl.order_by(index='id').limit(15).changes(include_states=True, include_initial=True)
        - tableOrderbyLimitFeedReversed = tbl.order_by(index=r.desc('id')).limit(15).changes(include_states=True, include_initial=True)
        - tableOrderbyLimitFeedNoStates = tbl.order_by(index='id').limit(15).changes(include_states=False, include_initial=True)
@@ -46,7 +38,7 @@ tests:
     - py:
        - fetch(tableOrderbyLimitFeed, 10)
        - fetch(tableOrderbyLimitFeedReversed, 10)
-       - fetch(tableOrderbyLimitFeedNoStates)
+       - fetch(tableOrderbyLimitFeedNoStates, timeout=2)
       ot: bag([{'new_val':{'id':0, 'alpha':'u'}}, {'new_val':{'id':1, 'alpha':'t'}}, # note: order is not guaranteed
                {'new_val':{'id':2, 'alpha':'s'}}, {'new_val':{'id':3, 'alpha':'r'}},
                {'new_val':{'id':4, 'alpha':'q'}}, {'new_val':{'id':5, 'alpha':'p'}},
@@ -57,40 +49,46 @@ tests:
        - fetch(tableOrderbyLimitFeedReversed)
       ot: [{"state": "ready"}]
     
-    # -- Add values 10/k-20/a
+    # -- Add 10/k-14/g - everything before we hit 15 values
     
-    - py: tbl.insert(r.range(10, 21).map({'id':r.row, 'alpha':r.expr('abcdefghijklmnopqrstu').slice(r.expr(21).sub(r.row).sub(1), r.expr(21).sub(r.row))}))
-      ot: partial({'errors':0, 'inserted':11})
+    - py: tbl.insert(r.range(10, 15).map({'id':r.row, 'alpha':r.expr('utsrqponmlkjihgfedcba').slice(r.row, r.row.add(1))}))
+      ot: partial({'errors':0, 'inserted':5})
     
     - py:
         - fetch(tableOrderbyLimitFeed)
+        - fetch(tableOrderbyLimitFeedReversed)
         - fetch(tableOrderbyLimitFeedNoStates)
-      ot: partial([{'new_val':{'id':10, 'alpha':'k'}},
-                   {'new_val':{'id':11, 'alpha':'j'}},
-                   {'new_val':{'id':12, 'alpha':'i'}},
-                   {'new_val':{'id':13, 'alpha':'h'}},
-                   {'new_val':{'id':14, 'alpha':'g'}}])
+      ot: bag([{'old_val':None, 'new_val':{'id':10, 'alpha':'k'}},
+               {'old_val':None, 'new_val':{'id':11, 'alpha':'j'}},
+               {'old_val':None, 'new_val':{'id':12, 'alpha':'i'}},
+               {'old_val':None, 'new_val':{'id':13, 'alpha':'h'}},
+               {'old_val':None, 'new_val':{'id':14, 'alpha':'g'}}])
     
-     # removals and additions are paired in non-deterministic sets
+    # -- Add 15/f-20/a
+    
+    - py: tbl.insert(r.range(15, 21).map({'id':r.row, 'alpha':r.expr('utsrqponmlkjihgfedcba').slice(r.row, r.row.add(1))}))
+      ot: partial({'errors':0, 'inserted':6})
+    
+    - py:
+       - fetch(tableOrderbyLimitFeed, 10)
+       - fetch(tableOrderbyLimitFeedNoStates, 10)
+      ot: [err('ReqlTimeoutError')] # all out-of-range
+    
+    # removals and additions are paired in non-deterministic sets
     - py: reversedInsertOutput = fetch(tableOrderbyLimitFeedReversed)
-      ot: partial([{'new_val':{'id':10, 'alpha':'k'}},
-                   {'new_val':{'id':11, 'alpha':'j'}},
-                   {'new_val':{'id':12, 'alpha':'i'}},
-                   {'new_val':{'id':13, 'alpha':'h'}},
-                   {'new_val':{'id':14, 'alpha':'g'}},
-                   {'new_val':{'id':15, 'alpha':'f'}},
-                   {'new_val':{'id':16, 'alpha':'e'}},
-                   {'new_val':{'id':17, 'alpha':'d'}},
-                   {'new_val':{'id':18, 'alpha':'c'}},
-                   {'new_val':{'id':19, 'alpha':'b'}},
-                   {'new_val':{'id':20, 'alpha':'a'}}])
+      ot: bag([{'old_val':partial({'id':anything(), 'alpha':anything()}), 'new_val':{'id':15, 'alpha':'f'}},
+               {'old_val':partial({'id':anything(), 'alpha':anything()}), 'new_val':{'id':16, 'alpha':'e'}},
+               {'old_val':partial({'id':anything(), 'alpha':anything()}), 'new_val':{'id':17, 'alpha':'d'}},
+               {'old_val':partial({'id':anything(), 'alpha':anything()}), 'new_val':{'id':18, 'alpha':'c'}},
+               {'old_val':partial({'id':anything(), 'alpha':anything()}), 'new_val':{'id':19, 'alpha':'b'}},
+               {'old_val':partial({'id':anything(), 'alpha':anything()}), 'new_val':{'id':20, 'alpha':'a'}}])
     - py: reversedInsertOutput # removals
-      ot: partial([{'old_val':{'id':0, 'alpha':'u'}},
-                   {'old_val':{'id':1, 'alpha':'t'}},
-                   {'old_val':{'id':2, 'alpha':'s'}},
-                   {'old_val':{'id':3, 'alpha':'r'}},
-                   {'old_val':{'id':4, 'alpha':'q'}},
-                   {'old_val':{'id':5, 'alpha':'p'}}])
+      ot: bag([{'old_val':{'id':0, 'alpha':'u'}, 'new_val':partial({'id':anything(), 'alpha':anything()})},
+               {'old_val':{'id':1, 'alpha':'t'}, 'new_val':partial({'id':anything(), 'alpha':anything()})},
+               {'old_val':{'id':2, 'alpha':'s'}, 'new_val':partial({'id':anything(), 'alpha':anything()})},
+               {'old_val':{'id':3, 'alpha':'r'}, 'new_val':partial({'id':anything(), 'alpha':anything()})},
+               {'old_val':{'id':4, 'alpha':'q'}, 'new_val':partial({'id':anything(), 'alpha':anything()})},
+               {'old_val':{'id':5, 'alpha':'p'}, 'new_val':partial({'id':anything(), 'alpha':anything()})}])
     
     # -- Update values 3/r, 6/o, 15/f, 16/e, and 19/b with {'updated':True}
     

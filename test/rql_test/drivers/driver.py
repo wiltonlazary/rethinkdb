@@ -605,6 +605,9 @@ def check_no_table_specified():
 def define(expr, variable=None):
     driver.define(expr, variable=variable)
 
+def anything():
+    return Anything()
+
 def bag(expected, ordered=False, partial=None):
     options = {'ordered':ordered}
     if partial is not None:
