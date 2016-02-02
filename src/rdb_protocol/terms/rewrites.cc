@@ -165,11 +165,6 @@ private:
 
         minidriver_t::reql_t term = r.expr(val).replace(r.fun(x, r.null()));
 
-        // if we've deleted a table, delete the table
-        if (val.db() == "rethinkdb") {
-            BREAKPOINT;
-        }
-
         term.copy_optargs_from_term(in);
         return term;
      }
