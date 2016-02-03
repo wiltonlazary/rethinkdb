@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "arch/runtime/coroutines.hpp"
 #include "btree/concurrent_traversal.hpp"
 #include "btree/keys.hpp"
 #include "containers/archive/stl_types.hpp"
@@ -57,7 +58,7 @@ RDB_DECLARE_SERIALIZABLE(rget_item_t);
 class sindex_compare_t {
 public:
     explicit sindex_compare_t(sorting_t _sorting)
-        : sorting(_sorting), iterations_since_yield(0) { }
+        : sorting(_sorting), iterations_since_last_yield(0) { }
     bool operator()(const rget_item_t &l, const rget_item_t &r) {
         r_sanity_check(l.sindex_key.has() && r.sindex_key.has());
 
@@ -79,7 +80,7 @@ public:
     }
 private:
     sorting_t sorting;
-    int iterations_since_yield;
+    int iterations_since_last_yield;
 };
 
 void debug_print(printf_buffer_t *, const rget_item_t &);
