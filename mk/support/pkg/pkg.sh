@@ -273,11 +273,11 @@ git_clone_tag () {
 
 # Download a file to stdout
 geturl () {
-    if [[ -n "${WGET:-}" ]]; then
-        $WGET --quiet --output-document=- "$@"
-    else
+#    if [[ -n "${WGET:-}" ]]; then
+#        $WGET --quiet --output-document=- "$@"
+#    else
         ${CURL:-curl} --silent --fail --location "$@"
-    fi
+#    fi
 }
 
 getsha1 () {
