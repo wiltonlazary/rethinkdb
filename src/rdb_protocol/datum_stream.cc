@@ -418,7 +418,6 @@ raw_stream_t rget_response_reader_t::unshard(
         int z = 0;
         for (;;) {
             if (z++ > 1000) {
-                fprintf(stderr, "Yielding in unshard\n");
                 coro_t::yield();
                 z = 0;
             }

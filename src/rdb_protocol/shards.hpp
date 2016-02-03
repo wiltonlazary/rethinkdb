@@ -64,7 +64,6 @@ public:
 
         ++iterations_since_last_yield;
         if (iterations_since_last_yield > 1000) {
-            fprintf(stderr, "yielding\n");
             coro_t::yield();
             iterations_since_last_yield = 0;
         }
