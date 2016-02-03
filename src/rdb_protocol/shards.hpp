@@ -57,9 +57,15 @@ RDB_DECLARE_SERIALIZABLE(rget_item_t);
 class sindex_compare_t {
 public:
     explicit sindex_compare_t(sorting_t _sorting)
-        : sorting(_sorting) { }
+        : sorting(_sorting), iterations_since_yield(0) { }
     bool operator()(const rget_item_t &l, const rget_item_t &r) {
         r_sanity_check(l.sindex_key.has() && r.sindex_key.has());
+
+        ++iterations_since_last_yield;
+        if (iterations_since_last_yield > 1000) {
+            coro_t::yield();
+            iterations_since_last_yield = 0;
+        }
 
         if (l.sindex_key == r.sindex_key) {
             return reversed(sorting)
@@ -73,6 +79,7 @@ public:
     }
 private:
     sorting_t sorting;
+    int iterations_since_yield;
 };
 
 void debug_print(printf_buffer_t *, const rget_item_t &);
