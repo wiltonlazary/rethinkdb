@@ -114,8 +114,13 @@ void write_response_internal(ql::response_t *response,
                     size_t offset = per_thread * m;
                     size_t end = (m == num_threads - 1) ?
                         response->data().size() : (per_thread * (m + 1));
+                    ticks_t t = get_ticks();
                     for (size_t i = offset; i < end; ++i) {
                         response->data()[i].write_json(&thread_writer);
+                    }
+                    double d = ticks_to_secs(get_ticks() - t);
+                    if (d > 0.1) {
+                        fprintf(stderr, "Serialized %d elements, took %f s\n", (int)(end - offset), d);
                     }
                     thread_writer.EndArray();
                 });
