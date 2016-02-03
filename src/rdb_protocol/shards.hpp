@@ -64,18 +64,20 @@ public:
 
         ++iterations_since_last_yield;
         if (iterations_since_last_yield > 1000) {
+            fprintf(stderr, "yielding\n");
             coro_t::yield();
             iterations_since_last_yield = 0;
         }
 
-        if (l.sindex_key == r.sindex_key) {
+        int cmp = l.sindex_key.cmp(r.sindex_key);
+        if (cmp == 0) {
             return reversed(sorting)
                 ? datum_t::extract_primary(l.key) > datum_t::extract_primary(r.key)
                 : datum_t::extract_primary(l.key) < datum_t::extract_primary(r.key);
         } else {
             return reversed(sorting)
-                ? l.sindex_key > r.sindex_key
-                : l.sindex_key < r.sindex_key;
+                ? cmp > 0
+                : cmp < 0;
         }
     }
 private:
