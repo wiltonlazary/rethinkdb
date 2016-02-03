@@ -13,8 +13,10 @@
 #include <vector>
 #include <utility>
 
+#include "arch/runtime/coroutines.hpp"
 #include "containers/archive/archive.hpp"
 #include "containers/archive/varint.hpp"
+#include "time.hpp"
 #include "version.hpp"
 
 namespace std {
@@ -152,10 +154,14 @@ size_t serialized_size(const std::vector<T> &v) {
 // Keep in sync with serialized_size.
 template <cluster_version_t W, class T>
 void serialize(write_message_t *wm, const std::vector<T> &v) {
+    ticks_t t = get_ticks();
     serialize_varint_uint64(wm, v.size());
     for (auto it = v.begin(), e = v.end(); it != e; ++it) {
         serialize<W>(wm, *it);
     }
+    float secs = ticks_to_secs(get_ticks() - t);
+    if (secs > 0.2)
+        fprintf(stderr, "Vector Serialization took %f seconds for %zu\n", secs, v.size());
 }
 
 template <cluster_version_t W, class T>
