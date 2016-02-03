@@ -864,7 +864,6 @@ class Server(object):
     @property
     def conn(self):
         if not self.__conn:
-            print(self.host, self.driver_port)
             self.__conn = r.connect(host=self.host, port=self.driver_port)
         return self.__conn
     
