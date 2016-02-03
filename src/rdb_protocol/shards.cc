@@ -414,9 +414,10 @@ private:
                         bool is_sindex = pair.second.stream[0].sindex_key.get_type()
                             != datum_t::UNINITIALIZED;
                         if (is_sindex) {
+                            sindex_compare_t cmp(sorting);
                             std::stable_sort(pair.second.stream.begin(),
                                              pair.second.stream.end(),
-                                             sindex_compare_t(sorting));
+                                             [&](const rget_item_t &l, const rget_item_t &r) { return cmp(l, r); });
                         }
                         if (is_sindex_sort) {
                             r_sanity_check(*is_sindex_sort == is_sindex);
