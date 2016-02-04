@@ -415,11 +415,11 @@ raw_stream_t rget_response_reader_t::unshard(
 
     // Do the unsharding.
     if (sorting != sorting_t::UNORDERED) {
-        int z = 0;
+        size_t num_iters = 0;
         for (;;) {
-            if (z++ > 1000) {
+            const size_t YIELD_INTERVAL = 2000;
+            if (++num_iters % YIELD_INTERVAL == 0) {
                 coro_t::yield();
-                z = 0;
             }
             pseudoshard_t *best_shard = &pseudoshards[0];
             const store_key_t *best_key = best_shard->best_unpopped_key();
@@ -1013,9 +1013,8 @@ void sindex_readgen_t::sindex_sort(
         return;
     }
     if (sorting(batchspec) != sorting_t::UNORDERED) {
-        sindex_compare_t cmp(sorting(batchspec));
         std::stable_sort(vec->begin(), vec->end(),
-                         [&](const rget_item_t &l, const rget_item_t &r) { return cmp(l, r); });
+                         sindex_compare_t(sorting(batchspec)));
     }
 }
 
