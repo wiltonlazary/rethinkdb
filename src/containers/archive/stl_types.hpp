@@ -16,6 +16,7 @@
 #include "arch/runtime/coroutines.hpp"
 #include "containers/archive/archive.hpp"
 #include "containers/archive/varint.hpp"
+#include "time.hpp"
 #include "version.hpp"
 
 namespace std {
