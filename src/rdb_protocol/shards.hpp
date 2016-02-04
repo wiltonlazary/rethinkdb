@@ -55,6 +55,7 @@ struct rget_item_t {
 };
 RDB_DECLARE_SERIALIZABLE(rget_item_t);
 
+// `sindex_compare_t` may block if there are a large number of things being compared.
 class sindex_compare_t {
 public:
     explicit sindex_compare_t(sorting_t _sorting)
@@ -63,9 +64,9 @@ public:
         r_sanity_check(l.sindex_key.has() && r.sindex_key.has());
 
         ++iterations_since_last_yield;
-        if (iterations_since_last_yield > 1000) {
+        const size_t YIELD_INTERVAL = 10000;
+        if (iterations_since_last_yield % YIELD_INTERVAL == 0) {
             coro_t::yield();
-            iterations_since_last_yield = 0;
         }
 
         int cmp = l.sindex_key.cmp(r.sindex_key);
@@ -81,7 +82,7 @@ public:
     }
 private:
     sorting_t sorting;
-    int iterations_since_last_yield;
+    size_t iterations_since_last_yield;
 };
 
 void debug_print(printf_buffer_t *, const rget_item_t &);
