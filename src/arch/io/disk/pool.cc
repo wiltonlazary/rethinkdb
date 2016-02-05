@@ -162,7 +162,6 @@ void pool_diskmgr_t::action_t::run() {
             io_result = -EIO;
             return;
         }
-        io_result = 0;
 #else
         CT_ASSERT(sizeof(off_t) == sizeof(int64_t));
         int res;
