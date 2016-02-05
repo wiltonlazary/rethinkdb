@@ -374,9 +374,7 @@ class SocketWrapper(object):
                     self.close()
                     raise ReqlDriverError("Connection is closed.")
                 elif ex.errno != errno.EINTR:
-                    # Could be because server closed connection.
-                    # i.e. file too large in binary transfer.
-                    # Our end will get closed if the next read fails.
+                    self.close()
                     raise ReqlDriverError(('Connection interrupted ' +
                                           'sending to %s:%s - %s') %
                                          (self.host, self.port, str(ex)))
@@ -432,12 +430,7 @@ class ConnectionInstance(object):
             self._header_in_progress = None
 
     def run_query(self, query, noreply):
-        try:
-            self._socket.sendall(query.serialize(self._parent._get_json_encoder(query)))
-        except ReqlDriverError as e:
-            # Interruption may be from server closing connection
-            pass
-
+        self._socket.sendall(query.serialize(self._parent._get_json_encoder(query)))
         if noreply:
             return None
 
