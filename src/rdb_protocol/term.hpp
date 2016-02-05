@@ -61,6 +61,7 @@ public:
     virtual ~term_t();
     const raw_term_t &get_src() const;
     virtual void accumulate_captures(var_captures_t *captures) const = 0;
+
 protected:
     // Union term is a friend so we can steal arguments from an array in an optarg.
     friend class union_term_t;
@@ -69,6 +70,12 @@ protected:
                "This is in term_t to allow stealing args from an"
                "optarg in union_term_t. Only call this on an op_term_t.");
     }
+
+    // Only terms that do a simple selection of a field, or an array of fields,
+    // are allowed to be not updated with reql version. This is checked in is_acceptable_outdated
+    // in sindex_manager.
+
+    virtual bool is_simple_selector() const { return false; }
 private:
     // The `src` member contains pointers to the original query and must not exceed
     // the lifetime of that query object.

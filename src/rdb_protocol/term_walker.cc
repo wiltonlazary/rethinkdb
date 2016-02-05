@@ -287,6 +287,7 @@ bool term_type_is_valid(Term::TermType type) {
     case Term::CHANGES:
     case Term::REDUCE:
     case Term::MAP:
+    case Term::FOLD:
     case Term::FILTER:
     case Term::CONCAT_MAP:
     case Term::GROUP:
@@ -474,6 +475,7 @@ bool term_is_write_or_meta(Term::TermType type) {
     case Term::CHANGES:
     case Term::REDUCE:
     case Term::MAP:
+    case Term::FOLD:
     case Term::FILTER:
     case Term::CONCAT_MAP:
     case Term::GROUP:
@@ -597,6 +599,7 @@ bool term_forbids_writes(Term::TermType type) {
     switch (type) {
     case Term::REDUCE:
     case Term::MAP:
+    case Term::FOLD:
     case Term::FILTER:
     case Term::CONCAT_MAP:
     case Term::GROUP:

@@ -456,6 +456,44 @@ private:
     std::vector<datum_t> args;
 };
 
+class fold_datum_stream_t : public eager_datum_stream_t {
+public:
+    fold_datum_stream_t(counted_t<datum_stream_t> &&stream,
+                        datum_t base,
+                        counted_t<const func_t> &&_acc_func,
+                        counted_t<const func_t> &&_emit_func,
+                        counted_t<const func_t> &&_final_emit_func,
+                        backtrace_id_t bt);
+
+    std::vector<datum_t>
+    next_raw_batch(env_t *env, const batchspec_t &batchspec);
+
+    bool is_array() const final {
+        return is_array_fold;
+    }
+
+    bool is_exhausted() const final;
+
+    feed_type_t cfeed_type() const final {
+        return union_type;
+    }
+
+    bool is_infinite() const final {
+        return is_infinite_fold;
+    }
+
+private:
+    counted_t<datum_stream_t> stream;
+    counted_t<const func_t> acc_func;
+    counted_t<const func_t> emit_func;
+    counted_t<const func_t> final_emit_func;
+    feed_type_t union_type;
+    bool is_array_fold, is_infinite_fold;
+
+    datum_t acc;
+    bool do_final_emit;
+};
+
 // Every shard is in a particular state.  ACTIVE means we should read more data
 // from it, SATURATED means that there's more data to read but we didn't
 // actually use any of the data we read last time so don't bother issuing
@@ -723,6 +761,34 @@ public:
     virtual bool is_finished() const = 0;
 
     virtual changefeed::keyspec_t get_changespec() const = 0;
+};
+
+// To handle empty range on getAll
+class empty_reader_t : public reader_t {
+public:
+    explicit empty_reader_t(counted_t<real_table_t> _table, std::string _table_name)
+      : table(std::move(_table)), table_name(std::move(_table_name)) {}
+    virtual ~empty_reader_t() {}
+    virtual void add_transformation(transform_variant_t &&) {}
+    virtual bool add_stamp(changefeed_stamp_t) {
+        r_sanity_fail();
+    }
+    virtual boost::optional<active_state_t> get_active_state() {
+        r_sanity_fail();
+    }
+    virtual void accumulate(env_t *, eager_acc_t *, const terminal_variant_t &) {}
+    virtual void accumulate_all(env_t *, eager_acc_t *) {}
+    virtual std::vector<datum_t> next_batch(env_t *, const batchspec_t &) {
+        return std::vector<datum_t>();
+    }
+    virtual bool is_finished() const {
+        return true;
+    }
+    virtual changefeed::keyspec_t get_changespec() const;
+
+private:
+    counted_t<real_table_t> table;
+    std::string table_name;
 };
 
 // For reads that generate read_response_t results.
