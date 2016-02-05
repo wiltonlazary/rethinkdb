@@ -469,6 +469,9 @@ void linux_tcp_conn_t::write_buffered(const void *vbuf, size_t size, signal_t *c
     const char *buf = reinterpret_cast<const char *>(vbuf);
 
     while (size > 0) {
+        /* Stop putting more things on the write queue if it's already closed. */
+        if (write_closed.is_pulsed()) throw tcp_conn_write_closed_exc_t();
+
         /* Insert the largest chunk that fits in this block */
         size_t chunk = std::min(size, WRITE_CHUNK_SIZE - current_write_buffer->size);
 
