@@ -60,17 +60,11 @@ scoped_ptr_t<ql::query_params_t> json_protocol_t::parse_query(
                          wire_protocol_t::too_large_query_message(size),
                          ql::backtrace_registry_t::EMPTY_BACKTRACE);
 
-        if (size >= wire_protocol_t::HARD_LIMIT_TOO_LARGE_QUERY_SIZE) {
-            // Client is trying to send way too much, crash immediately
-            // leading to a less helpful error message in driver.
-            send_response(&error, token, conn, interruptor);
-            throw tcp_conn_read_closed_exc_t();
+        if (size < wire_protocol_t::HARD_LIMIT_TOO_LARGE_QUERY_SIZE) {
+            // Ignore all the extra data that the client is trying to send.
+            // within reason. This is so it doesn't look like a broken pipe error.
+            conn->pop(size, interruptor);
         }
-
-        // Ignore all the extra data that the client is trying to send.
-        // This is so it doesn't look like a broken pipe error.
-
-        conn->pop(size, interruptor);
 
         send_response(&error, token, conn, interruptor);
         throw tcp_conn_read_closed_exc_t();
