@@ -575,19 +575,12 @@ module RethinkDB
     def send packet
       @mon.synchronize {
         written = 0
-        begin
-          while written < packet.length
-            # Supposedly slice will not copy the array if it goes all the way to the end
-            # We use IO::syswrite here rather than IO::write because of incompatibilities in
-            # JRuby regarding filling up the TCP send buffer.
-            # Reference: https://github.com/rethinkdb/rethinkdb/issues/3795
-            written += @socket.syswrite(packet.slice(written, packet.length))
-          end
-        rescue Errno::EPIPE => e
-          # Broken pipe could be because server refused to read.
-          # i.e. a binary file that was too large for query limit.
-          # Error will be dealt with on next read.
-          print "Connection to server interrupted.\n"
+        while written < packet.length
+          # Supposedly slice will not copy the array if it goes all the way to the end
+          # We use IO::syswrite here rather than IO::write because of incompatibilities in
+          # JRuby regarding filling up the TCP send buffer.
+          # Reference: https://github.com/rethinkdb/rethinkdb/issues/3795
+          written += @socket.syswrite(packet.slice(written, packet.length))
         end
       }
     end
