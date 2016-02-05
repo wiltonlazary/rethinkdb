@@ -3,6 +3,7 @@
 
 #include "clustering/administration/admin_op_exc.hpp"
 #include "clustering/administration/datum_adapter.hpp"
+#include "clustering/administration/main/cache_size.hpp"
 #include "clustering/administration/main/watchable_fields.hpp"
 #include "concurrency/cross_thread_signal.hpp"
 
@@ -46,6 +47,8 @@ bool issues_artificial_table_backend_t::read_all_rows_as_vector(
     cross_thread_signal_t ct_interruptor(interruptor, home_thread());
     on_thread_t rethreader(home_thread());
     rows_out->clear();
+
+    fprintf(stderr, "Swap: %ld\n", get_used_swap());
 
     cluster_semilattice_metadata_t metadata = cluster_sl_view->get();
     for (auto const &tracker : trackers) {

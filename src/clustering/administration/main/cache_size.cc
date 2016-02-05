@@ -26,6 +26,53 @@ size_t skip_spaces(const std::string &s, size_t i) {
     return i;
 }
 
+bool parse_status_line(const std::string &contents,
+                       uint64_t *value_out,
+                       std::string *unit_out) {
+    const size_t line_begin = contents.find("VmSwap");
+    const size_t line_end = contents.find('\n', line_begin);
+    if (line_end == std::string::npos) {
+        return false;
+    }
+
+    const std::string line = contents.substr(line_begin, line_end - line_begin);
+
+    const size_t colon = line.find(':');
+    if (colon == std::string::npos) {
+        return false;
+    }
+    size_t i = skip_spaces(line, colon + 1);
+
+    const size_t number_begin = i;
+    while (i < line.size() && '0' <= line[i] && '9' >= line[i]) {
+        ++i;
+    }
+    const size_t number_end = i;
+
+    if (number_begin == number_end) {
+        return false;
+    }
+
+    const size_t unit_begin = skip_spaces(line, i);
+    size_t unit_end = line.find_first_of(" \t", unit_begin);
+    if (unit_end == std::string::npos) {
+        unit_end = line.size();
+    }
+
+    const size_t end = skip_spaces(line, unit_end);
+    if (end != line.size()) {
+        return false;
+    }
+
+    if (!strtou64_strict(line.substr(number_begin, number_end - number_begin),
+                         10,
+                         value_out)) {
+        return false;
+    }
+    *unit_out = line.substr(unit_begin, unit_end - unit_begin);
+    return true;
+}
+
 bool parse_meminfo_line(const std::string &contents, size_t *offset_ref,
                         std::string *name_out,
                         uint64_t *value_out,
@@ -78,6 +125,17 @@ bool parse_meminfo_line(const std::string &contents, size_t *offset_ref,
     return true;
 }
 
+bool parse_status_file(const std::string &contents, uint64_t *swap_usage_out) {
+    std::string name;
+    uint64_t value;
+    std::string unit;
+    if (parse_status_line(contents, &value, &unit)) {
+        *swap_usage_out = value * KILOBYTE;
+        return true;
+    }
+    return false;
+}
+
 bool parse_meminfo_file(const std::string &contents, uint64_t *mem_avail_out) {
     uint64_t memfree = 0;
     uint64_t cached = 0;
@@ -123,6 +181,25 @@ bool parse_meminfo_file(const std::string &contents, uint64_t *mem_avail_out) {
     }
 }
 
+
+bool get_proc_status_current_swap_usage(uint64_t *swap_usage_out) {
+    std::string contents;
+    bool ok;
+    pid_t our_pid = getpid();
+    if (our_pid == -1) {
+        return false;
+    }
+    char filename[20];
+    sprintf(filename, "/proc/%d/status", our_pid);
+    thread_pool_t::run_in_blocker_pool([&]() {
+        ok = blocking_read_file(filename, &contents);
+    });
+    if (!ok) {
+        return false;
+    }
+    return parse_status_file(contents, swap_usage_out);
+}
+
 bool get_proc_meminfo_available_memory_size(uint64_t *mem_avail_out) {
     std::string contents;
     bool ok;
@@ -137,8 +214,22 @@ bool get_proc_meminfo_available_memory_size(uint64_t *mem_avail_out) {
 
 #endif  // __MACH_
 
-uint64_t get_avail_mem_size() {
+uint64_t get_used_swap() {
+#if defined(_WIN32)
+    crash("TODO");
+#elif defined(__MACH__)
+    crash("TODO");
+#else
+    uint64_t swap_used;
+    if (get_proc_status_current_swap_usage(&swap_used)) {
+        return swap_used;
+    } else {
+        crash("TODO");
+    }
+#endif
+}
 
+uint64_t get_avail_mem_size() {
 #if defined(_WIN32)
     MEMORYSTATUSEX ms;
     ms.dwLength = sizeof(ms);
