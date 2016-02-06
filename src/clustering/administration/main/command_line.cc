@@ -420,6 +420,48 @@ std::string get_web_path(const std::map<std::string, options::values_t> &opts) {
     return std::string();
 }
 
+boost::optional<int> parse_max_backoff_secs_option(
+        const std::map<std::string, options::values_t> &opts) {
+    if (exists_option(opts, "--max-backoff-secs")) {
+        const std::string backoff_opt = get_single_option(opts, "--max-backoff-secs");
+        uint64_t max_backoff_secs;
+        if (!strtou64_strict(backoff_opt, 10, &max_backoff_secs)) {
+            throw std::runtime_error(strprintf(
+                    "ERROR: max-backoff-secs should be a number, got '%s'",
+                    backoff_opt.c_str()));
+        }
+        if (max_backoff_secs > std::numeric_limits<int>::max()) {
+            throw std::runtime_error(strprintf(
+                    "ERROR: max-backoff-secs is too large. Must be at most %d",
+                    std::numeric_limits<int>::max()));
+        }
+        return boost::optional<int>(static_cast<int>(max_backoff_secs));
+    } else {
+        return boost::optional<int>();
+    }
+}
+
+boost::optional<int> parse_join_delay_secs_option(
+        const std::map<std::string, options::values_t> &opts) {
+    if (exists_option(opts, "--join-delay-secs")) {
+        const std::string delay_opt = get_single_option(opts, "--join-delay-secs");
+        uint64_t join_delay_secs;
+        if (!strtou64_strict(delay_opt, 10, &join_delay_secs)) {
+            throw std::runtime_error(strprintf(
+                    "ERROR: join-delay-secs should be a number, got '%s'",
+                    delay_opt.c_str()));
+        }
+        if (join_delay_secs > std::numeric_limits<int>::max()) {
+            throw std::runtime_error(strprintf(
+                    "ERROR: join-delay-secs is too large. Must be at most %d",
+                    std::numeric_limits<int>::max()));
+        }
+        return boost::optional<int>(static_cast<int>(join_delay_secs));
+    } else {
+        return boost::optional<int>();
+    }
+}
+
 /* An empty outer `boost::optional` means the `--cache-size` parameter is not present. An
 empty inner `boost::optional` means the cache size is set to `auto`. */
 boost::optional<boost::optional<uint64_t> > parse_total_cache_size_option(
@@ -1447,6 +1489,16 @@ options::help_section_t get_network_options(const bool join_required, std::vecto
                                              options::OPTIONAL_REPEAT));
     help.add("--canonical-address addr", "address that other rethinkdb instances will use to connect to us, can be specified multiple times");
 
+    options_out->push_back(options::option_t(options::names_t("--max-backoff-secs"),
+                                             options::OPTIONAL));
+    help.add("--max-backoff-secs secs", "maximum time connections from a given server "
+             "will be rejected in seconds. 0 means no connection rate limit.");
+
+    options_out->push_back(options::option_t(options::names_t("--join-delay-secs"),
+                                             options::OPTIONAL));
+    help.add("--join-delay-secs secs", "hold the TCP connection open for these many "
+             "seconds before joining with another server.");
+
     return help;
 }
 
@@ -1864,6 +1916,9 @@ int main_rethinkdb_serve(int argc, char *argv[]) {
         boost::optional<boost::optional<uint64_t> > total_cache_size =
             parse_total_cache_size_option(opts);
 
+        boost::optional<int> max_backoff_secs = parse_max_backoff_secs_option(opts);
+        boost::optional<int> join_delay_secs = parse_join_delay_secs_option(opts);
+
         // Open and lock the directory, but do not create it
         bool is_new_directory = false;
         directory_lock_t data_directory_lock(base_path, false, &is_new_directory);
@@ -1901,6 +1956,7 @@ int main_rethinkdb_serve(int argc, char *argv[]) {
                                 address_ports,
                                 get_optional_option(opts, "--config-file"),
                                 std::vector<std::string>(argv, argv + argc),
+                                join_delay_secs ? join_delay_secs.get() : 0,
                                 tls_configs);
 
         const file_direct_io_mode_t direct_io_mode = parse_direct_io_mode_option(opts);
@@ -1955,6 +2011,8 @@ int main_rethinkdb_proxy(int argc, char *argv[]) {
             return EXIT_FAILURE;
         }
 
+        boost::optional<int> join_delay_secs = parse_join_delay_secs_option(opts);
+
 #ifndef _WIN32
         get_and_set_user_group(opts);
 #endif
@@ -1993,7 +2051,8 @@ int main_rethinkdb_proxy(int argc, char *argv[]) {
                                 address_ports,
                                 get_optional_option(opts, "--config-file"),
                                 std::vector<std::string>(argv, argv + argc),
-                                tls_configs);
+                                tls_configs
+                                join_delay_secs ? join_delay_secs.get() : 0);
 
         bool result;
         run_in_thread_pool(std::bind(&run_rethinkdb_proxy, &serve_info, &result),
@@ -2106,6 +2165,9 @@ int main_rethinkdb_porcelain(int argc, char *argv[]) {
 
         update_check_t do_update_checking = parse_update_checking_option(opts);
 
+        boost::optional<int> max_backoff_secs = parse_max_backoff_secs_option(opts);
+        boost::optional<int> join_delay_secs = parse_join_delay_secs_option(opts);
+
         // Attempt to create the directory early so that the log file can use it.
         // If we create the file, it will be cleaned up unless directory_initialized()
         // is called on it.  This will be done after the metadata files have been created.
@@ -2168,7 +2230,8 @@ int main_rethinkdb_porcelain(int argc, char *argv[]) {
                                 address_ports,
                                 get_optional_option(opts, "--config-file"),
                                 std::vector<std::string>(argv, argv + argc),
-                                tls_configs);
+                                tls_configs,
+                                join_delay_secs ? join_delay_secs.get() : 0);
 
         const file_direct_io_mode_t direct_io_mode = parse_direct_io_mode_option(opts);
 
