@@ -9,7 +9,7 @@ endif
 $/rethinkdb.vcxproj.xml:
 	test -e $@ || cp $/mk/rethinkdb.vcxproj.xml $@
 
-$/%.vcxproj $/%-UnitTest.vcxproj: $/%.vcxproj.xml $/mk/%.vcxproj.xsl
+$/%.vcxproj $/%-unittest.vcxproj: $/%.vcxproj.xml $/mk/%.vcxproj.xsl
 	$P GEN
 	cscript /nologo $/mk/gen-vs-project.js
 
