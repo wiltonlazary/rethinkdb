@@ -300,23 +300,15 @@ private:
 
     bool do_prelim_cache;
 
-    lt_cmp_t lt;
-    profile::sampler_t sampler;
-
     struct merge_cache_item_t {
         datum_t value;
         counted_t<datum_stream_t> source;
-
-        merge_cache_item_t(datum_t _value, counted_t<datum_stream_t> _source)
-            : value(_value), source(_source) { }
     };
 
-    struct merge_less {
+    struct merge_less_t {
         env_t *merge_env;
         profile::sampler_t *merge_sampler;
         lt_cmp_t *merge_lt_cmp;
-        merge_less(env_t * _env, profile::sampler_t *_sampler, lt_cmp_t * _cmp)
-            : merge_env(_env), merge_sampler(_sampler), merge_lt_cmp(_cmp) { }
         bool operator()(const merge_cache_item_t &a, const merge_cache_item_t &b) {
             return !merge_lt_cmp->operator()(merge_env,
                                              merge_sampler,
@@ -325,9 +317,12 @@ private:
         }
     };
 
+    lt_cmp_t lt;
+    profile::sampler_t sampler;
+
     std::priority_queue<merge_cache_item_t,
                         std::vector<merge_cache_item_t>,
-                        merge_less> merge_cache;
+                        merge_less_t> merge_cache;
 };
 
 class union_datum_stream_t : public datum_stream_t, public home_thread_mixin_t {

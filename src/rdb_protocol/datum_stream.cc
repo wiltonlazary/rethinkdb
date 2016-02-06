@@ -1697,7 +1697,7 @@ ordered_union_datum_stream_t::ordered_union_datum_stream_t(
       do_prelim_cache(true),
       lt(_comparisons),
       sampler("Merging in union.", env->trace),
-      merge_cache(merge_less{env, &sampler, &lt}) {
+      merge_cache(merge_less_t{env, &sampler, &lt}) {
 
     for (const auto &stream : _streams) {
         union_type = union_of(union_type, stream->cfeed_type());
@@ -1723,10 +1723,13 @@ std::vector<datum_t> ordered_union_datum_stream_t::next_raw_batch(
     if (is_ordered_by_field) {
         if (do_prelim_cache) {
             for (auto &&stream : streams) {
-                if (stream.has()) {
+                r_sanity_check(stream.has());
+                datum_t cache_item = stream->next(env, batchspec);
+
+                if (cache_item.has()) {
                     merge_cache.push(
-                        merge_cache_item_t(stream->next(env, batchspec),
-                                           stream));
+                        merge_cache_item_t{std::move(cache_item),
+                                stream});
                 }
             }
             do_prelim_cache = false;
@@ -1738,18 +1741,19 @@ std::vector<datum_t> ordered_union_datum_stream_t::next_raw_batch(
 
             datum_t datum_on_deck = std::move(el.value);
 
-            if (!el.source->is_exhausted()) {
-                datum_t next_datum = el.source->next(env, batchspec);
+            datum_t next_datum = el.source->next(env, batchspec);
 
+            if (next_datum.has()) {
                 // Enforce ordering in merge step
                 // Ordering of this check is backwards because lt does strict <
                 rcheck(!lt(env, &sampler, next_datum, datum_on_deck),
                        base_exc_t::LOGIC,
-                       "The streams given as arguments are not ordered by given ordering.");
+                       "The streams given as arguments"
+                       " are not ordered by given ordering.");
 
                 merge_cache.push(
-                    merge_cache_item_t(std::move(next_datum),
-                                       el.source));
+                    merge_cache_item_t{std::move(next_datum),
+                            el.source});
             }
 
             batcher.note_el(datum_on_deck);
@@ -1757,13 +1761,13 @@ std::vector<datum_t> ordered_union_datum_stream_t::next_raw_batch(
         }
     } else {
         while (!streams.empty()
-               && !streams.front()->is_exhausted()
                && !batcher.should_send_batch()) {
             datum_t row = streams.front()->next(env, batchspec);
-            batcher.note_el(row);
-            batch.push_back(std::move(row));
 
-            if (streams.front()->is_exhausted()) {
+            if (row.has()) {
+                batcher.note_el(row);
+                batch.push_back(std::move(row));
+            } else {
                 streams.pop_front();
             }
         }
