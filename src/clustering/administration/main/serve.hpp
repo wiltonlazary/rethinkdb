@@ -95,14 +95,18 @@ public:
                  update_check_t _do_version_checking,
                  service_address_ports_t _ports,
                  boost::optional<std::string> _config_file,
-                 std::vector<std::string> &&_argv) :
+                 std::vector<std::string> &&_argv,
+                 const int _max_backoff_secs,
+                 const int _join_delay_secs) :
         joins(std::move(_joins)),
         reql_http_proxy(std::move(_reql_http_proxy)),
         web_assets(std::move(_web_assets)),
         do_version_checking(_do_version_checking),
         ports(_ports),
         config_file(_config_file),
-        argv(std::move(_argv))
+        argv(std::move(_argv)),
+        max_backoff_secs(_max_backoff_secs),
+        join_delay_secs(_join_delay_secs)
     { }
 
     void look_up_peers() {
@@ -119,6 +123,8 @@ public:
     /* The original arguments, so we can display them in `server_status`. All the
     argument parsing has already been completed at this point. */
     std::vector<std::string> argv;
+    int max_backoff_secs;
+    int join_delay_secs;
 };
 
 /* This has been factored out from `command_line.hpp` because it takes a very
