@@ -48,8 +48,6 @@ bool issues_artificial_table_backend_t::read_all_rows_as_vector(
     on_thread_t rethreader(home_thread());
     rows_out->clear();
 
-    fprintf(stderr, "Swap: %ld\n", get_used_swap());
-
     cluster_semilattice_metadata_t metadata = cluster_sl_view->get();
     for (auto const &tracker : trackers) {
         for (auto const &issue : tracker->get_issues(&ct_interruptor)) {
