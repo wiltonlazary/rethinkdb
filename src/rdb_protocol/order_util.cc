@@ -24,6 +24,22 @@ void check_r_args(const term_t *target, const raw_term_t &term) {
            "r.args is not supported in an order_by or union command yet.");
 }
 
+std::pair<order_direction_t, counted_t<const func_t> >
+build_comparison(const term_t* target,
+                      scoped_ptr_t<val_t> arg,
+                      raw_term_t item) {
+
+    check_r_args(target, item);
+
+    if (item.type() == Term::DESC) {
+        return std::make_pair(DESC,
+                              arg->as_func(GET_FIELD_SHORTCUT));
+    } else {
+        return std::make_pair(ASC,
+                              arg->as_func(GET_FIELD_SHORTCUT));
+    }
+}
+
 std::vector<std::pair<order_direction_t, counted_t<const func_t> > >
 build_comparisons_from_raw_term(const term_t *target,
                                 scope_env_t *env,
@@ -35,37 +51,23 @@ build_comparisons_from_raw_term(const term_t *target,
     // For order by, first argument is the stream
     for (size_t i = 1; i < raw_term.num_args(); ++i) {
         raw_term_t item = raw_term.arg(i);
-        check_r_args(target, item);
-        if (item.type() == Term::DESC) {
-            comparisons.push_back(
-                std::make_pair(
-                    DESC, args->arg(env, i)->as_func(GET_FIELD_SHORTCUT)));
-        } else {
-            comparisons.push_back(
-                std::make_pair(
-                    ASC, args->arg(env, i)->as_func(GET_FIELD_SHORTCUT)));
-        }
+        comparisons.push_back(build_comparison(target,
+                                               args->arg(env, i),
+                                               item));
     }
-    return std::move(comparisons);
+    return comparisons;
 }
 
 std::vector<std::pair<order_direction_t, counted_t<const func_t> > >
 build_comparisons_from_single_term(const term_t *target,
-                                     scope_env_t *,
-                                     scoped_ptr_t<val_t> &&arg,
-                                     const raw_term_t &raw_term) {
+                                   scope_env_t *,
+                                   scoped_ptr_t<val_t> &&arg,
+                                   const raw_term_t &raw_term) {
     std::vector<std::pair<order_direction_t, counted_t<const func_t> > > comparisons;
 
-    check_r_args(target, raw_term);
-    if (raw_term.type() == Term::DESC) {
-        comparisons.push_back(
-                std::make_pair(
-                    DESC, arg->as_func(GET_FIELD_SHORTCUT)));
-    } else {
-        comparisons.push_back(
-                std::make_pair(
-                    ASC, arg->as_func(GET_FIELD_SHORTCUT)));
-    }
+    comparisons.push_back(build_comparison(target,
+                                           std::move(arg),
+                                           raw_term));
 
     return std::move(comparisons);
 }
@@ -80,16 +82,9 @@ build_comparisons_from_optional_terms(const term_t *target,
     // For ordered union, first element is an optional arg
     for (size_t i = 0; i < raw_term.num_args(); ++i) {
         raw_term_t item = raw_term.arg(i);
-        check_r_args(target, item);
-        if (item.type() == Term::DESC) {
-            comparisons.push_back(
-                std::make_pair(
-                    DESC, args[i]->as_func(GET_FIELD_SHORTCUT)));
-        } else {
-            comparisons.push_back(
-                std::make_pair(
-                    ASC, args[i]->as_func(GET_FIELD_SHORTCUT)));
-        }
+        comparisons.push_back(build_comparison(target,
+                                               std::move(args[i]),
+                                               item));
     }
     return std::move(comparisons);
 }
