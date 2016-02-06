@@ -129,19 +129,15 @@
             <MinimalRebuild>false</MinimalRebuild>
 
             <AdditionalOptions>
-              /we4005 <!-- Error if redifining macro -->
               /bigobj <!-- Allow more symbols in object files -->
               /Zm50   <!-- Reduce memory allocation of compiler -->
             </AdditionalOptions>
 
-            <WarningLevel>TurnOffAllWarnings</WarningLevel> <!-- TODO WINDOWS -->
             <DisableSpecificWarnings>
               4244; 4267; <!-- conversion from 'type1' to 'type2', possible loss of data -->
-              4101; <!-- unreferenced local variable -->
-              4127; <!-- conditional expression is constant -->
-              4068; <!-- unknown pragma -->
-              4624; <!-- destructor was implicitly defined as deleted -->
-              4661; <!-- no suitable definition provided for explicit template instantiation request -->
+              4804; <!-- unsafe use of type 'bool' -->
+              4091; <!-- 'keyword' : ignored on left of 'type' when no variable is declared -->
+              4996; <!-- deprecation declaration or function call with parameters that may be unsafe -->
             </DisableSpecificWarnings>
           </ClCompile>
           <Link>
@@ -164,7 +160,6 @@
             </AdditionalDependencies>
             <EntryPointSymbol>mainCRTStartup</EntryPointSymbol>
             <AdditionalOptions>
-              /ignore:4099 <!-- type name first seen using 'objecttype1' now seen using 'objecttype2' -->
               /NODEFAULTLIB:MSVCRT.lib <!-- work-around linker errors, possibly caused by openssl -->
             </AdditionalOptions>
             <xsl:if test="@platform = 'Win32'">
