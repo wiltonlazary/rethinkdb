@@ -133,6 +133,8 @@
               /Zm50   <!-- Reduce memory allocation of compiler -->
             </AdditionalOptions>
 
+            <!-- Enable this at your own risk. System headers are not excluded.
+                <WarningLevel>EnableAllWarnings</WarningLevel> -->
             <DisableSpecificWarnings>
               4244; 4267; <!-- conversion from 'type1' to 'type2', possible loss of data -->
               4804; <!-- unsafe use of type 'bool' -->
