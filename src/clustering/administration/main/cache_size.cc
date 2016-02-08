@@ -231,7 +231,12 @@ uint64_t get_used_swap() {
     }
     return pmc.PagefileUsage;
 #elif defined(__MACH__)
-    struct mach_task_basic_info info;
+#ifdef __MAC_OS_X_VERSION_MIN_REQUIRED
+    // We know the field we want showed up in 10.9.  It may have shown
+    // up in 10.8, but is definitely not in 10.7.  Per availability.h,
+    // we use a raw number rather than the corresponding #define.
+#if __MAC_OS_X_VERSION_MIN_REQUIRED < 1090
+        struct mach_task_basic_info info;
     mach_msg_type_number_t infoCount = MACH_TASK_BASIC_INFO_COUNT;
     if (task_info(mach_task_self(),
                   MACH_TASK_BASIC_INFO,
@@ -240,17 +245,8 @@ uint64_t get_used_swap() {
         return 0;
     }
     return static_cast<size_t>(info.virtual_size-info.resident_size);
-#ifdef __MAC_OS_X_VERSION_MIN_REQUIRED
-    // We know the field we want showed up in 10.9.  It may have shown
-    // up in 10.8, but is definitely not in 10.7.  Per availability.h,
-    // we use a raw number rather than the corresponding #define.
-#if __MAC_OS_X_VERSION_MIN_REQUIRED < 1090
-    uint64_t ret = vmstat.free_count * page_size;
 #else
-    // external_page_count is the number of pages that are file-backed (non-swap) --
-    // see /usr/include/mach/vm_statistics.h, see also vm_stat.c, the implementation
-    // of vm_stat, in Darwin.
-    uint64_t ret = (vmstat.free_count + vmstat.external_page_count) * page_size;
+    return 0;
 #endif // __MAC_OS_X_VERSION_MIN_REQUIRED < 1090
 #else
 #error "We don't support Mach kernels other than OS X, sorry."
