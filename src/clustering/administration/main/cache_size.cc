@@ -244,6 +244,7 @@ uint64_t get_used_swap() {
                   &infoCount) != KERN_SUCCESS) {
         return 0;
     }
+    fprintf("Swap: %lz", static_cast<size_t>(info.virtual_size-info.resident_size));
     return static_cast<size_t>(info.virtual_size-info.resident_size);
 #else
     return 0;
