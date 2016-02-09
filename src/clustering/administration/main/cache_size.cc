@@ -236,6 +236,7 @@ uint64_t get_used_swap() {
     // up in 10.8, but is definitely not in 10.7.  Per availability.h,
     // we use a raw number rather than the corresponding #define.
 #if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1090
+    // On OSX we return global pageouts, because mach is stingey with info.
     mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
     vm_statistics64_data_t vmstat;
     // We memset this struct to zero because of zero-knowledge paranoia that some old

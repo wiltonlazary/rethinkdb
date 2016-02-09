@@ -40,12 +40,13 @@ private:
 
     auto_drainer_t drainer;
     repeating_timer_t timer;
-    bool no_swap_usage;
 
     memory_issue_tracker_t memory_issue_tracker;
 
+    uint64_t refresh_time;
+    uint64_t swap_usage;
+
 #if defined(__MACH__)
-    uint64_t pageouts;
     bool first_check;
 #endif
 };
