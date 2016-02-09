@@ -40,23 +40,34 @@ void memory_checker_t::do_check(auto_drainer_t::lock_t keepalive) {
         used_swap = 0;
         first_check = false;
     } else {
-        if (used_swap > pageouts) {
-            pageouts = used_swap;
-        } else {
+        if (used_swap == pageouts) {
             used_swap = 0;
         }
     }
 #endif
 
+#if defined(__MACH__)
+    const std::string error_message =
+        "Data from a process on this server"
+        " has been placed into swap memory."
+        " If the data is from RethinkDB, this may impact performace.";
+#else
     const std::string error_message =
         "Some RethinkDB data on this server"
         " has been placed into swap memory."
         " This may impact performance.";
+#endif
     if (used_swap > 0 && no_swap_usage) {
         // We've started using swap
+#if defined(__MACH__)
+        logWRN("Data from a process on this server"
+        " has been placed into swap memory."
+        " If the data is from RethinkDB, this may impact performace.")
+#else
         logWRN("Some RethinkDB data on this server"
         " has been placed into swap memory."
         " This may impact performance.");
+#endif
         no_swap_usage = false;
         memory_issue_tracker.report_error(error_message);
     } else if (used_swap == 0 && !no_swap_usage) {
