@@ -45,7 +45,7 @@ private:
     memory_issue_tracker_t memory_issue_tracker;
 
 #if defined(__MACH__)
-    uint64_t pagouts;
+    uint64_t pageouts;
     bool first_check;
 #endif
 };

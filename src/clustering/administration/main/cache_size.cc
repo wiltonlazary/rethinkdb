@@ -275,7 +275,6 @@ uint64_t get_avail_mem_size() {
     guarantee_winerr(res, "GlobalMemoryStatusEx failed");
     return ms.ullAvailPhys;
 #elif defined(__MACH__)
-    uint64_t page_size = sysconf(_SC_PAGESIZE);
     mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
     vm_statistics64_data_t vmstat;
     // We memset this struct to zero because of zero-knowledge paranoia that some old
