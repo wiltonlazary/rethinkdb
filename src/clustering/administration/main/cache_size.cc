@@ -236,7 +236,6 @@ uint64_t get_used_swap() {
     // up in 10.8, but is definitely not in 10.7.  Per availability.h,
     // we use a raw number rather than the corresponding #define.
 #if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1090
-    uint64_t page_size = sysconf(_SC_PAGESIZE);
     mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
     vm_statistics64_data_t vmstat;
     // We memset this struct to zero because of zero-knowledge paranoia that some old
@@ -249,7 +248,6 @@ uint64_t get_used_swap() {
         return 0;
     }
     return vmstat.pageouts;
-
 #else
     return 0;
 #endif // __MAC_OS_X_VERSION_MIN_REQUIRED < 1090
@@ -275,6 +273,7 @@ uint64_t get_avail_mem_size() {
     guarantee_winerr(res, "GlobalMemoryStatusEx failed");
     return ms.ullAvailPhys;
 #elif defined(__MACH__)
+    uint64_t page_size = sysconf(_SC_PAGESIZE);
     mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
     vm_statistics64_data_t vmstat;
     // We memset this struct to zero because of zero-knowledge paranoia that some old
