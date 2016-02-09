@@ -235,7 +235,7 @@ uint64_t get_used_swap() {
     // We know the field we want showed up in 10.9.  It may have shown
     // up in 10.8, but is definitely not in 10.7.  Per availability.h,
     // we use a raw number rather than the corresponding #define.
-#if __MAC_OS_X_VERSION_MIN_REQUIRED < 1090
+#if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1090
         struct mach_task_basic_info info;
     mach_msg_type_number_t infoCount = MACH_TASK_BASIC_INFO_COUNT;
     if (task_info(mach_task_self(),
