@@ -77,6 +77,9 @@ bool parse_meminfo_line(const std::string &contents, size_t *offset_ref,
                         std::string *name_out,
                         uint64_t *value_out,
                         std::string *unit_out) {
+#if defined(_WIN32)
+    return false;
+#else
     const size_t line_begin = *offset_ref;
     size_t line_end = contents.find('\n', line_begin);
     if (line_end == std::string::npos) {
@@ -123,6 +126,7 @@ bool parse_meminfo_line(const std::string &contents, size_t *offset_ref,
     }
     *unit_out = line.substr(unit_begin, unit_end - unit_begin);
     return true;
+#endif
 }
 
 bool parse_status_file(const std::string &contents, uint64_t *swap_usage_out) {
@@ -137,6 +141,9 @@ bool parse_status_file(const std::string &contents, uint64_t *swap_usage_out) {
 }
 
 bool parse_meminfo_file(const std::string &contents, uint64_t *mem_avail_out) {
+#if defined(_WIN32)
+    return false;
+#else
     uint64_t memfree = 0;
     uint64_t cached = 0;
 
@@ -179,10 +186,14 @@ bool parse_meminfo_file(const std::string &contents, uint64_t *mem_avail_out) {
     } else {
         return false;
     }
+#endif
 }
 
 
 bool get_proc_status_current_swap_usage(uint64_t *swap_usage_out) {
+#if defined(_WIN32)
+    return false;
+#else
     std::string contents;
     bool ok;
     pid_t our_pid = getpid();
@@ -198,6 +209,7 @@ bool get_proc_status_current_swap_usage(uint64_t *swap_usage_out) {
         return false;
     }
     return parse_status_file(contents, swap_usage_out);
+#end
 }
 
 bool get_proc_meminfo_available_memory_size(uint64_t *mem_avail_out) {
