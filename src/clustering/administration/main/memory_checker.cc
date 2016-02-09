@@ -70,14 +70,13 @@ void memory_checker_t::do_check(auto_drainer_t::lock_t keepalive) {
     } else if (refresh_time > reset_time) {
         // We've stopped using swap
         logNTC("It has been an hour since data has been placed in swap memory.");
-        swap_usage = 0;
-#if defined(__MACH__)
-        first_check = true;
-#endif
         refresh_time = 0;
         memory_issue_tracker.report_success();
     }
 
+    if (new_swap_usage < swap_usage) {
+        swap_usage = new_swap_usage;
+    }
 
     if (refresh_time != 0 && refresh_time <= reset_time) {
         refresh_time += delay_time;

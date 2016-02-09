@@ -237,11 +237,12 @@ uint64_t get_used_swap() {
     // we use a raw number rather than the corresponding #define.
 #if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1090
     // On OSX we return global pageouts, because mach is stingey with info.
+    // This is slightly less helpful.
     mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
     vm_statistics64_data_t vmstat;
     // We memset this struct to zero because of zero-knowledge paranoia that some old
     // system might use a shorter version of the struct, where it would not set the
-    // vmstat.external_page_count field (which is relatively new) that we use below.
+    // vmstat.pageouts field (which is relatively new) that we use below.
     // (Probably, instead, the host_statistics64 call will fail, because count would
     // be wrong.)
     memset(&vmstat, 0, sizeof(vmstat));
