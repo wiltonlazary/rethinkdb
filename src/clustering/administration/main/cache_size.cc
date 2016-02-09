@@ -240,12 +240,12 @@ uint64_t get_used_swap() {
     mach_msg_type_number_t infoCount = MACH_TASK_BASIC_INFO_COUNT;
     if (task_info(mach_task_self(),
                   MACH_TASK_BASIC_INFO,
-                  static_cast<task_info_t>(&info),
+                  reinterpret_cast<task_info_t>(&info),
                   &infoCount) != KERN_SUCCESS) {
         return 0;
     }
-    fprintf(stderr, "Swap: %lz", static_cast<size_t>(info.virtual_size-info.resident_size));
-    return static_cast<size_t>(info.virtual_size-info.resident_size);
+    fprintf(stderr, "Swap: %lz", static_cast<uint64_t>(info.virtual_size-info.resident_size));
+    return static_cast<uint64_t>(info.virtual_size-info.resident_size);
 #else
     return 0;
 #endif // __MAC_OS_X_VERSION_MIN_REQUIRED < 1090
