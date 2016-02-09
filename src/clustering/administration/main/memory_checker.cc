@@ -14,7 +14,12 @@ static const int64_t delay_time = 5*1000; //TODO 60 sec
 memory_checker_t::memory_checker_t(rdb_context_t *_rdb_ctx) :
     rdb_ctx(_rdb_ctx),
     timer(delay_time, this),
-    no_swap_usage(true) {
+    no_swap_usage(true)
+#if defined(__MACH__)
+    ,pageouts(0),
+    first_check(true)
+#endif
+{
     rassert(rdb_ctx != NULL);
     coro_t::spawn_sometime(std::bind(&memory_checker_t::do_check,
                                      this,
@@ -28,6 +33,20 @@ void memory_checker_t::do_check(auto_drainer_t::lock_t keepalive) {
                   ql::global_optargs_t(),
                   nullptr);
     uint64_t used_swap = get_used_swap();
+#if defined(__MACH__)
+    // This is because mach won't give us the swap used by our process.
+    if (first_check) {
+        pageouts = used_swap;
+        used_swap = 0;
+        first_check = false;
+    } else {
+        if (used_swap > pageouts) {
+            pageouts = used_swap;
+        } else {
+            used_swap = 0;
+        }
+    }
+#endif
 
     const std::string error_message =
         "Some RethinkDB data on this server"

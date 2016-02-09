@@ -43,6 +43,11 @@ private:
     bool no_swap_usage;
 
     memory_issue_tracker_t memory_issue_tracker;
+
+#if defined(__MACH__)
+    uint64_t pagouts;
+    bool first_check;
+#endif
 };
 
 #endif // CLUSTERING_ADMINISTRATION_MAIN_MEMORY_CHECKER_HPP_

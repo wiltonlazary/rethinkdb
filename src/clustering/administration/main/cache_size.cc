@@ -236,16 +236,20 @@ uint64_t get_used_swap() {
     // up in 10.8, but is definitely not in 10.7.  Per availability.h,
     // we use a raw number rather than the corresponding #define.
 #if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1090
-        struct mach_task_basic_info info;
-    mach_msg_type_number_t infoCount = MACH_TASK_BASIC_INFO_COUNT;
-    if (task_info(mach_task_self(),
-                  MACH_TASK_BASIC_INFO,
-                  reinterpret_cast<task_info_t>(&info),
-                  &infoCount) != KERN_SUCCESS) {
+    uint64_t page_size = sysconf(_SC_PAGESIZE);
+    mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
+    vm_statistics64_data_t vmstat;
+    // We memset this struct to zero because of zero-knowledge paranoia that some old
+    // system might use a shorter version of the struct, where it would not set the
+    // vmstat.external_page_count field (which is relatively new) that we use below.
+    // (Probably, instead, the host_statistics64 call will fail, because count would
+    // be wrong.)
+    memset(&vmstat, 0, sizeof(vmstat));
+    if (KERN_SUCCESS != host_statistics64(mach_host_self(), HOST_VM_INFO64, (host_info64_t)&vmstat, &count)) {
         return 0;
     }
-    fprintf(stderr, "Swap: %lz", static_cast<uint64_t>(info.virtual_size-info.resident_size));
-    return static_cast<uint64_t>(info.virtual_size-info.resident_size);
+    return vmstat.pageouts;
+
 #else
     return 0;
 #endif // __MAC_OS_X_VERSION_MIN_REQUIRED < 1090
