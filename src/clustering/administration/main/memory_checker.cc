@@ -52,7 +52,7 @@ void memory_checker_t::do_check(auto_drainer_t::lock_t keepalive) {
     const std::string error_message =
         "Data from a process on this server"
         " has been placed into swap memory in the past hour."
-        " If the data is from RethinkDB, this may impact performace.";
+        " If the data is from RethinkDB, this may impact performance.";
 #else
     const std::string error_message =
         "Some RethinkDB data on this server"
@@ -66,7 +66,7 @@ void memory_checker_t::do_check(auto_drainer_t::lock_t keepalive) {
 #if defined(__MACH__)
             logWRN("Data from a process on this server"
                    " has been placed into swap memory."
-                   " If the data is from RethinkDB, this may impact performace.");
+                   " If the data is from RethinkDB, this may impact performance.");
 #else
             logWRN("Some RethinkDB data on this server"
                    " has been placed into swap memory."
