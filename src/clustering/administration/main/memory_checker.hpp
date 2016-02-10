@@ -46,6 +46,8 @@ private:
     uint64_t refresh_time;
     uint64_t swap_usage;
 
+    bool print_log_message;
+
 #if defined(__MACH__)
     bool first_check;
 #endif

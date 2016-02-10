@@ -16,7 +16,8 @@ memory_checker_t::memory_checker_t(rdb_context_t *_rdb_ctx) :
     rdb_ctx(_rdb_ctx),
     timer(delay_time, this),
     refresh_time(0),
-    swap_usage(0)
+    swap_usage(0),
+    print_log_message(true)
 #if defined(__MACH__)
     ,first_check(true)
 #endif
@@ -61,15 +62,18 @@ void memory_checker_t::do_check(auto_drainer_t::lock_t keepalive) {
 
     if (new_swap_usage > swap_usage) {
         // We've started using more swap
+        if (print_log_message) {
 #if defined(__MACH__)
-        logWRN("Data from a process on this server"
-	       " has been placed into swap memory."
-	       " If the data is from RethinkDB, this may impact performace.");
+            logWRN("Data from a process on this server"
+                   " has been placed into swap memory."
+                   " If the data is from RethinkDB, this may impact performace.");
 #else
-        logWRN("Some RethinkDB data on this server"
-        " has been placed into swap memory."
-        " This may impact performance.");
+            logWRN("Some RethinkDB data on this server"
+                   " has been placed into swap memory."
+                   " This may impact performance.");
 #endif
+            print_log_message = false;
+        }
         swap_usage = new_swap_usage;
         refresh_time = 1;
         memory_issue_tracker.report_error(error_message);

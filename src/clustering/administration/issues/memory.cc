@@ -57,6 +57,7 @@ RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(memory_issue_t,
                                     issue_id,
                                     reporting_server_ids,
                                     message);
+
 RDB_IMPL_EQUALITY_COMPARABLE_3(memory_issue_t,
                                issue_id,
                                reporting_server_ids,
