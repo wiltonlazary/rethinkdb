@@ -225,7 +225,10 @@ with_vs_env () {
         x64) machine=x64 ;;
     esac
 
-    cmd /c "$vcvarsall" "$machine" "&&" "$@"
+    # GNU make sets $MAKE and $MAKEFLAGS to values that are not
+    # compatible with Windows' nmake
+
+    env -u MAKE -u MAKEFLAGS cmd /c "$vcvarsall" "$machine" "&&" "$@"
 }
 
 error () {
