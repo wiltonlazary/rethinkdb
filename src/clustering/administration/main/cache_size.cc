@@ -237,7 +237,7 @@ uint64_t get_used_swap() {
     if (!res) {
         return 0;
     }
-    return pmc.QuotaPagedPoolUsage;
+    return pmc.PagefileUsage-pmc.WorkingSetSize;
 #elif defined(__MACH__)
 #ifdef __MAC_OS_X_VERSION_MIN_REQUIRED
     // We know the field we want showed up in 10.9.  It may have shown
