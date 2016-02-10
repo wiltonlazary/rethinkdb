@@ -17,6 +17,12 @@ memory_checker_t::memory_checker_t(rdb_context_t *_rdb_ctx) :
     timer(delay_time, this),
     refresh_time(0),
     swap_usage(0)
+#if defined(__MACH__)
+    ,first_check(true)
+#endif
+#if defined(_WIN32)
+    ,first_check(true)
+#endif
 {
     rassert(rdb_ctx != NULL);
     coro_t::spawn_sometime(std::bind(&memory_checker_t::do_check,
@@ -35,6 +41,14 @@ void memory_checker_t::do_check(auto_drainer_t::lock_t keepalive) {
 
 #if defined(__MACH__)
     // This is because mach won't give us the swap used by our process.
+    if (first_check) {
+        swap_usage = new_swap_usage;
+        first_check = false;
+    }
+#endif
+
+#if defined(_WIN32)
+    // Windows handles swap oddly
     if (first_check) {
         swap_usage = new_swap_usage;
         first_check = false;

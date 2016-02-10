@@ -49,6 +49,9 @@ private:
 #if defined(__MACH__)
     bool first_check;
 #endif
+#if defined(_WIN32)
+    bool first_check;
+#endif
 };
 
 #endif // CLUSTERING_ADMINISTRATION_MAIN_MEMORY_CHECKER_HPP_
