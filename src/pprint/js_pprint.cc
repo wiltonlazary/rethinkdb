@@ -772,6 +772,7 @@ static void pprint_update_reminder() {
     case Term::CHANGES:
     case Term::REDUCE:
     case Term::MAP:
+    case Term::FOLD:
     case Term::FILTER:
     case Term::CONCAT_MAP:
     case Term::GROUP:

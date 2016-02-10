@@ -132,7 +132,8 @@ address_to_line_t::addr2line_t::addr2line_t(const char *executable) : input(NULL
         const char *args[] = {"addr2line", "-s", "-e", executable, NULL};
 
         execvp("addr2line", const_cast<char *const *>(args));
-        exit(EXIT_FAILURE);
+        // A normal `exit` can get stuck here it seems. Maybe some `atexit` handler?
+        _exit(EXIT_FAILURE);
     }
 }
 
@@ -226,6 +227,98 @@ backtrace_t::backtrace_t() {
     }
 }
 
+#ifdef _WIN32
+void initialize_dbghelp() {
+    static std::atomic<bool> initialised = false;
+    if (!initialised.exchange(true)) {
+        DWORD options = SymGetOptions();
+        options |= SYMOPT_LOAD_LINES; // Load line information
+        options |= SYMOPT_DEFERRED_LOADS; // Lazy symbol loading
+        SymSetOptions(options);
+
+        // Initialize and load the symbol tables
+        BOOL ret = SymInitialize(GetCurrentProcess(), nullptr, true);
+        if (!ret) {
+            logWRN("Unable to load symbols: %s", winerr_string(GetLastError()).c_str());
+        }
+    }
+}
+#endif
+
+std::string backtrace_t::print_frames(bool use_addr2line) const {
+#ifdef _WIN32
+    initialize_dbghelp();
+
+    std::string output;
+    for (size_t i = 0; i < get_num_frames(); i++) {
+        output.append(strprintf("%d: ", static_cast<int>(i+1)));
+        DWORD64 offset;
+        const int MAX_SYMBOL_LENGTH = 2048; // An arbitrary number
+        auto symbol_info = scoped_malloc_t<SYMBOL_INFO>(sizeof(SYMBOL_INFO) - 1 + MAX_SYMBOL_LENGTH);
+        symbol_info->SizeOfStruct = sizeof(SYMBOL_INFO);
+        symbol_info->MaxNameLen = MAX_SYMBOL_LENGTH;
+        BOOL ret = SymFromAddr(GetCurrentProcess(), reinterpret_cast<DWORD64>(get_frame(i).get_addr()), &offset, symbol_info.get());
+        if (!ret) {
+            output.append(strprintf("0x%p [%s]", get_frame(i).get_addr(), winerr_string(GetLastError()).c_str()));
+        } else {
+            output.append(strprintf("%s", symbol_info->Name));
+            if (offset != 0) {
+                output.append(strprintf("+%llu", offset));
+            }
+        }
+        DWORD line_offset;
+        IMAGEHLP_LINE64 line_info;
+        ret = SymGetLineFromAddr64(GetCurrentProcess(), reinterpret_cast<DWORD64>(get_frame(i).get_addr()), &line_offset, &line_info);
+        if (!ret) {
+            // output.append(" (no line info)");
+        } else {
+            output.append(strprintf(" at %s:%u", line_info.FileName, line_info.LineNumber));
+        }
+        output.append("\n");
+    }
+    return output;
+#else
+ address_to_line_t address_to_line;
+    std::string output;
+    for (size_t i = 0; i < get_num_frames(); i++) {
+        backtrace_frame_t current_frame = get_frame(i);
+        current_frame.initialize_symbols();
+
+        output.append(strprintf("%d [%p]: ", static_cast<int>(i+1), current_frame.get_addr()));
+
+        try {
+            output.append(current_frame.get_demangled_name());
+        } catch (const demangle_failed_exc_t &) {
+            if (!current_frame.get_name().empty()) {
+                output.append(current_frame.get_name() + "+" + current_frame.get_offset());
+            } else if (!current_frame.get_symbols_line().empty()) {
+                output.append(current_frame.get_symbols_line());
+            } else {
+                output.append("<unknown function>");
+            }
+        }
+
+        output.append(" at ");
+
+        std::string some_other_line;
+        if (use_addr2line) {
+            if (!current_frame.get_filename().empty()) {
+                some_other_line = address_to_line.address_to_line(current_frame.get_filename(), current_frame.get_addr());
+            }
+        }
+        if (!some_other_line.empty()) {
+            output.append(some_other_line);
+        } else {
+            output.append(strprintf("%p", current_frame.get_addr()) + " (" + current_frame.get_filename() + ")");
+        }
+
+        output.append("\n");
+    }
+
+    return output;
+#endif
+}
+
 backtrace_frame_t::backtrace_frame_t(const void* _addr) :
     symbols_initialized(false),
     addr(_addr) {
@@ -310,96 +403,4 @@ std::string lazy_backtrace_formatter_t::lines() {
         cached_lines = timestr + "\n" + print_frames(true);
     }
     return cached_lines;
-}
-
-#ifdef _WIN32
-void initialize_dbghelp() {
-    static std::atomic<bool> initialised = false;
-    if (!initialised.exchange(true)) {
-        DWORD options = SymGetOptions();
-        options |= SYMOPT_LOAD_LINES; // Load line information
-        options |= SYMOPT_DEFERRED_LOADS; // Lazy symbol loading
-        SymSetOptions(options);
-
-        // Initialize and load the symbol tables
-        BOOL ret = SymInitialize(GetCurrentProcess(), nullptr, true);
-        if (!ret) {
-            logWRN("Unable to load symbols: %s", winerr_string(GetLastError()).c_str());
-        }
-    }
-}
-#endif
-
-std::string lazy_backtrace_formatter_t::print_frames(bool use_addr2line) {
-#ifdef _WIN32
-    initialize_dbghelp();
-
-    std::string output;
-    for (size_t i = 0; i < get_num_frames(); i++) {
-        output.append(strprintf("%d: ", static_cast<int>(i+1)));
-        DWORD64 offset;
-        const int MAX_SYMBOL_LENGTH = 2048; // An arbitrary number
-        auto symbol_info = scoped_malloc_t<SYMBOL_INFO>(sizeof(SYMBOL_INFO) - 1 + MAX_SYMBOL_LENGTH);
-        symbol_info->SizeOfStruct = sizeof(SYMBOL_INFO);
-        symbol_info->MaxNameLen = MAX_SYMBOL_LENGTH;
-        BOOL ret = SymFromAddr(GetCurrentProcess(), reinterpret_cast<DWORD64>(get_frame(i).get_addr()), &offset, symbol_info.get());
-        if (!ret) {
-            output.append(strprintf("0x%p [%s]", get_frame(i).get_addr(), winerr_string(GetLastError()).c_str()));
-        } else {
-            output.append(strprintf("%s", symbol_info->Name));
-            if (offset != 0) {
-                output.append(strprintf("+%llu", offset));
-            }
-        }
-        DWORD line_offset;
-        IMAGEHLP_LINE64 line_info;
-        ret = SymGetLineFromAddr64(GetCurrentProcess(), reinterpret_cast<DWORD64>(get_frame(i).get_addr()), &line_offset, &line_info);
-        if (!ret) {
-            // output.append(" (no line info)");
-        } else {
-            output.append(strprintf(" at %s:%u", line_info.FileName, line_info.LineNumber));
-        }
-        output.append("\n");
-    }
-    return output;
-#else
-    address_to_line_t address_to_line;
-    std::string output;
-    for (size_t i = 0; i < get_num_frames(); i++) {
-        backtrace_frame_t current_frame = get_frame(i);
-        current_frame.initialize_symbols();
-
-        output.append(strprintf("%d [%p]: ", static_cast<int>(i+1), current_frame.get_addr()));
-
-        try {
-            output.append(current_frame.get_demangled_name());
-        } catch (const demangle_failed_exc_t &) {
-            if (!current_frame.get_name().empty()) {
-                output.append(current_frame.get_name() + "+" + current_frame.get_offset());
-            } else if (!current_frame.get_symbols_line().empty()) {
-                output.append(current_frame.get_symbols_line());
-            } else {
-                output.append("<unknown function>");
-            }
-        }
-
-        output.append(" at ");
-
-        std::string some_other_line;
-        if (use_addr2line) {
-            if (!current_frame.get_filename().empty()) {
-                some_other_line = address_to_line.address_to_line(current_frame.get_filename(), current_frame.get_addr());
-            }
-        }
-        if (!some_other_line.empty()) {
-            output.append(some_other_line);
-        } else {
-            output.append(strprintf("%p", current_frame.get_addr()) + " (" + current_frame.get_filename() + ")");
-        }
-
-        output.append("\n");
-    }
-
-    return output;
-#endif
 }

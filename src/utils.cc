@@ -28,6 +28,8 @@
 #include <ftw.h>
 #endif
 
+#include <google/protobuf/stubs/common.h>
+
 #include <random>
 
 #include "errors.hpp"

@@ -1189,6 +1189,8 @@ class YamlTest(Test):
         self.srcPath = path
         self.shards = shards
         super(YamlTest, self).__init__(name, None, driverLang=driverLang, timeout=timeout)
+        if print_debug:
+            self.envVariablesToSet.update({'VERBOSE':'true'})
     
     @property
     def interpreter_path(self):
@@ -1484,7 +1486,7 @@ class WorkerThread(threading.Thread):
             
             if self.existingServer is None:
                 r.db('rethinkdb').table('server_config').filter(r.row['id'] != self.server.uuid).delete().run(self.reqlConnection)
-                r.wait().run(self.reqlConnection)
+                r.db('test').wait().run(self.reqlConnection)
             
         except Exception as e:
             if self.existingServer:
@@ -1620,7 +1622,7 @@ class WorkerThread(threading.Thread):
                             test.errorMessage = 'Server found crashed after test'
                         else:
                             test.errorMessage += ', and the server crashed while running'
-                    
+                
                 # - copy the server contents or just the server log
                 if self.server.logfile_path and testOutputDir: # in case this is a local server, change for https://github.com/rethinkdb/rethinkdb/issues/4512
                     if copyServerContents:
