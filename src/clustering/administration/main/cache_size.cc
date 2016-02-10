@@ -19,6 +19,10 @@
 
 #ifndef __MACH__
 
+#if defined(_WIN32)
+#include "windows.h"
+#include "psapi.h"
+#endif
 size_t skip_spaces(const std::string &s, size_t i) {
     while (i < s.size() && (s[i] == ' ' || s[i] == '\t')) {
         ++i;
@@ -209,7 +213,7 @@ bool get_proc_status_current_swap_usage(uint64_t *swap_usage_out) {
         return false;
     }
     return parse_status_file(contents, swap_usage_out);
-#end
+#endif
 }
 
 bool get_proc_meminfo_available_memory_size(uint64_t *mem_avail_out) {
@@ -228,20 +232,12 @@ bool get_proc_meminfo_available_memory_size(uint64_t *mem_avail_out) {
 
 uint64_t get_used_swap() {
 #if defined(_WIN32)
-    HANDLE hProcess;
     PROCESS_MEMORY_COUNTERS pmc;
-    hProcess = OpenProcess(PROCESS_QUERY_INFORMATION |
-                           PROCESS_VM_READ,
-                           FALSE,
-                           processID);
-    if (hProcess == NULL) {
-        return 0;
-    }
-    BOOL res = GetProcessMemoryInfo(hProcess, &pmc, sizeof(pmc));
+    BOOL res = GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
     if (!res) {
         return 0;
     }
-    return pmc.PagefileUsage;
+    return pmc.QuotaPagedPoolUsage;
 #elif defined(__MACH__)
 #ifdef __MAC_OS_X_VERSION_MIN_REQUIRED
     // We know the field we want showed up in 10.9.  It may have shown
