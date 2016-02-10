@@ -232,12 +232,15 @@ bool get_proc_meminfo_available_memory_size(uint64_t *mem_avail_out) {
 
 uint64_t get_used_swap() {
 #if defined(_WIN32)
+    /* TODO: is there a way to actually get information from this in windows
     PROCESS_MEMORY_COUNTERS pmc;
     BOOL res = GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
     if (!res) {
         return 0;
     }
-    return pmc.PagefileUsage-pmc.WorkingSetSize;
+    return pmc.QuotaPagedPoolUsage;
+    */
+    return 0;
 #elif defined(__MACH__)
 #ifdef __MAC_OS_X_VERSION_MIN_REQUIRED
     // We know the field we want showed up in 10.9.  It may have shown

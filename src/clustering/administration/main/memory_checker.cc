@@ -47,14 +47,6 @@ void memory_checker_t::do_check(auto_drainer_t::lock_t keepalive) {
     }
 #endif
 
-#if defined(_WIN32)
-    // Windows handles swap oddly
-    if (first_check) {
-        swap_usage = new_swap_usage;
-        first_check = false;
-    }
-#endif
-
 #if defined(__MACH__)
     const std::string error_message =
         "Data from a process on this server"
