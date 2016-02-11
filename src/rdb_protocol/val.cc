@@ -341,7 +341,26 @@ datum_t table_t::batched_insert(
         for (const auto &inserted_key : insert_keys) {
             auto updated = pkey_to_change.find(inserted_key);
             if (updated != pkey_to_change.end()) {
-                new_changes.add(std::move(updated->second));
+                if (updated->second.get_field("error", NOTHROW).has()) {
+                    // Error, new_val is bogus for ordering,
+                    // so we put it back to old_val.
+                    new_changes.add(
+                        ql::datum_t{
+                            std::map<datum_string_t, datum_t>{
+                                std::pair<datum_string_t, datum_t>
+                                {datum_string_t("old_val"),
+                                        updated->second.get_field("old_val")},
+                                std::pair<datum_string_t, datum_t>
+                                {datum_string_t("new_val"),
+                                        updated->second.get_field("old_val")},
+                                std::pair<datum_string_t, datum_t>
+                                {datum_string_t("error"),
+                                        updated->second.get_field("error")}
+                            }}
+                    );
+                } else {
+                    new_changes.add(std::move(updated->second));
+                }
             }
         }
 

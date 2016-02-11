@@ -155,6 +155,7 @@ ql::datum_t make_row_replacement_stats(
 
 ql::datum_t make_row_replacement_error_stats(
         ql::datum_t old_row,
+        ql::datum_t new_row,
         return_changes_t return_changes,
         const char *error_message) {
     ql::datum_object_builder_t resp;
@@ -167,9 +168,15 @@ ql::datum_t make_row_replacement_error_stats(
             ql::datum_t(std::vector<ql::datum_t>(), ql::configured_limits_t::unlimited));
     } break;
     case return_changes_t::ALWAYS: {
-        UNUSED bool b = resp.add("changes", make_error_triple(old_row,
-                                                              old_row,
-                                                              error_message));
+        if (new_row.has()) {
+            UNUSED bool b = resp.add("changes", make_error_triple(old_row,
+                                                                  new_row,
+                                                                  error_message));
+        } else {
+            UNUSED bool b = resp.add("changes", make_error_triple(old_row,
+                                                                  old_row,
+                                                                  error_message));
+        }
     } break;
     default: unreachable();
     }
