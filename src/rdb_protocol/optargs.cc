@@ -65,6 +65,7 @@ static const std::set<std::string> acceptable_optargs({
     "header",
     "identifier_format",
     "include_initial",
+    "include_offsets",
     "include_states",
     "index",
     "left_bound",
