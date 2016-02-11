@@ -328,7 +328,7 @@ datum_t table_t::batched_insert(
     if (return_changes != return_changes_t::NO) {
         // Generate map to order changes
         std::map<datum_t, datum_t> pkey_to_change;
-        ql::datum_t changes = std::move(insert_stats.get_field("changes"));
+        ql::datum_t changes = insert_stats.get_field("changes");
         for (size_t i = 0; i < changes.arr_size(); ++i) {
             pkey_to_change[changes.get(i)
                            .get_field("new_val")
