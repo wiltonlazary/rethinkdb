@@ -232,7 +232,7 @@ bool get_proc_meminfo_available_memory_size(uint64_t *mem_avail_out) {
 
 uint64_t get_used_swap() {
 #if defined(_WIN32)
-    /* TODO: is there a way to actually get information from this in windows
+    /* TODO: is there a way to actually get useful information from this on windows?
     PROCESS_MEMORY_COUNTERS pmc;
     BOOL res = GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
     if (!res) {

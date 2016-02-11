@@ -43,7 +43,7 @@ private:
 
     memory_issue_tracker_t memory_issue_tracker;
 
-    uint64_t refresh_time;
+    uint64_t refresh_timer;
     uint64_t swap_usage;
 
     bool print_log_message;
