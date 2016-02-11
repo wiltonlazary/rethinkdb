@@ -21,7 +21,7 @@ make_replacement_pair(ql::datum_t old_val, ql::datum_t new_val) {
 }
 
 MUST_USE ql::datum_t
-make_error_triple(ql::datum_t old_val, ql::datum_t new_val, const char* error_message) {
+make_error_triple(ql::datum_t old_val, ql::datum_t new_val, const char *error_message) {
     ql::datum_array_builder_t values(ql::configured_limits_t::unlimited);
     ql::datum_object_builder_t error_triple;
     bool conflict = error_triple.add("old_val", old_val)

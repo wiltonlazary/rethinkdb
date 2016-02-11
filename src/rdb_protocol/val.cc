@@ -339,16 +339,17 @@ datum_t table_t::batched_insert(
         ql::datum_array_builder_t new_changes(env->limits());
 
         for (const auto &inserted_key : insert_keys) {
-            const auto &updated = pkey_to_change.find(inserted_key);
+            auto updated = pkey_to_change.find(inserted_key);
             if (updated != pkey_to_change.end()) {
                 new_changes.add(std::move(updated->second));
             }
         }
 
-        ql::datum_object_builder_t new_stats;
-        bool conflict = new_stats.add("changes", std::move(new_changes).to_datum());
-        guarantee(!conflict);
-        insert_stats = insert_stats.merge(std::move(new_stats).to_datum());
+        insert_stats = insert_stats.merge(
+            datum_t{std::map<datum_string_t, datum_t>{
+                        std::pair<datum_string_t, datum_t>{
+                            datum_string_t{"changes"},
+                            std::move(new_changes).to_datum()}}});
     }
 
     std::set<std::string> conditions;
