@@ -48,6 +48,7 @@ public:
     typedef bool result_type;
     explicit lt_cmp_t(
         std::vector<std::pair<order_direction_t, counted_t<const func_t> > > _comparisons);
+    // You can call this with nullptr as sampler to not sample.
     bool operator()(env_t *env,
                     profile::sampler_t *sampler,
                     datum_t l,

@@ -1701,8 +1701,7 @@ ordered_union_datum_stream_t::ordered_union_datum_stream_t(
       is_ordered_by_field(_comparisons.size() != 0),
       do_prelim_cache(true),
       lt(_comparisons),
-      sampler("Merging in union.", env->trace),
-      merge_cache(merge_less_t{env, &sampler, &lt}) {
+      merge_cache(merge_less_t{env, nullptr, &lt}) {
 
     for (const auto &stream : _streams) {
         union_type = union_of(union_type, stream->cfeed_type());
@@ -1751,7 +1750,7 @@ std::vector<datum_t> ordered_union_datum_stream_t::next_raw_batch(
             if (next_datum.has()) {
                 // Enforce ordering in merge step
                 // Ordering of this check is backwards because lt does strict <
-                rcheck(!lt(env, &sampler, next_datum, datum_on_deck),
+                rcheck(!lt(env, nullptr, next_datum, datum_on_deck),
                        base_exc_t::LOGIC,
                        "The streams given as arguments"
                        " are not ordered by given ordering.");

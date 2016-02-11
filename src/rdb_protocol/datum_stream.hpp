@@ -318,7 +318,6 @@ private:
     };
 
     lt_cmp_t lt;
-    profile::sampler_t sampler;
 
     std::priority_queue<merge_cache_item_t,
                         std::vector<merge_cache_item_t>,

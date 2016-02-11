@@ -97,7 +97,10 @@ bool lt_cmp_t::operator()(env_t *env,
                           datum_t l,
                           datum_t r) const {
 
-    sampler->new_sample();
+    if (sampler != nullptr) {
+        sampler->new_sample();
+    }
+
     for (auto it = comparisons.begin(); it != comparisons.end(); ++it) {
         datum_t lval;
         datum_t rval;
