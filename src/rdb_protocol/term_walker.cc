@@ -107,6 +107,16 @@ private:
                 rewritten.PushBack(get_time_now().as_json(parent->allocator),
                                    *parent->allocator);
                 src->Swap(rewritten);
+            } else if (type == Term::ORDER_BY) {
+                bool disallowed =
+                    prev_frame != nullptr
+                    && prev_frame->type == Term::LIMIT
+                    && (prev_frame->prev_frame != nullptr
+                        && prev_frame->prev_frame->type == Term::FILTER);
+                rcheck_src(bt,
+                           disallowed == false,
+                           base_exc_t::LOGIC,
+                           strprintf("ORDERBY.LIMIT.FILTER is not allowed."));
             }
 
             // Append a backtrace to the term
