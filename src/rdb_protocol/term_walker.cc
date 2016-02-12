@@ -118,8 +118,8 @@ private:
                 rcheck_src(bt,
                            disallowed == false,
                            base_exc_t::LOGIC,
-                           strprintf("Getting a changefeed on a .limit.filter query"
-                                     " is not supported."));
+                           strprintf("Getting a changefeed on a orderBy.limit.filter"
+                                     " query is not supported."));
             }
 
             // Append a backtrace to the term
