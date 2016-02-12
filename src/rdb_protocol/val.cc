@@ -237,6 +237,43 @@ datum_t table_t::make_error_datum(const base_exc_t &exception) {
     return std::move(d).to_datum();
 }
 
+ql::datum_t clean_errors(ql::datum_t reply) {
+    ql::datum_t array = reply.get_field("changes");
+    ql::datum_array_builder_t clean_array(ql::configured_limits_t::unlimited);
+    for (size_t i = 0; i < array.arr_size(); ++i) {
+        ql::datum_t updated = std::move(array.get(i));
+        if (updated.get_field("error", NOTHROW).has()) {
+            clean_array.add(ql::datum_t{
+                    std::map<datum_string_t, datum_t>{
+                        std::pair<datum_string_t, datum_t> {
+                            datum_string_t("old_val"),
+                                updated.get_field("old_val")},
+                            std::pair<datum_string_t, datum_t> {
+                                datum_string_t("new_val"),
+                                    updated.get_field("new_val")},
+                                std::pair<datum_string_t, datum_t> {
+                                    datum_string_t("error"),
+                                        updated.get_field("error")}}});
+        } else {
+            clean_array.add(ql::datum_t{
+                    std::map<datum_string_t, datum_t>{
+                        std::pair<datum_string_t, datum_t> {
+                            datum_string_t("old_val"),
+                                updated.get_field("old_val")},
+                            std::pair<datum_string_t, datum_t> {
+                                datum_string_t("new_val"),
+                                    updated.get_field("new_val")}}});
+        }
+    }
+
+    reply = reply.merge(
+        datum_t{std::map<datum_string_t, datum_t>{
+                std::pair<datum_string_t, datum_t>{
+                    datum_string_t{"changes"},
+                        std::move(clean_array).to_datum()}}});
+    return reply;
+}
+
 datum_t table_t::batched_replace(
     env_t *env,
     const std::vector<datum_t> &vals,
@@ -279,11 +316,21 @@ datum_t table_t::batched_replace(
                                                  env->limits(), &conditions);
         datum_object_builder_t result(merged);
         result.add_warnings(conditions, env->limits());
-        return std::move(result).to_datum();
+        if (return_changes == return_changes_t::ALWAYS) {
+            return clean_errors(std::move(result).to_datum());
+        } else {
+            return std::move(result).to_datum();
+        }
     } else {
-        return tbl->write_batched_replace(
-            env, keys, replacement_generator, return_changes,
-            durability_requirement);
+        if (return_changes == return_changes_t::ALWAYS) {
+            return clean_errors(tbl->write_batched_replace(
+                env, keys, replacement_generator, return_changes,
+                durability_requirement));
+        } else {
+            return tbl->write_batched_replace(
+                env, keys, replacement_generator, return_changes,
+                durability_requirement);
+        }
     }
 }
 
@@ -330,10 +377,17 @@ datum_t table_t::batched_insert(
         std::map<datum_t, datum_t> pkey_to_change;
         ql::datum_t changes = insert_stats.get_field("changes");
         for (size_t i = 0; i < changes.arr_size(); ++i) {
-            pkey_to_change[changes.get(i)
-                           .get_field("new_val")
-                           .get_field(get_pkey().c_str())]
-                = changes.get(i);
+            ql::datum_t pkey;
+            if (changes.get(i).get_field("error", NOTHROW).has()) {
+                pkey = changes.get(i)
+                              .get_field("fake_new_val")
+                              .get_field(get_pkey().c_str(), NOTHROW);
+            } else {
+                pkey = changes.get(i)
+                    .get_field("new_val")
+                    .get_field(get_pkey().c_str(), NOTHROW);
+            }
+            pkey_to_change[pkey] = changes.get(i);
         }
 
         ql::datum_array_builder_t new_changes(env->limits());
@@ -341,26 +395,7 @@ datum_t table_t::batched_insert(
         for (const auto &inserted_key : insert_keys) {
             auto updated = pkey_to_change.find(inserted_key);
             if (updated != pkey_to_change.end()) {
-                if (updated->second.get_field("error", NOTHROW).has()) {
-                    // Error, new_val is bogus for ordering,
-                    // so we put it back to old_val.
-                    new_changes.add(
-                        ql::datum_t{
-                            std::map<datum_string_t, datum_t>{
-                                std::pair<datum_string_t, datum_t>
-                                {datum_string_t("old_val"),
-                                        updated->second.get_field("old_val")},
-                                std::pair<datum_string_t, datum_t>
-                                {datum_string_t("new_val"),
-                                        updated->second.get_field("old_val")},
-                                std::pair<datum_string_t, datum_t>
-                                {datum_string_t("error"),
-                                        updated->second.get_field("error")}
-                            }}
-                    );
-                } else {
                     new_changes.add(std::move(updated->second));
-                }
             }
         }
 
@@ -377,7 +412,11 @@ datum_t table_t::batched_insert(
                                              env->limits(), &conditions);
     datum_object_builder_t result(merged);
     result.add_warnings(conditions, env->limits());
-    return std::move(result).to_datum();
+    if (return_changes == return_changes_t::ALWAYS) {
+        return clean_errors(std::move(result).to_datum());
+    } else {
+        return std::move(result).to_datum();
+    }
 }
 
 MUST_USE bool table_t::sync(env_t *env) {

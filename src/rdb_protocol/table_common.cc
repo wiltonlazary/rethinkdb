@@ -21,14 +21,18 @@ make_replacement_pair(ql::datum_t old_val, ql::datum_t new_val) {
 }
 
 MUST_USE ql::datum_t
-make_error_triple(ql::datum_t old_val, ql::datum_t new_val, const char *error_message) {
+make_error_quad(ql::datum_t old_val,
+                ql::datum_t new_val,
+                ql::datum_t fake_new_val,
+                const char *error_message) {
     ql::datum_array_builder_t values(ql::configured_limits_t::unlimited);
-    ql::datum_object_builder_t error_triple;
-    bool conflict = error_triple.add("old_val", old_val)
-        || error_triple.add("new_val", new_val)
-        || error_triple.add("error", ql::datum_t(error_message));
+    ql::datum_object_builder_t error_quad;
+    bool conflict = error_quad.add("old_val", old_val)
+        || error_quad.add("new_val", new_val)
+        || error_quad.add("fake_new_val", fake_new_val)
+        || error_quad.add("error", ql::datum_t(error_message));
     guarantee(!conflict);
-    values.add(std::move(error_triple).to_datum());
+    values.add(std::move(error_quad).to_datum());
     return std::move(values).to_datum();
 }
 
@@ -169,13 +173,15 @@ ql::datum_t make_row_replacement_error_stats(
     } break;
     case return_changes_t::ALWAYS: {
         if (new_row.has()) {
-            UNUSED bool b = resp.add("changes", make_error_triple(old_row,
-                                                                  new_row,
-                                                                  error_message));
+            UNUSED bool b = resp.add("changes", make_error_quad(old_row,
+                                                                old_row,
+                                                                new_row,
+                                                                error_message));
         } else {
-            UNUSED bool b = resp.add("changes", make_error_triple(old_row,
-                                                                  old_row,
-                                                                  error_message));
+            UNUSED bool b = resp.add("changes", make_error_quad(old_row,
+                                                                old_row,
+                                                                old_row,
+                                                                error_message));
         }
     } break;
     default: unreachable();
