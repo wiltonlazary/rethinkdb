@@ -1361,14 +1361,15 @@ void rdb_modification_report_cb_t::on_mod_report(
         }
         keys_available_cond.wait_lazily_unordered();
         if (cserver.first != nullptr) {
+            // TODO! Filter here for geo indexes?
             cserver.first->send_all(
                 ql::changefeed::msg_t(
                     ql::changefeed::msg_t::change_t{
                         old_keys,
-                            new_keys,
-                            report.primary_key,
-                            report.info.deleted.first,
-                            report.info.added.first}),
+                        new_keys,
+                        report.primary_key,
+                        report.info.deleted.first,
+                        report.info.added.first}),
                 report.primary_key,
                 cfeed_stamp_spot,
                 cserver.second);
@@ -1626,8 +1627,8 @@ void rdb_update_single_sindex(
         size_t *updates_left,
         auto_drainer_t::lock_t,
         cond_t *keys_available_cond,
-        std::vector<std::pair<ql::datum_t, boost::optional<uint64_t> > > *old_keys_out,
-        std::vector<std::pair<ql::datum_t, boost::optional<uint64_t> > > *new_keys_out)
+        std::vector<index_pair_t> *old_keys_out,
+        std::vector<index_pair_t> *new_keys_out)
     THROWS_NOTHING {
     // Note if you get this error it's likely that you've passed in a default
     // constructed mod_report. Don't do that.  Mod reports should always be passed
@@ -1662,9 +1663,7 @@ void rdb_update_single_sindex(
             if (old_keys_out != nullptr) {
                 for (const auto &pair : keys) {
                     old_keys_out->push_back(
-                        std::make_pair(
-                            pair.second, ql::datum_t::extract_all(
-                                key_to_unescaped_str(pair.first)).tag_num));
+                        std::make_pair(pair.second, key_to_unescaped_str(pair.first)));
                 }
             }
             if (cserver.first != nullptr) {
@@ -1737,9 +1736,7 @@ void rdb_update_single_sindex(
                 guarantee(keys_available_cond != nullptr);
                 for (const auto &pair : keys) {
                     new_keys_out->push_back(
-                        std::make_pair(
-                            pair.second, ql::datum_t::extract_all(
-                                key_to_unescaped_str(pair.first)).tag_num));
+                        std::make_pair(pair.second, key_to_unescaped_str(pair.first)));
                 }
                 guarantee(*updates_left > 0);
                 decremented_updates_left = true;

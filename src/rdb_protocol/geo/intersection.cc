@@ -133,14 +133,12 @@ bool geo_does_intersect(const geo::S2LatLngRect &rect,
     return rect.Contains(other_point);
 }
 
-bool geo_does_intersect(const geo::S2LatLngRect &,
-                        const geo::S2Polyline &) {
-    // TODO!
-    return true;
+bool geo_does_intersect(const geo::S2LatLngRect &rect,
+                        const geo::S2Polyline &other_line) {
+    return rect.Intersects(other_line.GetRectBound());
 }
 
-bool geo_does_intersect(const geo::S2LatLngRect &,
-                        const geo::S2Polygon &) {
-    // TODO!
-    return true;
+bool geo_does_intersect(const geo::S2LatLngRect &rect,
+                        const geo::S2Polygon &other_polygon) {
+    return rect.Intersects(other_polygon.GetRectBound());
 }

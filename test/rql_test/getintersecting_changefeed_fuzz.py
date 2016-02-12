@@ -133,9 +133,11 @@ class DatasetTracker(object):
                 self.state = value['state']
 
             if value.get('old_val') is not None:
+                print("Change: Removing " + value['old_val']['id'])
                 del self.known_objects[value['old_val']['id']]
 
             if value.get('new_val') is not None:
+                print("Change: Adding " + value['new_val']['id'])
                 self.known_objects[value['new_val']['id']] = value['new_val']
 
         if not self.deliberately_closed:
@@ -188,6 +190,7 @@ def make_changes(conn, table, change_count):
         if optype_random < 0.2:
             # insert
             g = yield random_geo(conn)
+            print ("Inserting")
             res = yield r.table(table).insert({"g": g}).run(conn)
             if res['inserted'] != 1:
                 raise Exception("wanted inserted=1, got %r" % res)
@@ -198,6 +201,7 @@ def make_changes(conn, table, change_count):
             if len(ids) == 0:
                 break
 
+            print ("Deleting")
             delete_id = random.sample(ids, 1)[0]
             res = yield r.table(table).get(delete_id).delete().run(conn)
             if res['deleted'] != 1 and res['skipped'] != 1:
@@ -211,6 +215,7 @@ def make_changes(conn, table, change_count):
             # We want to do an atomic update, so we evaluate the geometry first.
             g = yield g.run(conn)
             update_id = random.sample(ids, 1)[0]
+            print ("Updating")
             res = yield r.table(table).get(update_id).update({"g": g}).run(conn)
             if res['replaced'] != 1 and res['skipped'] != 1:
                 raise Exception("wanted replaced=1, got %r" % res)
