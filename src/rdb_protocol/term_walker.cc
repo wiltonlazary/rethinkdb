@@ -107,14 +107,14 @@ private:
                 rewritten.PushBack(get_time_now().as_json(parent->allocator),
                                    *parent->allocator);
                 src->Swap(rewritten);
-            } else if (type == Term::CHANGES) {
+            } else if (type == Term::ORDER_BY) {
                 bool disallowed =
                     prev_frame != nullptr
                     && prev_frame->type == Term::LIMIT
                     && (prev_frame->prev_frame != nullptr
                         && prev_frame->prev_frame->type == Term::FILTER)
                     && (prev_frame->prev_frame->prev_frame != nullptr
-                        && prev_frame->prev_frame->prev_frame->type == Term::ORDER_BY);
+                        && prev_frame->prev_frame->prev_frame->type == Term::CHANGES);
                 rcheck_src(bt,
                            disallowed == false,
                            base_exc_t::LOGIC,
