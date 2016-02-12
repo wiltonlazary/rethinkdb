@@ -116,7 +116,7 @@ private:
                     && (prev_frame->prev_frame->prev_frame != nullptr
                         && prev_frame->prev_frame->prev_frame->type == Term::CHANGES);
                 rcheck_src(bt,
-                           disallowed == false,
+                           !disallowed,
                            base_exc_t::LOGIC,
                            strprintf("Getting a changefeed on a orderBy.limit.filter"
                                      " query is not supported."));
