@@ -159,9 +159,10 @@ def do_import(temp_dir, options):
         import_args.extend(["--no-secondary-indexes"])
 
     res = subprocess.call(import_args)
-    if res != 0:
+    if res != 0 and res != 2:
         raise RuntimeError("Error: rethinkdb-import failed")
-
+    if res == 2:
+        raise RuntimeError("Warning: rethinkdb-import did not create some secondary indexes.")
     # 'Done' message will be printed by the import script
 
 def run_rethinkdb_import(options):
