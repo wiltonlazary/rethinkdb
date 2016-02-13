@@ -763,7 +763,6 @@ class bounding_box_visitor_t : public s2_geo_visitor_t<geo::S2LatLngRect> {
         lng_expansion += geo::S1Angle::Degrees(0.00001);
         geo::S2LatLng expansion(lat_expansion, lng_expansion);
         geo::S2LatLngRect out = rect.Expanded(expansion);
-        debugf("expanded rect is %f x %f degrees\n", out.lat().GetLength(), out.lng().GetLength());
         return out;
     }
 };
@@ -786,12 +785,18 @@ bool intersecting_reader_t::load_items(env_t *env, const batchspec_t &batchspec)
 
             old_query_geometry = gr->query_geometry;
 
-            bounding_box_visitor_t visitor;
-            geo::S2LatLngRect bounding_box = visit_geojson(
-                    &visitor, gr->query_geometry);
+            try {
+                bounding_box_visitor_t visitor;
+                geo::S2LatLngRect bounding_box = visit_geojson(
+                        &visitor, gr->query_geometry);
 
-            gr->query_geometry = construct_geo_latlngrect(
-                    bounding_box, configured_limits_t());
+                gr->query_geometry = construct_geo_latlngrect(
+                        bounding_box, configured_limits_t());
+            } catch (const geo_exception_t &e) {
+                rfail_toplevel(ql::base_exc_t::INTERNAL,
+                               "Setting up the `get_intersecting` changefeed failed: %s",
+                               e.what());
+            }
         }
 
         std::vector<rget_item_t> unfiltered_items = do_intersecting_read(
@@ -806,7 +811,8 @@ bool intersecting_reader_t::load_items(env_t *env, const batchspec_t &batchspec)
                 r_sanity_check(unfiltered_items[i].key.size() > 0);
 
                 if (old_query_geometry) {
-                    if (!geo_does_intersect(unfiltered_items[i].sindex_key, *old_query_geometry)) {
+                    if (!geo_does_intersect(unfiltered_items[i].sindex_key,
+                                            *old_query_geometry)) {
                         continue;
                     }
                 }

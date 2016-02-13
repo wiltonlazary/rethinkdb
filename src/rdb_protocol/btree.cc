@@ -1,6 +1,7 @@
 // Copyright 2010-2015 RethinkDB, all rights reserved.
 #include "rdb_protocol/btree.hpp"
 
+#include <algorithm>
 #include <functional>
 #include <iterator>
 #include <set>
@@ -1323,7 +1324,7 @@ void rdb_modification_report_cb_t::on_mod_report(
         // We spawn the sindex update in its own coroutine because we don't want to
         // hold the sindex update for the changefeed update or vice-versa.
         cond_t sindexes_updated_cond, keys_available_cond;
-        index_vals_t old_keys, new_keys;
+        index_vals_t old_cfeed_keys, new_cfeed_keys;
         sindex_spot->acq_signal()->wait_lazily_unordered();
         coro_t::spawn_now_dangerously(
             std::bind(&rdb_modification_report_cb_t::on_mod_report_sub,
@@ -1332,8 +1333,8 @@ void rdb_modification_report_cb_t::on_mod_report(
                       sindex_spot,
                       &keys_available_cond,
                       &sindexes_updated_cond,
-                      &old_keys,
-                      &new_keys));
+                      &old_cfeed_keys,
+                      &new_cfeed_keys));
         auto cserver = store_->changefeed_server(report.primary_key);
         if (update_pkey_cfeeds && cserver.first != nullptr) {
             cserver.first->foreach_limit(
@@ -1361,12 +1362,11 @@ void rdb_modification_report_cb_t::on_mod_report(
         }
         keys_available_cond.wait_lazily_unordered();
         if (cserver.first != nullptr) {
-            // TODO! Filter here for geo indexes?
             cserver.first->send_all(
                 ql::changefeed::msg_t(
                     ql::changefeed::msg_t::change_t{
-                        old_keys,
-                        new_keys,
+                        old_cfeed_keys,
+                        new_cfeed_keys,
                         report.primary_key,
                         report.info.deleted.first,
                         report.info.added.first}),
@@ -1383,8 +1383,8 @@ void rdb_modification_report_cb_t::on_mod_report_sub(
     new_mutex_in_line_t *spot,
     cond_t *keys_available_cond,
     cond_t *done_cond,
-    index_vals_t *old_keys_out,
-    index_vals_t *new_keys_out) {
+    index_vals_t *cfeed_old_keys_out,
+    index_vals_t *cfeed_new_keys_out) {
     store_->sindex_queue_push(mod_report, spot);
     rdb_live_deletion_context_t deletion_context;
     rdb_update_sindexes(store_,
@@ -1393,8 +1393,8 @@ void rdb_modification_report_cb_t::on_mod_report_sub(
                         sindex_block_->txn(),
                         &deletion_context,
                         keys_available_cond,
-                        old_keys_out,
-                        new_keys_out);
+                        cfeed_old_keys_out,
+                        cfeed_new_keys_out);
     guarantee(keys_available_cond->is_pulsed());
     done_cond->pulse();
 }
@@ -1627,8 +1627,8 @@ void rdb_update_single_sindex(
         size_t *updates_left,
         auto_drainer_t::lock_t,
         cond_t *keys_available_cond,
-        std::vector<index_pair_t> *old_keys_out,
-        std::vector<index_pair_t> *new_keys_out)
+        std::vector<index_pair_t> *cfeed_old_keys_out,
+        std::vector<index_pair_t> *cfeed_new_keys_out)
     THROWS_NOTHING {
     // Note if you get this error it's likely that you've passed in a default
     // constructed mod_report. Don't do that.  Mod reports should always be passed
@@ -1636,8 +1636,8 @@ void rdb_update_single_sindex(
     // function.
     guarantee(modification->primary_key.size() != 0);
 
-    guarantee(old_keys_out == nullptr || old_keys_out->size() == 0);
-    guarantee(new_keys_out == nullptr || new_keys_out->size() == 0);
+    guarantee(cfeed_old_keys_out == nullptr || cfeed_old_keys_out->size() == 0);
+    guarantee(cfeed_new_keys_out == nullptr || cfeed_new_keys_out->size() == 0);
 
     sindex_disk_info_t sindex_info;
     try {
@@ -1660,10 +1660,24 @@ void rdb_update_single_sindex(
 
             std::vector<std::pair<store_key_t, ql::datum_t> > keys;
             compute_keys(modification->primary_key, deleted, sindex_info, &keys);
-            if (old_keys_out != nullptr) {
-                for (const auto &pair : keys) {
-                    old_keys_out->push_back(
-                        std::make_pair(pair.second, key_to_unescaped_str(pair.first)));
+            if (cfeed_old_keys_out != nullptr) {
+                // For geospatial indexes, we generate multiple keys for the same index
+                // entry. We only pass the smallest one on in order to not get redundant
+                // results on the changefeed.
+                // TODO! Handle multi-indexes
+                if (sindex_info.geo == sindex_geo_bool_t::GEO) {
+                    const auto min_it = std::min_element(keys.begin(), keys.end());
+                    if (min_it != keys.end()) {
+                        cfeed_old_keys_out->push_back(
+                            std::make_pair(min_it->second,
+                                           key_to_unescaped_str(min_it->first)));
+                    }
+                } else {
+                    for (const auto &pair : keys) {
+                        cfeed_old_keys_out->push_back(
+                            std::make_pair(pair.second,
+                                           key_to_unescaped_str(pair.first)));
+                    }
                 }
             }
             if (cserver.first != nullptr) {
@@ -1715,7 +1729,7 @@ void rdb_update_single_sindex(
             // Do nothing (it wasn't actually in the index).
 
             // See comment in `catch` below.
-            guarantee(old_keys_out == nullptr || old_keys_out->size() == 0);
+            guarantee(cfeed_old_keys_out == nullptr || cfeed_old_keys_out->size() == 0);
         }
     }
 
@@ -1732,11 +1746,25 @@ void rdb_update_single_sindex(
             std::vector<std::pair<store_key_t, ql::datum_t> > keys;
 
             compute_keys(modification->primary_key, added, sindex_info, &keys);
-            if (new_keys_out != nullptr) {
+            if (cfeed_new_keys_out != nullptr) {
                 guarantee(keys_available_cond != nullptr);
-                for (const auto &pair : keys) {
-                    new_keys_out->push_back(
-                        std::make_pair(pair.second, key_to_unescaped_str(pair.first)));
+                // For geospatial indexes, we generate multiple keys for the same index
+                // entry. We only pass the smallest one on in order to not get redundant
+                // results on the changefeed.
+                // TODO! Handle multi-indexes
+                if (sindex_info.geo == sindex_geo_bool_t::GEO) {
+                    const auto min_it = std::min_element(keys.begin(), keys.end());
+                    if (min_it != keys.end()) {
+                        cfeed_new_keys_out->push_back(
+                            std::make_pair(min_it->second,
+                                           key_to_unescaped_str(min_it->first)));
+                    }
+                } else {
+                    for (const auto &pair : keys) {
+                        cfeed_new_keys_out->push_back(
+                            std::make_pair(pair.second,
+                                           key_to_unescaped_str(pair.first)));
+                    }
                 }
                 guarantee(*updates_left > 0);
                 decremented_updates_left = true;
@@ -1799,7 +1827,7 @@ void rdb_update_single_sindex(
             // inside of it), so this guarantee should never trip.
             if (keys_available_cond != nullptr) {
                 guarantee(!decremented_updates_left);
-                guarantee(new_keys_out->size() == 0);
+                guarantee(cfeed_new_keys_out->size() == 0);
                 guarantee(*updates_left > 0);
                 if (--*updates_left == 0) {
                     keys_available_cond->pulse();
@@ -1838,8 +1866,8 @@ void rdb_update_sindexes(
     txn_t *txn,
     const deletion_context_t *deletion_context,
     cond_t *keys_available_cond,
-    index_vals_t *old_keys_out,
-    index_vals_t *new_keys_out) {
+    index_vals_t *cfeed_old_keys_out,
+    index_vals_t *cfeed_new_keys_out) {
 
     rdb_noop_deletion_context_t noop_deletion_context;
     {
@@ -1877,12 +1905,12 @@ void rdb_update_sindexes(
                         &counter,
                         auto_drainer_t::lock_t(&drainer),
                         keys_available_cond,
-                        old_keys_out == NULL
+                        cfeed_old_keys_out == NULL
                             ? NULL
-                            : &(*old_keys_out)[sindex->name.name],
-                        new_keys_out == NULL
+                            : &(*cfeed_old_keys_out)[sindex->name.name],
+                        cfeed_new_keys_out == NULL
                             ? NULL
-                            : &(*new_keys_out)[sindex->name.name]));
+                            : &(*cfeed_new_keys_out)[sindex->name.name]));
             }
         }
         if (counter == 0 && keys_available_cond != NULL) {

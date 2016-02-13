@@ -2497,8 +2497,7 @@ public:
                 if (old_it != change.old_indexes.end()) {
                     for (const auto &idx : old_it->second) {
                         for (size_t i = 0; i < sub->copies(idx.first); ++i) {
-                            old_idxs.push_back(indexed_datum_t(old_val,
-                                                               idx.second));
+                            old_idxs.push_back(indexed_datum_t(old_val, idx.second));
                         }
                     }
                 }
@@ -2506,8 +2505,7 @@ public:
                 if (new_it != change.new_indexes.end()) {
                     for (const auto &idx : new_it->second) {
                         for (size_t i = 0; i < sub->copies(idx.first); ++i) {
-                            new_idxs.push_back(indexed_datum_t(new_val,
-                                                               idx.second));
+                            new_idxs.push_back(indexed_datum_t(new_val, idx.second));
                         }
                     }
                 }

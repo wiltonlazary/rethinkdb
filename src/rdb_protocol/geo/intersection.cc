@@ -135,10 +135,20 @@ bool geo_does_intersect(const geo::S2LatLngRect &rect,
 
 bool geo_does_intersect(const geo::S2LatLngRect &rect,
                         const geo::S2Polyline &other_line) {
+    // This can generate false positives. That is ok since we only use LatLngRects as
+    // part of our changefeed code where we perform additional post-filtering.
+    // Right now ReQL doesn't expose LatLngRects. If that ever changes, we will have
+    // to split this into a separate `MayIntersect` term, explicitly disallow
+    // `intersects` on LatLngRects, or come up with an exact implementation for this.
     return rect.Intersects(other_line.GetRectBound());
 }
 
 bool geo_does_intersect(const geo::S2LatLngRect &rect,
                         const geo::S2Polygon &other_polygon) {
+    // This can generate false positives. That is ok since we only use LatLngRects as
+    // part of our changefeed code where we perform additional post-filtering.
+    // Right now ReQL doesn't expose LatLngRects. If that ever changes, we will have
+    // to split this into a separate `MayIntersect` term, explicitly disallow
+    // `intersects` on LatLngRects, or come up with an exact implementation for this.
     return rect.Intersects(other_polygon.GetRectBound());
 }
