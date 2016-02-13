@@ -11,7 +11,6 @@
 #include <grp.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-
 // Needed for determining rethinkdb binary path below
 #if defined(__MACH__)
 #include <mach-o/dyld.h>

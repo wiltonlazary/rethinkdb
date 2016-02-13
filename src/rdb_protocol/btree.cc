@@ -1354,8 +1354,15 @@ void deserialize_sindex_info(
     // This cluster version field is _not_ a ReQL evaluation version field, which is
     // in secondary_index_t -- it only says how the value was serialized.
     cluster_version_t cluster_version;
-    archive_result_t success = deserialize_cluster_version(
-        &read_stream, &cluster_version, obsolete_cb);
+    archive_result_t success;
+    try {
+        success = deserialize_cluster_version(
+            &read_stream, &cluster_version, obsolete_cb);
+    } catch (const archive_exc_t &e) {
+        rfail_toplevel(ql::base_exc_t::INTERNAL,
+              "Unrecognized secondary index version, secondary index not created.");
+    }
+
     throw_if_bad_deserialization(success, "sindex description");
 
     switch (cluster_version) {

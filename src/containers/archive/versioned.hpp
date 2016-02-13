@@ -37,10 +37,13 @@ inline MUST_USE archive_result_t deserialize_cluster_version(
         obsolete_cb();
         crash("Outdated index handling did not crash or throw.");
     } else {
-        // This is the same rassert in `ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE`.
-        rassert(raw >= static_cast<int8_t>(cluster_version_t::v1_14)
-                && raw <= static_cast<int8_t>(cluster_version_t::v2_1_is_latest));
-        *thing = static_cast<cluster_version_t>(raw);
+        // This is the same condition in `ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE`.
+        if (raw >= static_cast<int8_t>(cluster_version_t::v1_14)
+            && raw <= static_cast<int8_t>(cluster_version_t::v2_1_is_latest)) {
+            *thing = static_cast<cluster_version_t>(raw);
+        } else {
+            throw archive_exc_t("Unrecognized cluster version.");
+        }
     }
     return res;
 }
