@@ -1445,7 +1445,9 @@ std::vector<std::string> expand_geo_key(
 void compute_keys(const store_key_t &primary_key,
                   ql::datum_t doc,
                   const sindex_disk_info_t &index_info,
-                  std::vector<std::pair<store_key_t, ql::datum_t> > *keys_out) {
+                  std::vector<std::pair<store_key_t, ql::datum_t> > *keys_out,
+                  std::vector<index_pair_t> *cfeed_keys_out) {
+
     guarantee(keys_out->empty());
 
     const reql_version_t reql_version =
@@ -1473,13 +1475,26 @@ void compute_keys(const store_key_t &primary_key,
                 for (auto it = geo_keys.begin(); it != geo_keys.end(); ++it) {
                     keys_out->push_back(std::make_pair(store_key_t(*it), skey));
                 }
+                if (cfeed_keys_out != nullptr) {
+                    // For geospatial indexes, we generate multiple keys for the same
+                    // index entry. We only pass the smallest one on in order to not get
+                    // redundant results on the changefeed.
+                    auto min_it = std::min_element(geo_keys.begin(), geo_keys.end());
+                    if (min_it != geo_keys.end()) {
+                        cfeed_keys_out->push_back(
+                            std::make_pair(skey, std::move(*min_it)));
+                    }
+                }
             } else {
                 try {
+                    std::string store_key =
+                        skey.print_secondary(reql_version, primary_key, i);
                     keys_out->push_back(
-                        std::make_pair(
-                            store_key_t(
-                                skey.print_secondary(reql_version, primary_key, i)),
-                            skey));
+                        std::make_pair(store_key_t(store_key), skey));
+                    if (cfeed_keys_out != nullptr) {
+                        cfeed_keys_out->push_back(
+                            std::make_pair(skey, std::move(store_key)));
+                    }
                 } catch (const ql::base_exc_t &e) {
                     if (reql_version < reql_version_t::v2_1) {
                         throw;
@@ -1498,12 +1513,25 @@ void compute_keys(const store_key_t &primary_key,
             for (auto it = geo_keys.begin(); it != geo_keys.end(); ++it) {
                 keys_out->push_back(std::make_pair(store_key_t(*it), index));
             }
+            if (cfeed_keys_out != nullptr) {
+                // For geospatial indexes, we generate multiple keys for the same
+                // index entry. We only pass the smallest one on in order to not get
+                // redundant results on the changefeed.
+                auto min_it = std::min_element(geo_keys.begin(), geo_keys.end());
+                if (min_it != geo_keys.end()) {
+                    cfeed_keys_out->push_back(
+                        std::make_pair(index, std::move(*min_it)));
+                }
+            }
         } else {
+            std::string store_key =
+                index.print_secondary(reql_version, primary_key, boost::none);
             keys_out->push_back(
-                std::make_pair(
-                    store_key_t(
-                        index.print_secondary(reql_version, primary_key, boost::none)),
-                    index));
+                std::make_pair(store_key_t(store_key), index));
+            if (cfeed_keys_out != nullptr) {
+                cfeed_keys_out->push_back(
+                    std::make_pair(index, std::move(store_key)));
+            }
         }
     }
 }
@@ -1659,27 +1687,9 @@ void rdb_update_single_sindex(
             ql::datum_t deleted = modification->info.deleted.first;
 
             std::vector<std::pair<store_key_t, ql::datum_t> > keys;
-            compute_keys(modification->primary_key, deleted, sindex_info, &keys);
-            if (cfeed_old_keys_out != nullptr) {
-                // For geospatial indexes, we generate multiple keys for the same index
-                // entry. We only pass the smallest one on in order to not get redundant
-                // results on the changefeed.
-                // TODO! Handle multi-indexes
-                if (sindex_info.geo == sindex_geo_bool_t::GEO) {
-                    const auto min_it = std::min_element(keys.begin(), keys.end());
-                    if (min_it != keys.end()) {
-                        cfeed_old_keys_out->push_back(
-                            std::make_pair(min_it->second,
-                                           key_to_unescaped_str(min_it->first)));
-                    }
-                } else {
-                    for (const auto &pair : keys) {
-                        cfeed_old_keys_out->push_back(
-                            std::make_pair(pair.second,
-                                           key_to_unescaped_str(pair.first)));
-                    }
-                }
-            }
+            compute_keys(
+                modification->primary_key, deleted, sindex_info,
+                &keys, cfeed_old_keys_out);
             if (cserver.first != nullptr) {
                 cserver.first->foreach_limit(
                     sindex->name.name,
@@ -1745,27 +1755,10 @@ void rdb_update_single_sindex(
 
             std::vector<std::pair<store_key_t, ql::datum_t> > keys;
 
-            compute_keys(modification->primary_key, added, sindex_info, &keys);
-            if (cfeed_new_keys_out != nullptr) {
-                guarantee(keys_available_cond != nullptr);
-                // For geospatial indexes, we generate multiple keys for the same index
-                // entry. We only pass the smallest one on in order to not get redundant
-                // results on the changefeed.
-                // TODO! Handle multi-indexes
-                if (sindex_info.geo == sindex_geo_bool_t::GEO) {
-                    const auto min_it = std::min_element(keys.begin(), keys.end());
-                    if (min_it != keys.end()) {
-                        cfeed_new_keys_out->push_back(
-                            std::make_pair(min_it->second,
-                                           key_to_unescaped_str(min_it->first)));
-                    }
-                } else {
-                    for (const auto &pair : keys) {
-                        cfeed_new_keys_out->push_back(
-                            std::make_pair(pair.second,
-                                           key_to_unescaped_str(pair.first)));
-                    }
-                }
+            compute_keys(
+                modification->primary_key, added, sindex_info,
+                &keys, cfeed_new_keys_out);
+            if (keys_available_cond != nullptr) {
                 guarantee(*updates_left > 0);
                 decremented_updates_left = true;
                 if (--*updates_left == 0) {

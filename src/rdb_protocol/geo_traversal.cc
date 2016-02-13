@@ -83,7 +83,8 @@ geo_intersecting_cb_t::geo_intersecting_cb_t(
         btree_slice_t *_slice,
         geo_sindex_data_t &&_sindex,
         ql::env_t *_env,
-        std::set<store_key_t> *_distinct_emitted_in_out)
+        std::set<std::pair<store_key_t, boost::optional<uint64_t> > >
+            *_distinct_emitted_in_out)
     : geo_index_traversal_helper_t(
         ql::skey_version_from_reql_version(_sindex.func_reql_version),
         _env->interruptor),
@@ -120,11 +121,13 @@ continue_bool_t geo_intersecting_cb_t::on_candidate(scoped_key_value_t &&keyvalu
     }
 
     // Check if this document has already been processed (lower bound).
-    if (already_processed.count(primary_key) > 0) {
+    boost::optional<uint64_t> tag = ql::datum_t::extract_tag(store_key);
+    std::pair<store_key_t, boost::optional<uint64_t> > primary_and_tag(primary_key, tag);
+    if (already_processed.count(primary_and_tag) > 0) {
         return continue_bool_t::CONTINUE;
     }
     // Check if this document has already been emitted.
-    if (distinct_emitted->count(primary_key) > 0) {
+    if (distinct_emitted->count(primary_and_tag) > 0) {
         return continue_bool_t::CONTINUE;
     }
 
@@ -142,7 +145,7 @@ continue_bool_t geo_intersecting_cb_t::on_candidate(scoped_key_value_t &&keyvalu
     // row.get() or waiter.wait_interruptible() might have blocked, and another
     // coroutine could have found the document in the meantime. Re-check
     // distinct_emitted, so we don't emit the same document twice.
-    if (distinct_emitted->count(primary_key) > 0) {
+    if (distinct_emitted->count(primary_and_tag) > 0) {
         return continue_bool_t::CONTINUE;
     }
 
@@ -156,7 +159,6 @@ continue_bool_t geo_intersecting_cb_t::on_candidate(scoped_key_value_t &&keyvalu
             sindex.func->call(&sindex_env, val)->as_datum();
         if (sindex.multi == sindex_multi_bool_t::MULTI
             && sindex_val.get_type() == ql::datum_t::R_ARRAY) {
-            boost::optional<uint64_t> tag = *ql::datum_t::extract_tag(store_key);
             guarantee(tag);
             sindex_val = sindex_val.get(*tag, ql::NOTHROW);
             guarantee(sindex_val.has());
@@ -171,7 +173,7 @@ continue_bool_t geo_intersecting_cb_t::on_candidate(scoped_key_value_t &&keyvalu
                     ql::backtrace_id_t::empty()));
                 return continue_bool_t::ABORT;
             }
-            distinct_emitted->insert(primary_key);
+            distinct_emitted->insert(primary_and_tag);
             return emit_result(std::move(sindex_val),
                                std::move(store_key),
                                std::move(val));
@@ -181,7 +183,7 @@ continue_bool_t geo_intersecting_cb_t::on_candidate(scoped_key_value_t &&keyvalu
             // encountered multiple times in the index.
             if (already_processed.size() < MAX_PROCESSED_SET_SIZE
                 && sindex_val.get_field("type").as_str() != "Point") {
-                already_processed.insert(primary_key);
+                already_processed.insert(primary_and_tag);
             }
             return continue_bool_t::CONTINUE;
         }
