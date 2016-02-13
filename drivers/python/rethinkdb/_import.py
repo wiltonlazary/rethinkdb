@@ -644,7 +644,6 @@ def spawn_import_clients(options, files_info):
                                                               options["auth_key"],
                                                               task_queue,
                                                               error_queue,
-                                                              warning_queue,
                                                               rows_written,
                                                               options["force"],
                                                               options["durability"])))
@@ -658,6 +657,7 @@ def spawn_import_clients(options, files_info):
                                                               file_info,
                                                               task_queue,
                                                               error_queue,
+                                                              warning_queue,
                                                               progress_info[-1],
                                                               exit_event)))
             reader_procs[-1].start()
