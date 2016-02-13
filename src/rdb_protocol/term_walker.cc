@@ -1,7 +1,7 @@
 // Copyright 2010-2015 RethinkDB, all rights reserved.
 #include "rdb_protocol/term_walker.hpp"
 
-#include "rdb_protocol/backtrace.hpp"
+#include "rdb_protocol/rdb_backtrace.hpp"
 #include "rdb_protocol/error.hpp"
 #include "rdb_protocol/minidriver.hpp"
 #include "rdb_protocol/pseudo_time.hpp"
@@ -281,6 +281,7 @@ bool term_type_is_valid(Term::TermType type) {
     case Term::CHANGES:
     case Term::REDUCE:
     case Term::MAP:
+    case Term::FOLD:
     case Term::FILTER:
     case Term::CONCAT_MAP:
     case Term::GROUP:
@@ -468,6 +469,7 @@ bool term_is_write_or_meta(Term::TermType type) {
     case Term::CHANGES:
     case Term::REDUCE:
     case Term::MAP:
+    case Term::FOLD:
     case Term::FILTER:
     case Term::CONCAT_MAP:
     case Term::GROUP:
@@ -591,6 +593,7 @@ bool term_forbids_writes(Term::TermType type) {
     switch (type) {
     case Term::REDUCE:
     case Term::MAP:
+    case Term::FOLD:
     case Term::FILTER:
     case Term::CONCAT_MAP:
     case Term::GROUP:

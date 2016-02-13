@@ -1,6 +1,12 @@
 // Copyright 2010-2014 RethinkDB, all rights reserved.
 #include "arch/runtime/context_switching.hpp"
 
+#ifdef _WIN32
+
+// TODO WINDOWS
+
+#else
+
 #include <pthread.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -39,20 +45,18 @@ bool artificial_stack_context_ref_t::is_nil() {
 }
 
 artificial_stack_t::artificial_stack_t(void (*initial_fun)(void), size_t _stack_size)
-    : stack_size(_stack_size) {
-    /* Allocate the stack */
-    stack = malloc_aligned(stack_size, getpagesize());
+    : stack(_stack_size), stack_size(_stack_size) {
 
     /* Tell the operating system that it can unmap the stack space
     (except for the first page, which we are definitely going to need).
     This is an optimization to keep memory consumption in check. */
     guarantee(stack_size >= static_cast<size_t>(getpagesize()));
-    madvise(stack, stack_size - getpagesize(), MADV_DONTNEED);
+    madvise(stack.get(), stack_size - getpagesize(), MADV_DONTNEED);
 
     /* Protect the end of the stack so that we crash when we get a stack
     overflow instead of corrupting memory. */
 #ifndef THREADED_COROUTINES
-    mprotect(stack, getpagesize(), PROT_NONE);
+    mprotect(stack.get(), getpagesize(), PROT_NONE);
 #else
     /* Instruments hangs when running with mprotect and having object identification enabled.
     We don't need it for THREADED_COROUTINES anyway, so don't use it then. */
@@ -69,7 +73,7 @@ artificial_stack_t::artificial_stack_t(void (*initial_fun)(void), size_t _stack_
     uintptr_t *sp; /* A pointer into the stack. Note that uintptr_t is ideal since it points to something of the same size as the native word or pointer. */
 
     /* Start at the beginning. */
-    sp = reinterpret_cast<uintptr_t *>(uintptr_t(stack) + stack_size);
+    sp = reinterpret_cast<uintptr_t *>(uintptr_t(stack.get()) + stack_size);
 
     /* Align stack. The x86-64 ABI requires the stack pointer to always be
     16-byte-aligned at function calls. That is, "(%rsp - 8) is always a multiple
@@ -148,7 +152,7 @@ artificial_stack_t::~artificial_stack_t() {
 
     /* Undo protections changes */
 #ifndef THREADED_COROUTINES
-    mprotect(stack, getpagesize(), PROT_READ | PROT_WRITE);
+    mprotect(stack.get(), getpagesize(), PROT_READ | PROT_WRITE);
 #endif
 
     /* Return the memory to the operating system right away. This makes
@@ -158,13 +162,10 @@ artificial_stack_t::~artificial_stack_t() {
     On OS X we use MADV_FREE. On Linux MADV_FREE is not available,
     and we use MADV_DONTNEED instead. */
 #ifdef __MACH__
-    madvise(stack, stack_size, MADV_FREE);
+    madvise(stack.get(), stack_size, MADV_FREE);
 #else
-    madvise(stack, stack_size, MADV_DONTNEED);
+    madvise(stack.get(), stack_size, MADV_DONTNEED);
 #endif
-
-    /* Release the stack we allocated */
-    free(stack);
 }
 
 bool artificial_stack_t::address_in_stack(const void *addr) const {
@@ -182,11 +183,19 @@ bool artificial_stack_t::address_is_stack_overflow(const void *addr) const {
 }
 
 size_t artificial_stack_t::free_space_below(const void *addr) const {
-    guarantee(address_in_stack(addr) && !address_is_stack_overflow(addr));
+    rassert(address_in_stack(addr) && !address_is_stack_overflow(addr));
+
     // The bottom page is protected and used to detect stack overflows. Everything
     // above that is usable space.
-    return reinterpret_cast<uintptr_t>(addr)
-            - (reinterpret_cast<uintptr_t>(get_stack_bound()) + getpagesize());
+    const uintptr_t lowest_valid_address =
+        reinterpret_cast<uintptr_t>(get_stack_bound()) + getpagesize();
+
+    // This check is pretty much equivalent to checking `address_is_stack_overflow`, but
+    // we avoid the extra call to `getpagesize()` inside of `address_is_stack_overflow`
+    // in release mode.
+    guarantee(lowest_valid_address <= reinterpret_cast<uintptr_t>(addr));
+
+    return reinterpret_cast<uintptr_t>(addr) - lowest_valid_address;
 }
 
 extern "C" {
@@ -555,3 +564,4 @@ void threaded_stack_t::get_stack_addr_size(void **stackaddr_out,
 
 /* ^^^^ Threaded version of context_switching ^^^^ */
 
+#endif // _WIN32

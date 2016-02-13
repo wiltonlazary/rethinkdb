@@ -27,6 +27,7 @@
 #include "rpc/connectivity/peer_id.hpp"
 #include "rpc/mailbox/typed.hpp"
 #include "rpc/serialize_macros.hpp"
+#include "containers/archive/boost_types.hpp"
 
 class artificial_table_backend_t;
 class auto_drainer_t;
@@ -106,7 +107,12 @@ struct msg_t {
     msg_t &operator=(const msg_t &) = default;
 
     // Starts with STOP to avoid doing work for default initialization.
-    boost::variant<stop_t, change_t, limit_start_t, limit_change_t, limit_stop_t> op;
+    typedef boost::variant<stop_t,
+                           change_t,
+                           limit_start_t,
+                           limit_change_t,
+                           limit_stop_t> op_t;
+    op_t op;
 
     // Accursed reference collapsing!
     template<class T, class = typename std::enable_if<std::is_object<T>::value>::type>
@@ -128,6 +134,7 @@ struct keyspec_t {
         datumspec_t datumspec;
         boost::optional<datum_t> intersect_geometry;
     };
+    struct empty_t { };
     struct limit_t {
         range_t range;
         size_t limit;
@@ -156,14 +163,25 @@ struct keyspec_t {
     keyspec_t(const keyspec_t &) = default;
     keyspec_t &operator=(const keyspec_t &) = default;
 
-    typedef boost::variant<range_t, limit_t, point_t> spec_t;
+    typedef boost::variant<range_t, empty_t, limit_t, point_t> spec_t;
     spec_t spec;
     counted_t<base_table_t> table;
     std::string table_name;
 };
 region_t keyspec_to_region(const keyspec_t &keyspec);
 
+struct streamspec_t {
+    counted_t<datum_stream_t> maybe_src; // Non-null iff `include_initial`.
+    std::string table_name;
+    bool include_offsets;
+    bool include_states;
+    configured_limits_t limits;
+    datum_t squash;
+    keyspec_t::spec_t spec;
+};
+
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(keyspec_t::range_t);
+RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(keyspec_t::empty_t);
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(keyspec_t::limit_t);
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(keyspec_t::point_t);
 
@@ -190,14 +208,9 @@ public:
     // Throws QL exceptions.
     counted_t<datum_stream_t> new_stream(
         env_t *env,
-        counted_t<datum_stream_t> maybe_src,
-        configured_limits_t limits,
-        const datum_t &squash,
-        bool include_states,
-        const namespace_id_t &table,
-        backtrace_id_t bt,
-        const std::string &table_name,
-        const keyspec_t::spec_t &spec);
+        const streamspec_t &ss,
+        const namespace_id_t &uuid,
+        backtrace_id_t bt);
     void maybe_remove_feed(
         const auto_drainer_t::lock_t &lock, const namespace_id_t &uuid);
     scoped_ptr_t<real_feed_t> detach_feed(
@@ -556,10 +569,7 @@ public:
 
     counted_t<datum_stream_t> subscribe(
         env_t *env,
-        bool include_initial,
-        bool include_states,
-        configured_limits_t limits,
-        const keyspec_t::spec_t &spec,
+        const streamspec_t &ss,
         const std::string &primary_key_name,
         const std::vector<datum_t> &initial_values,
         backtrace_id_t bt);
