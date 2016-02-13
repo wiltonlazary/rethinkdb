@@ -739,8 +739,11 @@ protected:
 private:
     std::vector<rget_item_t> do_intersecting_read(env_t *env, const read_t &read);
 
-    // To detect duplicates
-    std::set<store_key_t> processed_pkeys;
+    // Each secondary index value might be inserted into a geospatial index multiple
+    // times, and we need to remove those duplicates across batches.
+    // We keep track of pairs of primary key and optional multi-index tags in order
+    // to detect and remove such duplicates.
+    std::set<std::pair<std::string, boost::optional<uint64_t> > > processed_pkey_tags;
 };
 
 class lazy_datum_stream_t : public datum_stream_t {

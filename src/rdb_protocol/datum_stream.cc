@@ -817,13 +817,17 @@ bool intersecting_reader_t::load_items(env_t *env, const batchspec_t &batchspec)
                     }
                 }
 
-                store_key_t pkey(ql::datum_t::extract_primary(unfiltered_items[i].key));
-                if (processed_pkeys.count(pkey) == 0) {
+                const std::string key_str =
+                    key_to_unescaped_str(unfiltered_items[i].key);
+                boost::optional<uint64_t> tag(ql::datum_t::extract_tag(key_str));
+                std::pair<std::string, boost::optional<uint64_t> > pkey_tag(
+                    ql::datum_t::extract_primary(key_str), tag);
+                if (processed_pkey_tags.count(pkey_tag) == 0) {
                     rcheck_toplevel(
-                        processed_pkeys.size() < env->limits().array_size_limit(),
+                        processed_pkey_tags.size() < env->limits().array_size_limit(),
                         ql::base_exc_t::RESOURCE,
                         "Array size limit exceeded during geospatial index traversal.");
-                    processed_pkeys.insert(pkey);
+                    processed_pkey_tags.insert(pkey_tag);
                     items.push_back(std::move(unfiltered_items[i]));
                 }
             }
