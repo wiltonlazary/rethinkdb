@@ -61,7 +61,7 @@ inline MUST_USE archive_result_t deserialize_reql_version(
     archive_result_t res = deserialize_universal(s, &raw);
     if (raw < static_cast<int8_t>(reql_version_t::EARLIEST)) {
         guarantee(raw >= static_cast<int8_t>(obsolete_reql_version_t::EARLIEST)
-                && raw <= static_cast<int8_t>(obsolete_reql_version_t::LATEST));
+                  && raw <= static_cast<int8_t>(obsolete_reql_version_t::LATEST));
         obsolete_cb(static_cast<obsolete_reql_version_t>(raw));
         crash("Outdated index handling did not crash or throw.");
     } else {
