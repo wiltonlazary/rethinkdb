@@ -267,10 +267,11 @@ uint64_t get_used_swap() {
     */
     return 0;
 #elif defined(__MACH__)
+#ifdef __MAC_OS_X_VERSION_MIN_REQUIRED
+    // We know the field we want showed up in 10.9.  It may have shown
+    // up in 10.8, but is definitely not in 10.7.  Per availability.h,
+    // we use a raw number rather than the corresponding #define.
     if (osx_runtime_version_check()) {
-        // We know the field we want showed up in 10.9.  It may have shown
-        // up in 10.8, but is definitely not in 10.7.  Per availability.h,
-        // we use a raw number rather than the corresponding #define.
         // On OSX we return global pageouts, because mach is stingey with info.
         // This is slightly less helpful.
         mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
@@ -280,7 +281,6 @@ uint64_t get_used_swap() {
         // vmstat.pageouts field (which is relatively new) that we use below.
         // (Probably, instead, the host_statistics64 call will fail, because count would
         // be wrong.)
-#ifdef __MAC_OS_X_VERSION_MIN_REQUIRED
         memset(&vmstat, 0, sizeof(vmstat));
         if (KERN_SUCCESS != host_statistics64(mach_host_self(), HOST_VM_INFO64, (host_info64_t)&vmstat, &count)) {
             return 0;
