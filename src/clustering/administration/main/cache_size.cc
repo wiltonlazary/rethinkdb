@@ -232,13 +232,13 @@ bool get_proc_meminfo_available_memory_size(uint64_t *mem_avail_out) {
 
 #endif  // __MACH_
 
-#if defined(__MACH_)
+#if defined(__MACH__)
 
 bool osx_runtime_version_check() {
     char str[256];
     size_t size = sizeof(str);
     int ret = sysctlbyname("kern.osrelease", str, &size, NULL, 0);
-    if (!ret) {
+    if (ret == -1) {
         return false;
     }
     int kernal_major_version;
@@ -253,7 +253,7 @@ bool osx_runtime_version_check() {
     return false;
 }
 
-#endif
+#endif //__MACH___
 
 uint64_t get_used_swap() {
 #if defined(_WIN32)
@@ -287,7 +287,7 @@ uint64_t get_used_swap() {
         }
         return vmstat.pageouts;
     } else {
-        return 0
+        return 0;
     }
 #else
 #error "We don't support Mach kernels other than OS X, sorry."
@@ -329,13 +329,14 @@ uint64_t get_avail_mem_size() {
     // We know the field we want showed up in 10.9.  It may have shown
     // up in 10.8, but is definitely not in 10.7.  Per availability.h,
     // we use a raw number rather than the corresponding #define.
+    uint64_t ret;
     if (osx_runtime_version_check()) {
-        uint64_t ret = vmstat.free_count * page_size;
+        ret = vmstat.free_count * page_size;
     } else {
         // external_page_count is the number of pages that are file-backed (non-swap) --
         // see /usr/include/mach/vm_statistics.h, see also vm_stat.c, the implementation
         // of vm_stat, in Darwin.
-        uint64_t ret = (vmstat.free_count + vmstat.external_page_count) * page_size;
+        ret = (vmstat.free_count + vmstat.external_page_count) * page_size;
     }
 #else
 #error "We don't support Mach kernels other than OS X, sorry."
