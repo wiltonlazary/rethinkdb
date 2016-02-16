@@ -337,13 +337,17 @@ uint64_t get_avail_mem_size() {
         // external_page_count is the number of pages that are file-backed (non-swap) --
         // see /usr/include/mach/vm_statistics.h, see also vm_stat.c, the implementation
         // of vm_stat, in Darwin.
-        // We use an offset here to let us compile on 10.7.
+        // We use an offset here, rather than using the struct, to let us compile on 10.7,
+        // where the field doesn't exist in the struct.
         const size_t external_page_count_offset = 136;
 #if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1900
-        static_assert(offsetof(struct vm_statistics64_data_t, external_page_count)
-                      == external_page_count_offset;)
+        static_assert(offsetof(struct vm_statistics64, external_page_count)
+                      == external_page_count_offset,
+		      "OS X ABI changed.");
 #endif
-        ret = (vmstat.free_count + vmstat[external_page_count_offset]) * page_size;
+        ret = (vmstat.free_count + 
+	       static_cast<natural_t>(*(reinterpret_cast<char*>(&vmstat) 
+					+ external_page_count_offset))) * page_size;
     }
 #else
 #error "We don't support Mach kernels other than OS X, sorry."
