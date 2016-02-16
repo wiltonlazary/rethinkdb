@@ -6,6 +6,7 @@
 
 #if defined(__MACH__)
 #include <availability.h>
+#include <cstdio>
 #include <errno.h>
 #include <mach/mach.h>
 #include <sys/sysctl.h>
@@ -241,12 +242,12 @@ bool osx_runtime_version_check() {
     if (ret == -1) {
         return false;
     }
-    int kernal_major_version;
-    ret = sscanf(str, "%d.", &kernal_major_version);
+    int kernel_major_version;
+    ret = sscanf(str, "%d.", &kernel_major_version);
     if (!ret) {
         return false;
     }
-    if (kernal_major_version >= 13) {
+    if (kernel_major_version >= 13) {
         // This corresponds to 10.9.x or higher
         return true;
     }
