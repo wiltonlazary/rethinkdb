@@ -25,7 +25,7 @@ memory_checker_t::memory_checker_t(rdb_context_t *_rdb_ctx) :
     ,first_check(true)
 #endif
 {
-    rassert(rdb_ctx != NULL);
+    rassert(rdb_ctx != nullptr);
     coro_t::spawn_sometime(std::bind(&memory_checker_t::do_check,
                                      this,
                                      drainer.lock()));
@@ -74,17 +74,15 @@ void memory_checker_t::do_check(auto_drainer_t::lock_t keepalive) {
 #endif
             print_log_message = false;
         }
-        swap_usage = new_swap_usage;
         refresh_timer = reset_checks;
         memory_issue_tracker.report_error(error_message);
     } else if (refresh_timer == 0) {
         // We haven't put anything in swap for 1 hour.
         memory_issue_tracker.report_success();
+        print_log_message = true;
     }
 
-    if (new_swap_usage < swap_usage) {
-        swap_usage = new_swap_usage;
-    }
+    swap_usage = new_swap_usage;
 
     if (refresh_timer > 0) {
         --refresh_timer;

@@ -14,14 +14,11 @@
 #include "concurrency/auto_drainer.hpp"
 #include "rdb_protocol/context.hpp"
 
-class server_config_client_t; //TODO, need it?
 class table_meta_client_t;
 
-enum class memory_check_t {
-    do_not_perform,
-    perform
-};
-
+// memory_checker_t is created in serve.cc, and calls a repeating timer to
+// Periodically check if we're using swap by looking at the proc file or system calls.
+// If we're using swap, it creates an issue in a local issue tracker, and logs an error.
 class memory_checker_t : private repeating_timer_callback_t {
 public:
     memory_checker_t(rdb_context_t *_rdb_ctx);
@@ -38,9 +35,6 @@ private:
     }
     rdb_context_t *const rdb_ctx;
 
-    auto_drainer_t drainer;
-    repeating_timer_t timer;
-
     memory_issue_tracker_t memory_issue_tracker;
 
     uint64_t refresh_timer;
@@ -51,6 +45,13 @@ private:
 #if defined(__MACH__)
     bool first_check;
 #endif
+#if defined(_WIN32)
+    bool first_check;
+#endif
+
+    // Timer must be destructed before drainer, because on_ring aquires a lock on drainer.
+    auto_drainer_t drainer;
+    repeating_timer_t timer;
 };
 
 #endif // CLUSTERING_ADMINISTRATION_MAIN_MEMORY_CHECKER_HPP_

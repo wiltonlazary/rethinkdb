@@ -178,7 +178,7 @@ render_outdated_index = (issue) ->
 
 render_memory_error = (issue) ->
     # Issue rased when the server has problems with swapping memory.
-    title: "Memory problem"
+    title: "Memory issue"
     subtitle: [
         "A server is using swap memory."
     ]
@@ -192,7 +192,7 @@ render_memory_error = (issue) ->
             h "li",
                 h "a", href: "/#servers/#{server.server_id}", server.server)
         h "p", [
-            "The error message reported is: ",
+            "The issue reported is: ",
             h "code", issue.info.message
         ]
         h "p", [

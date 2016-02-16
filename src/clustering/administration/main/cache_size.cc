@@ -6,7 +6,9 @@
 
 #if defined(__MACH__)
 #include <availability.h>
+#include <errno.h>
 #include <mach/mach.h>
+#include <sys/sysctl.h>
 #endif
 
 #include <limits>
@@ -242,11 +244,12 @@ uint64_t get_used_swap() {
     */
     return 0;
 #elif defined(__MACH__)
-#ifdef __MAC_OS_X_VERSION_MIN_REQUIRED
+    char str[256];
+    size_t size = sizeof(str);
+    int ret = sysctlbyname("kern.osrelease", str, &size, NULL, 0);
     // We know the field we want showed up in 10.9.  It may have shown
     // up in 10.8, but is definitely not in 10.7.  Per availability.h,
     // we use a raw number rather than the corresponding #define.
-#if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1090
     // On OSX we return global pageouts, because mach is stingey with info.
     // This is slightly less helpful.
     mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;

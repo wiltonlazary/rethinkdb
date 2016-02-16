@@ -3,7 +3,6 @@
 
 #include "clustering/administration/admin_op_exc.hpp"
 #include "clustering/administration/datum_adapter.hpp"
-#include "clustering/administration/main/cache_size.hpp"
 #include "clustering/administration/main/watchable_fields.hpp"
 #include "concurrency/cross_thread_signal.hpp"
 
