@@ -42,10 +42,7 @@ private:
 
     bool print_log_message;
 
-#if defined(__MACH__)
-    bool first_check;
-#endif
-#if defined(_WIN32)
+#if defined(__MACH__) || defined(_WIN32)
     bool first_check;
 #endif
 

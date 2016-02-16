@@ -345,9 +345,9 @@ uint64_t get_avail_mem_size() {
                       == external_page_count_offset,
 		      "OS X ABI changed.");
 #endif
-        ret = (vmstat.free_count + 
-	       static_cast<natural_t>(*(reinterpret_cast<char*>(&vmstat) 
-					+ external_page_count_offset))) * page_size;
+        ret = (vmstat.free_count +
+	       *(reinterpret_cast<natural_t*>((reinterpret_cast<char*>(&vmstat)
+                                               + external_page_count_offset)))) * page_size;
     }
 #else
 #error "We don't support Mach kernels other than OS X, sorry."

@@ -17,10 +17,7 @@ memory_checker_t::memory_checker_t(rdb_context_t *_rdb_ctx) :
     refresh_timer(0),
     swap_usage(0),
     print_log_message(true)
-#if defined(__MACH__)
-    ,first_check(true)
-#endif
-#if defined(_WIN32)
+#if defined(__MACH__) || defined(_WIN32)
     ,first_check(true)
 #endif
     ,timer(delay_time, this)
