@@ -269,10 +269,6 @@ uint64_t get_used_swap() {
     return 0;
 #elif defined(__MACH__)
 #ifdef __MAC_OS_X_VERSION_MIN_REQUIRED
-    // We know the field we want showed up in 10.9.  It may have shown
-    // up in 10.8, but is definitely not in 10.7. The field exists, but is not filled in in 10.7
-    // Per availability.h,
-    // we use a raw number rather than the corresponding #define.
     // On OSX we return global pageouts, because mach is stingey with info.
     // This is slightly less helpful.
     mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
