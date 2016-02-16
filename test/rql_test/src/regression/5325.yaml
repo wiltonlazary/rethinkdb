@@ -1,0 +1,6 @@
+desc: 5325 Disallow orderby.limit.filter in a changefeed.
+table_variable_name: tbl
+tests:
+  - py: tbl.order_by("id").limit(10).filter("id").changes()
+    ot: err("ReqlServerCompileError", "Getting a changefeed on a orderBy.limit.filter query is not supported.")
+
