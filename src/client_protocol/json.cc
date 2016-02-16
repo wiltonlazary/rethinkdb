@@ -65,8 +65,9 @@ scoped_ptr_t<ql::query_params_t> json_protocol_t::parse_query(
             // Ignore all the extra data that the client is trying to send.
             // within reason. This is so it doesn't look like a broken pipe error.
 
-            signal_timer_t read_closer{wire_protocol_t::TOO_LONG_QUERY_TIME};
-            conn->pop(size, &read_closer);
+            signal_timer_t read_timeout_interruptor{wire_protocol_t::TOO_LONG_QUERY_TIME};
+            wait_any_t pop_interruptor(interruptor, &read_timeout_interruptor);
+            conn->pop(size, &pop_interruptor);
         }
 
         send_response(&error, token, conn, interruptor);
