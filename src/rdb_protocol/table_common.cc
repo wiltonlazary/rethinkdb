@@ -172,6 +172,11 @@ ql::datum_t make_row_replacement_error_stats(
             ql::datum_t(std::vector<ql::datum_t>(), ql::configured_limits_t::unlimited));
     } break;
     case return_changes_t::ALWAYS: {
+        // This is to make the ordering work for insert with return changes always.
+        // If old_row is the only thing we have, the insert failed because of an
+        // existing record, and we can use old_row for the unique id for ordering.
+        // Otherwise, a key will have been generated for new_row, despite being invalid,
+        // and we can use that id to do the ordering.
         if (new_row.has()) {
             UNUSED bool b = resp.add("changes", make_error_quad(old_row,
                                                                 old_row,
