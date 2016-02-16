@@ -331,7 +331,7 @@ uint64_t get_avail_mem_size() {
     // up in 10.8, but is definitely not in 10.7.  Per availability.h,
     // we use a raw number rather than the corresponding #define.
     uint64_t ret;
-    if (osx_runtime_version_check()) {
+    if (!osx_runtime_version_check()) {
         ret = vmstat.free_count * page_size;
     } else {
         // external_page_count is the number of pages that are file-backed (non-swap) --
