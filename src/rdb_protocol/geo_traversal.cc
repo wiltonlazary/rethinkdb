@@ -33,7 +33,7 @@ const size_t MAX_PROCESSED_SET_SIZE = 10000;
 // It typically makes sense to use more grid cells (i.e. finer covering) here
 // than it does for inserting data into a geo index, since there is no disk
 // overhead involved here and a finer grid avoids unnecessary post-filtering.
-const int QUERYING_GOAL_GRID_CELLS = GEO_INDEX_GOAL_GRID_CELLS * 4;
+const int QUERYING_GOAL_GRID_CELLS = GEO_INDEX_GOAL_GRID_CELLS * 2;
 
 // The radius used for the first batch of a get_nearest traversal.
 // As a fraction of the equator's radius.
