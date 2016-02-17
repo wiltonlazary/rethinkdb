@@ -315,9 +315,9 @@ geo_index_traversal_helper_t::handle_pair(
 
     const S2CellId key_cell = btree_key_to_s2cellid(keyvalue.key());
     if (any_cell_intersects(query_cells_, key_cell.range_min(), key_cell.range_max())) {
-        bool definitely_intersects =
-            any_cell_intersects(query_interior_cells_, key_cell.range_min(), key_cell.range_max());
-        return on_candidate(std::move(keyvalue), waiter, definitely_intersects);
+        bool definitely_intersects_if_point =
+            any_cell_contains(query_interior_cells_, key_cell);
+        return on_candidate(std::move(keyvalue), waiter, definitely_intersects_if_point);
     } else {
         return continue_bool_t::CONTINUE;
     }
@@ -390,3 +390,16 @@ bool geo_index_traversal_helper_t::cell_intersects_with_range(
         const S2CellId left_min, const S2CellId right_max) {
     return left_min <= c.range_max() && right_max >= c.range_min();
 }
+
+bool geo_index_traversal_helper_t::any_cell_contains(
+        const std::vector<S2CellId> &cells,
+        const S2CellId key) {
+    // Check if any of the cells contains `key`
+    for (const auto &cell : cells) {
+        if (cell.contains(key)) {
+            return true;
+        }
+    }
+    return false;
+}
+

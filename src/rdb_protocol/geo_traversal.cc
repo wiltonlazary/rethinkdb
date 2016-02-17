@@ -101,7 +101,7 @@ void geo_intersecting_cb_t::init_query(const ql::datum_t &_query_geometry) {
 continue_bool_t geo_intersecting_cb_t::on_candidate(
         scoped_key_value_t &&keyvalue,
         concurrent_traversal_fifo_enforcer_signal_t waiter,
-        bool definitely_intersects)
+        bool definitely_intersects_if_point)
         THROWS_ONLY(interrupted_exc_t) {
     guarantee(query_geometry.has());
     sampler->new_sample();
@@ -155,6 +155,17 @@ continue_bool_t geo_intersecting_cb_t::on_candidate(
             sindex_val = sindex_val.get(*tag, ql::NOTHROW);
             guarantee(sindex_val.has());
         }
+
+        // Check if the index value is a point, so we can use
+        // definitely_intersects_if_point
+        bool definitely_intersects = false;
+        if (definitely_intersects_if_point) {
+            bool is_point = sindex_val.get_field("type").as_str() == "Point";
+            if (is_point) {
+                definitely_intersects = true;
+            }
+        }
+
         // TODO (daniel): This is a little inefficient because we re-parse
         // the query_geometry for each test.
         if ((definitely_intersects || geo_does_intersect(query_geometry, sindex_val))

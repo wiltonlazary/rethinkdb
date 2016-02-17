@@ -51,12 +51,19 @@ public:
     Correct ordering of the call is not guaranteed. Implementations are expected
     to call waiter.wait_interruptible() before performing ordering-sensitive
     operations.
-    `definitely_intersects` is true iff the key is also in the interior cell covering,
-    and can be used to avoid unnecessary intersection tests during post-filtering. */
+    `definitely_intersects_if_point)` is true only if the key is also contained in the
+    interior cell covering. If the key corresponds to a point, that implies that the
+    point is contained in the query geometry. Note that this doesn't hold for more
+    complex geometry, since the keys corresponding to more complex geometry are
+    generated from a covering. The way we compute the covering, we do not guarantee that
+    each cell in the covering actually intersects with the covered geometry
+    (S2RegionCoverer uses `MayIntersect` tests rather than exact `Intersects` tests).
+    `definitely_intersects_if_point` can be used to avoid unnecessary intersection
+    tests during post-filtering. */
     virtual continue_bool_t on_candidate(
         scoped_key_value_t &&keyvalue,
         concurrent_traversal_fifo_enforcer_signal_t waiter,
-        bool definitely_intersects)
+        bool definitely_intersects_if_point)
             THROWS_ONLY(interrupted_exc_t) = 0;
 
     /* concurrent_traversal_callback_t interface */
@@ -77,6 +84,8 @@ private:
     static bool any_cell_intersects(const std::vector<geo::S2CellId> &cells,
                                     const geo::S2CellId left_min,
                                     const geo::S2CellId right_max);
+    static bool any_cell_contains(const std::vector<geo::S2CellId> &cells,
+                                  const geo::S2CellId key);
 
     std::vector<geo::S2CellId> query_cells_;
     std::vector<geo::S2CellId> query_interior_cells_;
