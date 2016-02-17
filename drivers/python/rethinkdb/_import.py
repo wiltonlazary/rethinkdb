@@ -569,7 +569,7 @@ def table_reader(options, file_info, task_queue, error_queue, warning_queue, pro
             rdb_call_wrapper(conn_fn, "create table", create_table, db, table, create_args,
                          file_info["info"]["indexes"] if options["create_sindexes"] else [])
         except RuntimeError as e:
-            if e.__str__ == "Sindex warning":
+            if str(e) == "Sindex warning":
                 ex_type, ex_class, tb = sys.exc_info()
                 warning_queue.put((ex_type, ex_class, traceback.extract_tb(tb), file_info["file"]))
             else:
@@ -900,8 +900,8 @@ def main():
         else:
             raise RuntimeError("Error: Neither --directory or --file specified")
     except RuntimeError as ex:
-        if str(ex)=="Warnings occurred during import":
-            print("Warnings occurred during import.", file=sys.stderr)
+        if str(ex) == "Warnings occurred during import":
+            print("Warnings occurred during import", file=sys.stderr)
             return 2
         print(ex, file=sys.stderr)
         return 1
