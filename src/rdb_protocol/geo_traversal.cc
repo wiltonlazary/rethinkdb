@@ -3,9 +3,6 @@
 
 #include <cmath>
 
-#include "errors.hpp"
-#include <boost/variant/get.hpp>
-
 #include "rdb_protocol/batching.hpp"
 #include "rdb_protocol/configured_limits.hpp"
 #include "rdb_protocol/datum.hpp"
@@ -32,7 +29,7 @@ const size_t MAX_PROCESSED_SET_SIZE = 10000;
 // How many grid cells to use for querying a secondary index.
 // More cells result in better index traversal granularity, but also increase
 // the CPU overhead for computing the grid covering.
-const int QUERYING_GOAL_GRID_CELLS = 8;
+const int QUERYING_GOAL_GRID_CELLS = 16;
 
 // The radius used for the first batch of a get_nearest traversal.
 // As a fraction of the equator's radius.
@@ -94,13 +91,11 @@ geo_intersecting_cb_t::geo_intersecting_cb_t(
 }
 
 void geo_intersecting_cb_t::init_query(const ql::datum_t &_query_geometry) {
-    s2_geo_variant_converter_t converter;
-    query_geometry = visit_geojson(&converter, _query_geometry);
-    std::shared_ptr<geo::S2Polygon> q = boost::get<std::shared_ptr<geo::S2Polygon> >(*query_geometry);
+    query_geometry = _query_geometry;
     std::vector<geo::S2CellId> covering(
-        compute_cell_covering(_query_geometry, QUERYING_GOAL_GRID_CELLS));
+        compute_cell_covering(query_geometry, QUERYING_GOAL_GRID_CELLS));
     geo_index_traversal_helper_t::init_query(
-        covering, compute_interior_cell_covering(_query_geometry, covering));
+        covering, compute_interior_cell_covering(query_geometry, covering));
 }
 
 continue_bool_t geo_intersecting_cb_t::on_candidate(
@@ -108,7 +103,7 @@ continue_bool_t geo_intersecting_cb_t::on_candidate(
         concurrent_traversal_fifo_enforcer_signal_t waiter,
         bool definitely_intersects)
         THROWS_ONLY(interrupted_exc_t) {
-    guarantee(query_geometry);
+    guarantee(query_geometry.has());
     sampler->new_sample();
 
     store_key_t store_key(keyvalue.key());
@@ -162,15 +157,7 @@ continue_bool_t geo_intersecting_cb_t::on_candidate(
         }
         // TODO (daniel): This is a little inefficient because we re-parse
         // the query_geometry for each test.
-        // TODO!
-        geo::S2Point p;
-        if (!definitely_intersects) {
-            s2_geo_variant_converter_t converter;
-            s2_geo_variant_t sindex_val_s2 = visit_geojson(&converter, sindex_val);
-            p = *boost::get<std::shared_ptr<geo::S2Point> >(sindex_val_s2);
-        }
-        std::shared_ptr<geo::S2Polygon> q = boost::get<std::shared_ptr<geo::S2Polygon> >(*query_geometry);
-        if ((definitely_intersects || geo_does_intersect(*q, p))
+        if ((definitely_intersects || geo_does_intersect(query_geometry, sindex_val))
             && post_filter(sindex_val, val)) {
             if (distinct_emitted->size() >= env->limits().array_size_limit()) {
                 emit_error(ql::exc_t(ql::base_exc_t::RESOURCE,
