@@ -164,9 +164,12 @@ continue_bool_t geo_intersecting_cb_t::on_candidate(
         // TODO (daniel): This is a little inefficient because we re-parse
         // the query_geometry for each test.
         // TODO!
-        s2_geo_variant_converter_t converter;
-        s2_geo_variant_t sindex_val_s2 = visit_geojson(&converter, sindex_val);
-        geo::S2Point p = *boost::get<std::shared_ptr<geo::S2Point> >(sindex_val_s2);
+        geo::S2Point p;
+        if (!definitely_intersects) {
+            s2_geo_variant_converter_t converter;
+            s2_geo_variant_t sindex_val_s2 = visit_geojson(&converter, sindex_val);
+            p = *boost::get<std::shared_ptr<geo::S2Point> >(sindex_val_s2);
+        }
         std::shared_ptr<geo::S2Polygon> q = boost::get<std::shared_ptr<geo::S2Polygon> >(*query_geometry);
         if ((definitely_intersects || geo_does_intersect(*q, p))
             && post_filter(sindex_val, val)) {
