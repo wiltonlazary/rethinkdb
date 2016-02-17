@@ -8,6 +8,7 @@
 
 #include "errors.hpp"
 #include <boost/optional.hpp>
+#include <boost/variant.hpp>
 
 #include "btree/concurrent_traversal.hpp"
 #include "btree/keys.hpp"
@@ -18,10 +19,18 @@
 #include "rdb_protocol/batching.hpp"
 #include "rdb_protocol/geo/ellipsoid.hpp"
 #include "rdb_protocol/geo/exceptions.hpp"
+#include "rdb_protocol/geo/geo_visitor.hpp"
 #include "rdb_protocol/geo/indexing.hpp"
 #include "rdb_protocol/geo/lon_lat_types.hpp"
 #include "rdb_protocol/protocol.hpp"
 #include "rdb_protocol/shards.hpp"
+
+// TODO!
+#include <memory>
+#include "rdb_protocol/geo/s2/s2.h"
+#include "rdb_protocol/geo/s2/s2latlng.h"
+#include "rdb_protocol/geo/s2/s2polygon.h"
+#include "rdb_protocol/geo/s2/s2polyline.h"
 
 namespace ql {
 class datum_t;
@@ -34,6 +43,27 @@ namespace profile {
 class disabler_t;
 class sampler_t;
 }
+
+// TODO! Move to elsewhere
+typedef boost::variant<
+    std::shared_ptr<geo::S2Point>,
+    std::shared_ptr<geo::S2Polyline>,
+    std::shared_ptr<geo::S2Polygon> > s2_geo_variant_t;
+class s2_geo_variant_converter_t : public s2_geo_visitor_t<s2_geo_variant_t> {
+public:
+    s2_geo_variant_t on_point(const geo::S2Point &point) {
+        std::shared_ptr<geo::S2Point> res(new geo::S2Point(point));
+        return s2_geo_variant_t(std::move(res));
+    }
+    s2_geo_variant_t on_line(const geo::S2Polyline &line) {
+        std::shared_ptr<geo::S2Polyline> res(line.Clone());
+        return s2_geo_variant_t(std::move(res));
+    }
+    s2_geo_variant_t on_polygon(const geo::S2Polygon &polygon) {
+        std::shared_ptr<geo::S2Polygon> res(polygon.Clone());
+        return s2_geo_variant_t(std::move(res));
+    }
+};
 
 class geo_job_data_t {
 public:
@@ -113,7 +143,7 @@ protected:
 private:
     btree_slice_t *slice;
     geo_sindex_data_t sindex;
-    ql::datum_t query_geometry;
+    boost::optional<s2_geo_variant_t> query_geometry;
 
     ql::env_t *env;
 

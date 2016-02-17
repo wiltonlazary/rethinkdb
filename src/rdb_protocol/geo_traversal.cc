@@ -95,7 +95,9 @@ geo_intersecting_cb_t::geo_intersecting_cb_t(
 }
 
 void geo_intersecting_cb_t::init_query(const ql::datum_t &_query_geometry) {
-    query_geometry = _query_geometry;
+    s2_geo_variant_converter_t converter;
+    query_geometry = visit_geojson(&converter, _query_geometry);
+    std::shared_ptr<geo::S2Polygon> q = boost::get<std::shared_ptr<geo::S2Polygon> >(*query_geometry);
     std::vector<geo::S2CellId> covering(
         compute_cell_covering(_query_geometry, QUERYING_GOAL_GRID_CELLS));
     geo_index_traversal_helper_t::init_query(
@@ -107,7 +109,7 @@ continue_bool_t geo_intersecting_cb_t::on_candidate(
         concurrent_traversal_fifo_enforcer_signal_t waiter,
         bool definitely_intersects)
         THROWS_ONLY(interrupted_exc_t) {
-    guarantee(query_geometry.has());
+    guarantee(query_geometry);
     sampler->new_sample();
 
     store_key_t store_key(keyvalue.key());
@@ -161,7 +163,12 @@ continue_bool_t geo_intersecting_cb_t::on_candidate(
         }
         // TODO (daniel): This is a little inefficient because we re-parse
         // the query_geometry for each test.
-        if ((definitely_intersects || geo_does_intersect(query_geometry, sindex_val))
+        // TODO!
+        s2_geo_variant_converter_t converter;
+        s2_geo_variant_t sindex_val_s2 = visit_geojson(&converter, sindex_val);
+        geo::S2Point p = *boost::get<std::shared_ptr<geo::S2Point> >(sindex_val_s2);
+        std::shared_ptr<geo::S2Polygon> q = boost::get<std::shared_ptr<geo::S2Polygon> >(*query_geometry);
+        if ((definitely_intersects || geo_does_intersect(*q, p))
             && post_filter(sindex_val, val)) {
             if (distinct_emitted->size() >= env->limits().array_size_limit()) {
                 emit_error(ql::exc_t(ql::base_exc_t::RESOURCE,

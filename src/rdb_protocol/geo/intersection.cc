@@ -105,8 +105,10 @@ bool geo_does_intersect(const S2Point &point,
     // are exactly on the corner of the polygon.
     // That's probably the behavior we want for points (as far as "intersection"
     // on a point makes sense at all).
-    S2Point projection = other_polygon.Project(point);
-    return projection == point;
+// TODO!
+    return other_polygon.Contains(point);
+    //S2Point projection = other_polygon.Project(point);
+    //return projection == point;
 }
 
 bool geo_does_intersect(const S2Polyline &line,
