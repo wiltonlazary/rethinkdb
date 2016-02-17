@@ -1,4 +1,4 @@
-// Copyright 2010-2014 RethinkDB, all rights reserved.
+// Copyright 2010-2016 RethinkDB, all rights reserved.
 #ifndef RDB_PROTOCOL_GEO_INDEXING_HPP_
 #define RDB_PROTOCOL_GEO_INDEXING_HPP_
 
@@ -29,6 +29,12 @@ extern const int GEO_INDEX_GOAL_GRID_CELLS;
 std::vector<std::string> compute_index_grid_keys(
         const ql::datum_t &key,
         int goal_cells);
+std::vector<geo::S2CellId> compute_cell_covering(
+        const ql::datum_t &key,
+        int goal_cells);
+std::vector<geo::S2CellId> compute_interior_cell_covering(
+        const ql::datum_t &key,
+        const std::vector<geo::S2CellId> &exterior_covering);
 
 // TODO (daniel): Support compound indexes somehow.
 class geo_index_traversal_helper_t : public concurrent_traversal_callback_t {
@@ -36,16 +42,21 @@ public:
     geo_index_traversal_helper_t(
         ql::skey_version_t skey_version, const signal_t *interruptor);
 
-    void init_query(const std::vector<std::string> &query_grid_keys);
+    void init_query(
+        const std::vector<geo::S2CellId> &query_cell_covering,
+        const std::vector<geo::S2CellId> &query_interior_cell_covering);
 
     /* Called for every pair that could potentially intersect with query_grid_keys.
     Note that this might be called multiple times for the same value.
     Correct ordering of the call is not guaranteed. Implementations are expected
     to call waiter.wait_interruptible() before performing ordering-sensitive
-    operations. */
+    operations.
+    `definitely_intersects` is true iff the key is also in the interior cell covering,
+    and can be used to avoid unnecessary intersection tests during post-filtering. */
     virtual continue_bool_t on_candidate(
         scoped_key_value_t &&keyvalue,
-        concurrent_traversal_fifo_enforcer_signal_t waiter)
+        concurrent_traversal_fifo_enforcer_signal_t waiter,
+        bool definitely_intersects)
             THROWS_ONLY(interrupted_exc_t) = 0;
 
     /* concurrent_traversal_callback_t interface */
@@ -62,11 +73,13 @@ private:
                                            const geo::S2CellId left_min,
                                            const geo::S2CellId right_max);
     bool any_query_cell_intersects(const btree_key_t *left_excl_or_null,
-                                   const btree_key_t *right_incl);
-    bool any_query_cell_intersects(const geo::S2CellId left_min,
-                                   const geo::S2CellId right_max);
+                                   const btree_key_t *right_incl) const;
+    static bool any_cell_intersects(const std::vector<geo::S2CellId> &cells,
+                                    const geo::S2CellId left_min,
+                                    const geo::S2CellId right_max);
 
     std::vector<geo::S2CellId> query_cells_;
+    std::vector<geo::S2CellId> query_interior_cells_;
     bool is_initialized_;
     const ql::skey_version_t skey_version_;
     const signal_t *interruptor_;
