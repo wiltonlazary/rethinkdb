@@ -18,7 +18,6 @@
 #include "rdb_protocol/batching.hpp"
 #include "rdb_protocol/geo/ellipsoid.hpp"
 #include "rdb_protocol/geo/exceptions.hpp"
-#include "rdb_protocol/geo/geo_visitor.hpp"
 #include "rdb_protocol/geo/indexing.hpp"
 #include "rdb_protocol/geo/lon_lat_types.hpp"
 #include "rdb_protocol/protocol.hpp"
