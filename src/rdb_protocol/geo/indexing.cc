@@ -83,11 +83,20 @@ public:
         // S2RegionCoverer has a `GetInteriorCovering` method.
         // However it's *extremely* slow (often in the order of a second or more).
         // We do something faster, at the risk of returning an empty or very sparse
-        // covering more often: We simply take the regular covering of the polygon, and
-        // then prune out cells that are not contained in the polygon.
+        // covering more often: We simply take the regular covering of the polygon,
+        // subdivide each cell at most once, and then prune out cells that are not
+        // fully contained in the polygon.
         for (const auto &cell : exterior_covering_) {
-            if (polygon.Contains(S2Cell(cell))) {
-                result->push_back(cell);
+            S2Cell parent(cell);
+            S2Cell children[4];
+            if (polygon.Contains(parent)) {
+                result->push_back(parent.id());
+            } else if (parent.Subdivide(children)) {
+                for (size_t i = 0; i < 4; ++i) {
+                    if (polygon.Contains(children[i])) {
+                        result->push_back(children[i].id());
+                    }
+                }
             }
         }
         return result;
