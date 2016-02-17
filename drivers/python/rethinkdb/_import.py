@@ -900,10 +900,9 @@ def main():
         else:
             raise RuntimeError("Error: Neither --directory or --file specified")
     except RuntimeError as ex:
-        if str(ex) == "Warnings occurred during import":
-            print("Warnings occurred during import", file=sys.stderr)
-            return 2
         print(ex, file=sys.stderr)
+        if str(ex) == "Warnings occurred during import":
+            return 2
         return 1
     print("  Done (%d seconds)" % (time.time() - start_time))
     return 0
