@@ -1,5 +1,5 @@
 <config ImproveParallelBuild="yes"
-        RethinkDBVersion="2.2.4-windows-alpha-6"
+        RethinkDBVersion="RETHINKDB_VERSION"
         PreprocessToFile="no"
         ShowIncludes="no" >
   <target version="8.1" toolset="v140" winver="0x600" />

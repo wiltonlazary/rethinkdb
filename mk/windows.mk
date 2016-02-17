@@ -7,7 +7,7 @@ else
 endif
 
 $/rethinkdb.vcxproj.xml:
-	test -e $@ || cp $/mk/rethinkdb.vcxproj.xml $@
+	test -e $@ || sed "s/RETHINKDB_VERSION/`$/scripts/gen-version.sh`/" < $/mk/rethinkdb.vcxproj.xml > $@
 
 $/%.vcxproj $/%-unittest.vcxproj: $/%.vcxproj.xml $/mk/%.vcxproj.xsl
 	$P GEN
