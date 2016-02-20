@@ -1510,6 +1510,12 @@ slice_datum_stream_t::slice_datum_stream_t(
     : wrapper_datum_stream_t(_src), index(0), left(_left), right(_right) { }
 
 std::vector<changespec_t> slice_datum_stream_t::get_changespecs() {
+    for (auto transform : transforms) {
+        if (transform.which() == 2) {
+            rfail(base_exc_t::LOGIC,
+                  "Getting a changefeed on a filter after a limit is not supported.");
+        }
+    }
     if (left == 0) {
         auto subspecs = source->get_changespecs();
         rcheck(subspecs.size() == 1, base_exc_t::LOGIC,
