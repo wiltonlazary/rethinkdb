@@ -1511,7 +1511,8 @@ slice_datum_stream_t::slice_datum_stream_t(
 
 std::vector<changespec_t> slice_datum_stream_t::get_changespecs() {
     for (auto transform : transforms) {
-        if (transform.which() == 2) {
+        filter_wire_func_t *filter = boost::get<filter_wire_func_t>(&transform);
+        if (filter == nullptr) {
             rfail(base_exc_t::LOGIC,
                   "Getting a changefeed on a filter after a limit is not supported.");
         }
