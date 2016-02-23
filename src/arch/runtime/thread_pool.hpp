@@ -89,6 +89,7 @@ private:
 
 public:
     pthread_t pthreads[MAX_THREADS];
+    bool pthreadsmask[MAX_THREADS];
     linux_thread_t *threads[MAX_THREADS];
 
     // Cooperatively run a blocking function call using the generic_blocker_pool

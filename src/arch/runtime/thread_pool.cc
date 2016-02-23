@@ -211,7 +211,11 @@ void linux_thread_pool_t::run_thread_pool(linux_thread_message_t *initial_messag
         // The initial message gets sent to the utility thread.
         tdata->initial_message = is_utility_thread ? initial_message : NULL;
 
-        int res = pthread_create(&pthreads[i], NULL, &start_thread, tdata);
+        if (pthreads_mask[i] == false) {
+            int res = pthread_create(&pthreads[i], NULL, &start_thread, tdata);
+            pthreads_mask[i] = true;
+        }
+
         guarantee_xerr(res == 0, res, "Could not create thread");
 
         // Don't set affinity for the utility thread
