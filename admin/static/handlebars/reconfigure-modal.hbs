@@ -41,6 +41,9 @@
       A table may not have more shards than there are servers. Currently
       you have {{num_default_servers}} servers available for this table.
     </p>
+    <p class="error too-many-shards-hard-limit">
+      A table may not have more than {{MAX_NUM_SHARDS}} shards.
+    </p>
     <p class="error not-enough-defaults-shard">
       While you have enough servers for this many shards, not enough of
       them have the "default" tag.  You can manage server tags through

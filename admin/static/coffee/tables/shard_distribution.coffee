@@ -3,7 +3,7 @@
 
 
 # Hardcoded!
-MAX_SHARD_COUNT = 32
+MAX_SHARD_COUNT = 64
 
 class ShardDistribution extends Backbone.View
     className: 'shards_container'
