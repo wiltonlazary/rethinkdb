@@ -10,7 +10,7 @@
              value="{{num_shards}}"></input>
       <span class="caption">shards</span>
       <div class="max caption">
-        max: {{num_default_servers}}
+        max: {{max_num_shards}}
       </div>
     </div>
     <div>
@@ -42,7 +42,7 @@
       you have {{num_default_servers}} servers available for this table.
     </p>
     <p class="error too-many-shards-hard-limit">
-      A table may not have more than {{MAX_NUM_SHARDS}} shards.
+      A table may not have more than 64 shards.
     </p>
     <p class="error not-enough-defaults-shard">
       While you have enough servers for this many shards, not enough of

@@ -1,10 +1,5 @@
 # Copyright 2010-2015 RethinkDB
 
-
-
-# Hardcoded!
-MAX_SHARD_COUNT = 64
-
 class ShardDistribution extends Backbone.View
     className: 'shards_container'
     template:

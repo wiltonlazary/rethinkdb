@@ -106,11 +106,14 @@ class TableContainer extends Backbone.View
                     table_status.eq(null),
                     null,
                     table_status.merge(
-                        max_shards: 32
+                        max_shards: 64
                         num_shards: table_config("shards").count().default(0)
                         num_servers: server_config.count()
                         num_default_servers: server_config.filter((server) ->
                             server('tags').contains('default')).count()
+                        max_num_shards: r.branch(num_default_servers < 64,
+                                               num_default_servers,
+                                               64)
                         num_primary_replicas:
                             table_status("shards").count(
                                 (row) -> row('primary_replicas').isEmpty().not())
