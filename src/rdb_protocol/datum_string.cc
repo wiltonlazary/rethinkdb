@@ -8,8 +8,6 @@
 #include <limits>
 
 #include "containers/archive/archive.hpp"
-#include "containers/archive/buffer_stream.hpp"
-#include "containers/archive/varint.hpp"
 #include "containers/scoped.hpp"
 #include "debug.hpp"
 #include "utils.hpp"
@@ -49,16 +47,6 @@ const char *datum_string_t::data() const {
     size_t data_offset = varint_uint64_serialized_size(str_size);
     data_.guarantee_in_boundary(data_offset + str_size);
     return data_.get() + data_offset;
-}
-
-size_t datum_string_t::size() const {
-    uint64_t res = 0;
-    static_assert(sizeof(uint8_t) == sizeof(char), "sizeof(uint8_t) != sizeof(char)");
-    buffer_read_stream_t data_stream(data_.get(), data_.get_safety_boundary());
-    guarantee_deserialization(deserialize_varint_uint64(&data_stream, &res),
-                              "wire_string size");
-    guarantee(res <= static_cast<uint64_t>(std::numeric_limits<size_t>::max()));
-    return static_cast<size_t>(res);
 }
 
 bool datum_string_t::empty() const {

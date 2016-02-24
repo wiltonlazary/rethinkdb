@@ -5,6 +5,8 @@
 #include <string>
 
 #include "containers/archive/archive.hpp"
+#include "containers/archive/buffer_stream.hpp"
+#include "containers/archive/varint.hpp"
 #include "containers/shared_buffer.hpp"
 
 /* `datum_string_t` is a length-prefixed ("Pascal style") non-mutable string.
@@ -38,7 +40,18 @@ public:
     // The result of data() is not automatically null terminated. Do not use
     // as a C string.
     const char *data() const;
-    size_t size() const;
+    
+    size_t size() const {
+        uint64_t res = 0;
+	static_assert(sizeof(uint8_t) == sizeof(char), 
+		      "sizeof(uint8_t) != sizeof(char)");
+	buffer_read_stream_t data_stream(data_.get(), data_.get_safety_boundary());
+	guarantee_deserialization(deserialize_varint_uint64(&data_stream, &res),
+				  "wire_string size");
+	guarantee(res <= static_cast<uint64_t>(std::numeric_limits<size_t>::max()));
+	return static_cast<size_t>(res);
+    };
+
     bool empty() const;
 
     int compare(const datum_string_t &other) const;
