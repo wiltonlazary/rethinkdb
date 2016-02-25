@@ -44,11 +44,8 @@ class View extends vdom.VirtualDomView
         app.main.router.navigate("#logs", trigger: true)
 
     on_query_error: (error) =>
-        if error.msg == "Database `__deleted_database__` does not exist."
-            console.log("OH NOES")
-        else
-            console.error(error)
-            @render()
+        console.error(error)
+        @render()
 
     render_vdom: =>
         if @query_error?
