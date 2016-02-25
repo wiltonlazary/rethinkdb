@@ -79,7 +79,7 @@
 
 #ifndef THREADED_COROUTINES
 #define TLS(type, name)                                                \
-    static THREAD_LOCAL type TLS_ ## name                               \
+    static THREAD_LOCAL type TLS_ ## name;                              \
     DEFINE_TLS_ACCESSORS(type, name)
 
 #define TLS_with_init(type, name, initial)                              \
