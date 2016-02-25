@@ -43,10 +43,6 @@ class View extends vdom.VirtualDomView
     show_all_logs: ->
         app.main.router.navigate("#logs", trigger: true)
 
-    on_query_error: (error) =>
-        console.error(error)
-        @render()
-
     render_vdom: =>
         if @query_error?
             console.log @query_error.msg
