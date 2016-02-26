@@ -154,6 +154,9 @@ class Cluster(object):
     processes = None
     output_folder = None
     
+    _startLock = thread.allocate_lock()
+    _hasStartLock = None # the Process that has it
+    
     def __init__(self, metacluster=None, initial_servers=0, output_folder=None, console_output=True, executable_path=None, server_tags=None, command_prefix=None, extra_options=None, wait_until_ready=True):
         
         # -- input validation
@@ -294,7 +297,7 @@ class Cluster(object):
                     Resunder.unblock_path(otherServer.cluster_port,       server.cluster_port)
                     Resunder.unblock_path(otherServer.local_cluster_port, server.cluster_port)
                     Resunder.unblock_path(otherServer.local_cluster_port, server.local_cluster_port)
-        
+    
     def __getitem__(self, pos):
         if isinstance(pos, slice):
             return [self.processes[x] for x in xrange(*pos.indices(len(self.processes)))]
@@ -570,10 +573,18 @@ class Process(object):
         
         # -- set to join the cluster
         
-        for peer in self.cluster.processes:
-            if peer != self and peer.ready:
-                options += ["--join", peer.host + ":" + str(peer.cluster_port)]
-                break
+        joinOptions = []
+        try:
+            self.cluster._startLock.acquire()
+            self.cluster._hasStartLock = self
+            for peer in self.cluster.processes:
+                if peer != self and peer.ready:
+                    joinOptions += ["--join", peer.host + ":" + str(peer.cluster_port)]
+                    break
+        finally:
+            if joinOptions and self.cluster._hasStartLock is self:
+                self.cluster._startLock.release()
+                self.cluster._hasStartLock = None
         
         # -- get the length of an exiting log file
         
@@ -585,7 +596,7 @@ class Process(object):
         try:
             self._console_file.write("Launching at %s:\n\t%s\n" % (datetime.datetime.now().isoformat(), " ".join(options)))
             self._console_file.flush()
-            self.process = subprocess.Popen(options, stdout=self._console_file, stderr=subprocess.STDOUT, preexec_fn=os.setpgrp)
+            self.process = subprocess.Popen(options + joinOptions, stdout=self._console_file, stderr=subprocess.STDOUT, preexec_fn=os.setpgrp)
             
             if not self in runningServers:
                 runningServers.append(self)
@@ -711,48 +722,49 @@ class Process(object):
         
         # - look for the data lines
         
-        while time.time() < deadline:
-            
-            # - bail out if we have everything
-            
-            self.check()
-            if self.ready:
-                return
-            
-            # - get a new line or sleep
-            
-            logLine = next(logLines)
-            if logLine is None:
-                time.sleep(0.05)
+        try:
+            while time.time() < deadline:
+                # - bail out if we have everything
                 self.check()
-                continue
-            
-            # - see if it matches one we are looking for
-            
-            try:
-                parsedLine = self.logfilePortRegex.search(logLine)
-            except Exception as e:
-                warnings.warn('Got unexpected logLine: %s' % repr(logLine))
-            if parsedLine:
-                if parsedLine.group('type') == 'intracluster':
-                    self._cluster_port = int(parsedLine.group('port'))
-                elif parsedLine.group('type') == 'client driver':
-                    self._driver_port = int(parsedLine.group('port'))
-                else:
-                    self._http_port = int(parsedLine.group('port'))
-                continue
-            
-            parsedLine = self.logfileServerIDRegex.search(logLine)
-            if parsedLine:
-                self._uuid = parsedLine.group('uuid')
-            
-            parsedLine = self.logfileReadyRegex.search(logLine)
-            if parsedLine:
-                self._ready_line = True
-                self._name = parsedLine.group('name')
-                self._uuid = parsedLine.group('uuid')
-        else:
-            raise RuntimeError("Timeout while trying to read ports from log file")
+                if self.ready:
+                    return
+                
+                # - get a new line or sleep
+                logLine = next(logLines)
+                if logLine is None:
+                    time.sleep(0.05)
+                    self.check()
+                    continue
+                
+                # - see if it matches one we are looking for
+                try:
+                    parsedLine = self.logfilePortRegex.search(logLine)
+                except Exception as e:
+                    warnings.warn('Got unexpected logLine: %s' % repr(logLine))
+                if parsedLine:
+                    if parsedLine.group('type') == 'intracluster':
+                        self._cluster_port = int(parsedLine.group('port'))
+                    elif parsedLine.group('type') == 'client driver':
+                        self._driver_port = int(parsedLine.group('port'))
+                    else:
+                        self._http_port = int(parsedLine.group('port'))
+                    continue
+                
+                parsedLine = self.logfileServerIDRegex.search(logLine)
+                if parsedLine:
+                    self._uuid = parsedLine.group('uuid')
+                
+                parsedLine = self.logfileReadyRegex.search(logLine)
+                if parsedLine:
+                    self._ready_line = True
+                    self._name = parsedLine.group('name')
+                    self._uuid = parsedLine.group('uuid')
+            else:
+                raise RuntimeError("Timeout while trying to read ports from log file")
+        finally:
+            if self.cluster._hasStartLock is self:
+                self.cluster._startLock.release()
+                self.cluster._hasStartLock = None
         
         # -- piggyback on this to setup Resunder blocking
         
