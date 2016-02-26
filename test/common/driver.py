@@ -198,12 +198,8 @@ class Cluster(object):
         
         self.processes = []
         if initial_servers:
-            # start the first server, waiting until it is ready
-            p = Process(cluster=self, name=initial_servers[0], console_output=console_output, executable_path=executable_path, command_prefix=command_prefix, extra_options=extra_options, wait_until_ready=True)
-            assert p in self.processes
-            
-            # start others in parallel
-            for name in initial_servers[1:]:
+            # start all of the servers, and let the _startLock do its work
+            for name in initial_servers:
                 # The constructor will insert itself into `self.processes`
                 p = Process(cluster=self, name=name, console_output=console_output, executable_path=executable_path, command_prefix=command_prefix, extra_options=extra_options, wait_until_ready=False)
                 assert p in self.processes
@@ -887,6 +883,36 @@ class ProxyProcess(Process):
 # == main
 
 if __name__ == "__main__":
-    with Process() as p:
+    r = utils.import_python_driver()
+    
+    sys.stdout.write('Single Server... ')
+    sys.stdout.flush()
+    with Process(console_output=False) as server:
         time.sleep(3)
-        p.check_and_stop()
+        server.check_and_stop()
+    print('Ok')
+    
+    sys.stdout.write('Cluster of 4 servers... ')
+    sys.stdout.flush()
+    with Cluster(initial_servers=4) as cluster:
+        serverNames = set([x.name for x in cluster])
+        
+        # assert all servers see each other
+        for server in cluster:
+            conn =  r.connect(host=server.host, port=server.driver_port)
+            serverList = set([x['name'] for x in r.db('rethinkdb').table('server_status').run(conn)])
+            assert(serverNames == serverList)
+        
+        # shut them all down and restart them
+        for server in cluster:
+            server.stop()
+        for server in cluster:
+            server.start(wait_until_ready=False)
+        cluster.wait_until_ready()
+        
+        # reassert all servers see each other
+        for server in cluster:
+            conn =  r.connect(host=server.host, port=server.driver_port)
+            serverList = set([x['name'] for x in r.db('rethinkdb').table('server_status').run(conn)])
+            assert(serverNames == serverList)
+    print('Ok')
