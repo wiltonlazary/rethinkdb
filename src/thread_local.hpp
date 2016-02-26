@@ -78,13 +78,6 @@
 #endif
 
 #ifndef THREADED_COROUTINES
-#define TLS(type, name)                                                \
-    static THREAD_LOCAL type TLS_ ## name;                              \
-    DEFINE_TLS_ACCESSORS(type, name)
-
-#define TLS_with_init(type, name, initial)                              \
-    static THREAD_LOCAL type TLS_ ## name(initial);                     \
-    DEFINE_TLS_ACCESSORS(type, name)
 
 #define DEFINE_TLS_ACCESSORS(type, name)                                \
     NOINLINE type TLS_get_ ## name () {                                 \
@@ -96,6 +89,14 @@
         TLS_ ## name = std::forward<T>(val);                            \
     }
 
+#define TLS(type, name)                                                 \
+    static THREAD_LOCAL type TLS_ ## name;                              \
+    DEFINE_TLS_ACCESSORS(type, name)
+
+#define TLS_with_init(type, name, initial)                              \
+    static THREAD_LOCAL type TLS_ ## name(initial);                     \
+    DEFINE_TLS_ACCESSORS(type, name)
+
 #define TLS_ptr(type, name)                                             \
     static THREAD_LOCAL type TLS_ ## name;                              \
                                                                         \
@@ -104,15 +105,6 @@
     }
 
 #else  // THREADED_COROUTINES
-#define TLS(type, name)                                                 \
-    static std::vector<cache_line_padded_t<type> >                      \
-        TLS_ ## name(MAX_THREADS);                                      \
-    DEFINE_TLS_ACCESSORS(type, name)
-
-#define TLS_with_init(type, name, initial)                              \
-    static std::vector<cache_line_padded_t<type> >                      \
-        TLS_ ## name(MAX_THREADS, cache_line_padded_t<type>(initial));  \
-    DEFINE_TLS_ACCESSORS(type, name)
 
 #define DEFINE_TLS_ACCESSORS(type, name)                                \
     type TLS_get_ ## name () {                                          \
@@ -123,6 +115,16 @@
     void TLS_set_ ## name(T&& val) {                                    \
         TLS_ ## name[get_thread_id().threadnum].value = std::forward<T>(val); \
     }
+
+#define TLS(type, name)                                                 \
+    static std::vector<cache_line_padded_t<type> >                      \
+        TLS_ ## name(MAX_THREADS);                                      \
+    DEFINE_TLS_ACCESSORS(type, name)
+
+#define TLS_with_init(type, name, initial)                              \
+    static std::vector<cache_line_padded_t<type> >                      \
+        TLS_ ## name(MAX_THREADS, cache_line_padded_t<type>(initial));  \
+    DEFINE_TLS_ACCESSORS(type, name)
 
 #define TLS_ptr(type, name)                                             \
     static std::vector<cache_line_padded_t<type> >                      \
