@@ -875,7 +875,7 @@ void connectivity_cluster_t::run_t::handle(
             }
             rassert(r >= 0);
             rassert(r <= 1);
-            // If EOF or remote_header does not match header, terminate connection.)
+            // If EOF or remote_header does not match header, terminate connection.
             if (0 == r || cluster_proto_header[i] != buffer) {
                 logWRN("Received invalid clustering header from %s, closing connection -- something might be connecting to the wrong port.", peername);
                 return;
