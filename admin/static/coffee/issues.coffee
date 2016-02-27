@@ -206,9 +206,9 @@ render_memory_error = (issue) ->
 
 render_non_transitive_error = (issue) ->
     # Issue raised when network connectivity is non-transitive
-    title: "Partial cluster connectivity"
+    title: "Connectivity issue"
     subtitle: [
-        "The cluster is not fully connected."
+        "Some servers are only partially connected."
     ]
     details: [
         h "p", [
@@ -217,10 +217,6 @@ render_non_transitive_error = (issue) ->
         h "ul", issue.info.servers.map((server) ->
             h "li",
                 h "a", href: "/#servers/#{server.server_id}", server)
-        h "p", [
-            "The issue reported is:",
-            h "code", issue.info.message
-        ]
         h "p", [
             "Partial connectivity can cause tables to remain unavailable"
             " and queries to fail. Please check your network configuration"
