@@ -67,29 +67,33 @@ bool server_status_artificial_table_backend_t::format_row(
     server_connectivity_t& connect = server_config_client
                     ->get_server_connectivity();
     ql::datum_object_builder_t net_builder;
-    ql::datum_object_builder_t connectivity_builder;
-    for (auto pair : server_config_client->get_server_connectivity().all_servers) {
-        ql::datum_array_builder_t server_connect_builder(
-            ql::configured_limits_t::unlimited);
-        for (auto second_pair : server_config_client->get_server_connectivity()
-                 .all_servers) {
-            if (pair != second_pair) {
-                if (connect.connected_to[pair.first].find(second_pair.first)
-                    != connect.connected_to[pair.first].end()) {
-                    fprintf(stderr,"%s can see %s\n",
-                            uuid_to_str(pair.first).c_str(),
-                            uuid_to_str(second_pair.first).c_str());
-                    server_connect_builder.add(
-                        ql::datum_t{uuid_to_str(second_pair.first).c_str()});
-                }
-            }
+    ql::datum_object_builder_t server_connect_builder;
+
+    for (auto pair : server_config_client->get_server_connectivity()
+             .all_servers) {
+        ql::datum_t server_name_or_uuid;
+        if (!convert_connected_server_id_to_datum(
+                pair.first,
+                admin_identifier_format_t::name,
+                server_config_client,
+                &server_name_or_uuid,
+                nullptr)) {
+            continue;
         }
-        connectivity_builder.add(
-            datum_string_t{uuid_to_str(pair.first).c_str()},
-            std::move(server_connect_builder).to_datum());
+        if (server_id != pair.first) {
+            bool is_connected = false;
+            if (connect.connected_to[server_id].find(pair.first)
+                != connect.connected_to[server_id].end()) {
+                is_connected = true;
+            }
+            guarantee(
+                !server_connect_builder.add(
+                    server_name_or_uuid.as_str(),
+                    ql::datum_t::boolean(is_connected)));
+        }
     }
-    net_builder.overwrite("server_connectivity",
-                          std::move(connectivity_builder).to_datum());
+    net_builder.overwrite("connected_to",
+                          std::move(server_connect_builder).to_datum());
     net_builder.overwrite("hostname",
         ql::datum_t(datum_string_t(metadata.proc.hostname)));
     net_builder.overwrite("cluster_port",
