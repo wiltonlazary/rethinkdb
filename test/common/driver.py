@@ -759,8 +759,8 @@ class Process(object):
                 raise RuntimeError("Timeout while trying to read ports from log file")
         finally:
             if self.cluster._hasStartLock is self:
-                self.cluster._startLock.release()
                 self.cluster._hasStartLock = None
+                self.cluster._startLock.release()
         
         # -- piggyback on this to setup Resunder blocking
         
