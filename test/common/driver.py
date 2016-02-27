@@ -579,8 +579,8 @@ class Process(object):
                     break
         finally:
             if joinOptions and self.cluster._hasStartLock is self:
-                self.cluster._startLock.release()
                 self.cluster._hasStartLock = None
+                self.cluster._startLock.release()
         
         # -- get the length of an exiting log file
         
