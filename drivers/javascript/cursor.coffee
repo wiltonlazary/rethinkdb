@@ -233,11 +233,16 @@ class IterableResult
     )
 
     _eachAsync: varar(1, 2, (cb, errCb) ->
+        errorCorrectly = (msg) =>
+            if Promise.isPending
+                return Promise.reject msg
+            throw new error.ReqlDriverError(msg)
+
         unless typeof cb is 'function'
-            throw new error.ReqlDriverError 'First argument to eachAsync must be a function.'
+            errorCorrectly 'First argument to eachAsync must be a function.'
 
         if errCb? and typeof errCb isnt 'function'
-            throw new error.ReqlDriverError "Optional second argument to eachAsync must be a function"
+            errorCorrectly "Optional second argument to eachAsync must be a function"
 
         nextCb = =>
             if @_closeCbPromise?

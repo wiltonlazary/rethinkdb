@@ -208,6 +208,16 @@ describe('JavaScript Cursor', function() {
                 )
             });
 
+            it('promise reject rather than error', function() {
+                try {
+                   r.db('foo').table('bar').run()
+                   .then(function(cur) { return cur.eachAsync(); })
+                   .catch(function(err) { console.log('I should get here'); });
+                } catch(err) {
+                    console.log('Rather I get here');
+                }
+            });
+
             it('Callback style stops iteration over table early', function(done) {
                 var i = 0;
                 tableCursor.eachAsync(function(row) {
@@ -311,7 +321,7 @@ describe('JavaScript Cursor', function() {
                     assert.deepEqual(row, {'id':0});
                     return tableCursor.close();
                 }).catch(function(error) {
-                    assert.equal(error, "Cursor is closed.");
+                    assert.equal(error.msg, "Cursor is closed.");
                 })
             })
 
@@ -320,7 +330,7 @@ describe('JavaScript Cursor', function() {
                     assert.deepEqual(row, {'id':0});
                     tableCursor.close();
                 }, function(error) {
-                    assert.equal(error, "Cursor is closed.");
+                    assert.equal(error.msg, "Cursor is closed.");
                     done();
                 })
             })
@@ -341,7 +351,7 @@ describe('JavaScript Cursor', function() {
                     tableCursor.eachAsync(function(row) {
                         assert.equals(1,2);
                     }).catch(function (error) {
-                        assert.equal(error, "Cursor is closed.")
+                        assert.equal(error.msg, "Cursor is closed.")
                     })
                 });
             })
