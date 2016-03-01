@@ -254,8 +254,15 @@ const raw_term_t &term_t::get_src() const {
 scoped_ptr_t<val_t> runtime_term_t::eval_on_current_stack(
         scope_env_t *env,
         eval_flags_t eval_flags) const {
+    // This optimization is kind of bad, because it makes profiled runs slower
+    // (sometimes significantly) compared to non-profiled runs, which in turn makes the
+    // profiler output less useful. However I think it's better than always being slow.
+    scoped_ptr_t<profile::starter_t> starter;
+    if (env->env->profile() == profile_bool_t::PROFILE) {
+        starter.init(new profile::starter_t(
+            strprintf("Evaluating %s.", name()), env->env->trace));
+    }
     // This is basically a hook for unit tests to change things mid-query
-    profile::starter_t starter(strprintf("Evaluating %s.", name()), env->env->trace);
     env->env->do_eval_callback();
     DBG("EVALUATING %s (%d):\n", name(), is_deterministic());
     if (env->env->interruptor->is_pulsed()) {

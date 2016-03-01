@@ -395,18 +395,12 @@ void find_keyvalue_location_for_write(
             }
         }
         // Check if the node is overfull and proactively split it if it is (since this is an internal node).
-        {
-            profile::starter_t starter("Perhaps split node.", trace);
-            check_and_handle_split(sizer, &buf, &last_buf, superblock, key,
-                                   NULL, balancing_detacher);
-        }
+        check_and_handle_split(
+            sizer, &buf, &last_buf, superblock, key, nullptr, balancing_detacher);
 
         // Check if the node is underfull, and merge/level if it is.
-        {
-            profile::starter_t starter("Perhaps merge nodes.", trace);
-            check_and_handle_underfull(sizer, &buf, &last_buf, superblock, key,
-                                       balancing_detacher);
-        }
+        check_and_handle_underfull(
+            sizer, &buf, &last_buf, superblock, key, balancing_detacher);
 
         // Release the superblock, if we've gone past the root (and haven't
         // already released it). If we're still at the root or at one of
