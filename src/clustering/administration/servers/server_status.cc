@@ -64,13 +64,14 @@ bool server_status_artificial_table_backend_t::format_row(
         static_cast<double>(metadata.actual_cache_size_bytes) / MEGABYTE));
     builder.overwrite("process", std::move(proc_builder).to_datum());
 
-    server_connectivity_t& connect = server_config_client
+    ASSERT_NO_CORO_WAITING;
+    server_config_client->assert_thread();
+    const server_connectivity_t& connect = server_config_client
                     ->get_server_connectivity();
     ql::datum_object_builder_t net_builder;
     ql::datum_object_builder_t server_connect_builder;
 
-    for (auto pair : server_config_client->get_server_connectivity()
-             .all_servers) {
+    for (auto pair : connect.all_servers) {
         ql::datum_t server_name_or_uuid;
         if (!convert_connected_server_id_to_datum(
                 pair.first,
@@ -82,8 +83,8 @@ bool server_status_artificial_table_backend_t::format_row(
         }
         if (server_id != pair.first) {
             bool is_connected = false;
-            if (connect.connected_to[server_id].find(pair.first)
-                != connect.connected_to[server_id].end()) {
+            if (connect.connected_to.at(server_id).find(pair.first)
+                != connect.connected_to.at(server_id).end()) {
                 is_connected = true;
             }
             guarantee(

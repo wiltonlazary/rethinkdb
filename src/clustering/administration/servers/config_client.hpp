@@ -48,7 +48,7 @@ public:
         return &connections_map;
     }
 
-    server_connectivity_t& get_server_connectivity() {
+    const server_connectivity_t& get_server_connectivity() const {
         return server_connectivity;
     }
     /* `set_config()` changes the config of the server with the given server ID. */
@@ -95,9 +95,9 @@ private:
     watchable_map_t<std::pair<peer_id_t, server_id_t>, empty_value_t>::all_subs_t
         peer_connections_map_subs;
 
+    server_connectivity_t server_connectivity;
     typename watchable_map_t<std::pair<server_id_t, server_id_t>, empty_value_t>
         ::all_subs_t server_connectivity_subscription;
-    server_connectivity_t server_connectivity;
 };
 
 #endif /* CLUSTERING_ADMINISTRATION_SERVERS_CONFIG_CLIENT_HPP_ */
