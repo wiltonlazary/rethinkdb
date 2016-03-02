@@ -245,7 +245,9 @@ class IterableResult
             else
                 @_next().then (data) ->
                     return cb(data) if cb.length <= 1 # either synchronous or awaits promise
-                    return Promise.fromNode (handler) -> cb(data, handler) # callback-style async
+                    return Promise.fromNode (handler) ->
+                        return if cb(data, handler) is undefined
+                        throw new error.ReqlDriverError "Unexpected return in async hander of eachAsyc"
                 .then (result) ->
                     return nextCb()
                 .catch (err) ->

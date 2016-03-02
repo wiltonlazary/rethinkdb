@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env mocha
 
 // Copyright 2015-2016 RethinkDB, all rights reserved.
 
@@ -11,13 +11,12 @@ var path = require('path');
 
 // -- settings
 
-var driverPort = process.env.RDB_DRIVER_PORT || (process.argv[2] ? parseInt(process.argv[2], 10) : 28015);
-var serverHost = process.env.RDB_SERVER_HOST || (process.argv[3] ? parseInt(process.argv[3], 10) : 'localhost');
+var driverPort  = process.env.RDB_DRIVER_PORT || (process.argv[2] ? parseInt(process.argv[2], 10) : 28015);
+var serverHost  = process.env.RDB_SERVER_HOST || process.argv[3] || 'localhost';
 
-var dbName = 'test';
-var tableName = 'test';
-var numRows = parseInt(process.env.TEST_ROWS) || 100;
-var manyRows = parseInt(process.env.TEST_MANY_ROWS) || 10000; // Keep a "big" value to try hitting `maximum call stack exceed`
+var dbName      = process.env.RDB_DB_NAME || 'test';
+var tableName   = process.env.RDB_TABLE_NAME || 'test';
+var numRows     = parseInt(process.env.RDB_TEST_ROWS) || 100;
 
 // -- load rethinkdb from the proper location
 
