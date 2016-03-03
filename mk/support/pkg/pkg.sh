@@ -340,6 +340,26 @@ getsha1 () {
     fi
 }
 
+# Cross-platform directory
+cpdir () {
+    if [[ "$OS" = Windows ]]; then
+        cygpath -w "$1"
+    else
+        printf "%s" "$1"
+    fi
+}
+
+nocygpath () {
+    local newpath cmd
+    newpath=$(echo "$PATH" | sed 's/:/\n/g' | grep ^/cygdrive | while read -r line; do echo -n "$line:"; done)
+    cmd=$(hash -t "$1" || echo "$1")
+    if [[ -e "$cmd.cmd" ]]; then
+        cmd="$cmd.cmd"
+    fi
+    shift
+    PATH="${newpath%:}" "$cmd" "$@"
+}
+
 # lowercase
 lc () { echo "$*" | tr '[:upper:]' '[:lower:]'; }
 

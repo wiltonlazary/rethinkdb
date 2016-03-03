@@ -52,4 +52,6 @@ pkg_install-windows () {
     done
 
     cp "$build_dir/vsprojects/$VS_OUTPUT_DIR/libprotobuf.lib" "$windows_deps_libs/"
+    mkdir "$install_dir/bin"
+    cp "$build_dir/vsprojects/$VS_OUTPUT_DIR/protoc.exe" "$install_dir/bin/"
 }

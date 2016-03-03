@@ -25,6 +25,8 @@ SOURCES_NOUNIT := $(filter-out $(SOURCE_DIR)/unittest/%,$(SOURCES))
 
 LIB_DEPS := $(foreach dep, $(FETCH_LIST), $(SUPPORT_BUILD_DIR)/$(dep)_$($(dep)_VERSION)/$(INSTALL_WITNESS))
 
+PROTO_DEPS := $(PROTO_DIR)/rdb_protocol/ql2.pb.h $(PROTO_DIR)/rdb_protocol/ql2.pb.cc
+
 MSBUILD_FLAGS := /nologo /maxcpucount
 MSBUILD_FLAGS += /p:Configuration=$(CONFIGURATION)
 MSBUILD_FLAGS += /p:Platform=$(PLATFORM)
@@ -33,11 +35,11 @@ ifneq (1,$(VERBOSE))
   MSBUILD_FLAGS += /verbosity:minimal
 endif
 
-$/build/$(CONFIGURATION)_$(PLATFORM)/rethinkdb.exe: $/rethinkdb.vcxproj $(SOURCES_NOUNIT) $(LIB_DEPS)
+$/build/$(CONFIGURATION)_$(PLATFORM)/rethinkdb.exe: $/rethinkdb.vcxproj $(SOURCES_NOUNIT) $(LIB_DEPS) $(PROTO_DEPS)
 	$P MSBUILD
 	"$(MSBUILD)" $(MSBUILD_FLAGS) $<
 
-$/build/$(CONFIGURATION)_$(PLATFORM)/rethinkdb-unittest.exe: $/rethinkdb-unittest.vcxproj $(SOURCES) $(LIB_DEPS)
+$/build/$(CONFIGURATION)_$(PLATFORM)/rethinkdb-unittest.exe: $/rethinkdb-unittest.vcxproj $(SOURCES) $(LIB_DEPS) $(PROTO_DEPS)
 	$P MSBUILD
 	"$(MSBUILD)" $(MSBUILD_FLAGS) $<
 
@@ -45,3 +47,8 @@ $/build/$(CONFIGURATION)_$(PLATFORM)/rethinkdb-unittest.exe: $/rethinkdb-unittes
 build-clean:
 	$P RM $(BUILD_ROOT_DIR)
 	rm -rf $(BUILD_ROOT_DIR)
+
+$(PROTO_DIR)/%.pb.h $(PROTO_DIR)/%.pb.cc: $(SOURCE_DIR)/%.proto $(PROTOC_BIN_DEP) | $(PROTO_DIR)/.
+	$P PROTOC
+	+rm -f $(PROTO_DIR)/$*.pb.h $(PROTO_DIR)/$*.pb.cc
+	$(PROTOC) --proto_path="$(shell cygpath -w '$(SOURCE_DIR)')" --cpp_out "$(shell cygpath -w '$(PROTO_DIR)')" $<

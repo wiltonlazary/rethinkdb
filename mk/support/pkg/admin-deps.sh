@@ -14,7 +14,7 @@ pkg_fetch () {
     cp "$root_dir/admin/npm-shrinkwrap.json" "$tmp_dir"
     cp "$root_dir/admin/package.json" "$tmp_dir"
     mkdir "$tmp_dir/node_modules"
-    in_dir "$tmp_dir" npm --cache "$tmp_dir/npm-cache" install
+    in_dir "$tmp_dir" npm install --loglevel silly
     sed -i.bak '$d' "$tmp_dir/package.json" # remove the last '}'
     {   echo '  ,"bundleDependencies": ['
         comma=

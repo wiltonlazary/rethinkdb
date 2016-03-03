@@ -10,3 +10,4 @@
 # Ensure shell scripts keep unix line endings
 *.sh       text eol=lf
 configure  text eol=lf
+./mk/support/pkg/* text eol=lf

@@ -172,7 +172,7 @@
 
         <ItemGroup Condition="'$(Configuration)|$(Platform)'=='{@configuration}|{@platform}'">
           <ClCompile Include="precompiled\web_assets\web_assets.cc" />
-          <ClCompile Include="precompiled\proto\rdb_protocol\ql2.pb.cc" />
+          <ClCompile Include="build\proto\rdb_protocol\ql2.pb.cc" />
           <ClCompile Include="src\**\*.cc">
             <xsl:choose>
               <xsl:when test="/config/unittest">
@@ -192,7 +192,7 @@
         <ClInclude Include="src\**\*.hpp" />
         <ClInclude Include="src\**\*.tcc" />
         <ClInclude Include="src\**\*.h" />
-        <ClInclude Include="precompiled\proto\rdb_protocol\ql2.pb.h" />
+        <ClInclude Include="build\proto\rdb_protocol\ql2.pb.h" />
       </ItemGroup>
       <ItemGroup>
         <None Include="src\rdb_protocol\ql2.proto" />

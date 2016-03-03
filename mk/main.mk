@@ -40,11 +40,20 @@ include $(TOP)/mk/support/build.mk
 
 ifeq (Windows,$(OS))
 
+# make install
+include $(TOP)/mk/install.mk
+
 # Windows build
 include $/mk/windows.mk
 
 # Python driver
 include $/drivers/python/build.mk
+
+# JavaScript driver
+include $/drivers/javascript/build.mk
+
+# Build the web assets
+include $(TOP)/admin/build.mk
 
 else # Windows
 

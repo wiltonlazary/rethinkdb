@@ -65,6 +65,12 @@ configure () {
     else
         configure_unixlike
     fi
+    require Installation prefix
+    var PREFIX ${arg_prefix:-/usr/local}
+    require Configuration prefix
+    var SYSCONFDIR ${arg_sysconfdir:-$PREFIX/etc}
+    require Runtime data prefix
+    var LOCALSTATEDIR ${arg_localstatedir:-$PREFIX/var}
 }
 
 configure_unixlike () {
@@ -167,12 +173,6 @@ configure_unixlike () {
     check_openssl
     boolvar STATIC_V8 contains "$static_libs" v8
     boolvar ALLOW_FETCH $allow_fetch
-    require Installation prefix
-    var PREFIX ${arg_prefix:-/usr/local}
-    require Configuration prefix
-    var SYSCONFDIR ${arg_sysconfdir:-$PREFIX/etc}
-    require Runtime data prefix
-    var LOCALSTATEDIR ${arg_localstatedir:-$PREFIX/var}
     for pkg in $must_fetch_list; do
         if ! contains "$FETCH_LIST" $pkg; then
             require_dep $pkg
@@ -203,6 +203,16 @@ configure_windows () {
         require_dep $pkg
         fetch_lib $pkg
     done
+    fetch_bin protoc
+    require_dep npm
+    check_bin npm
+    require_dep coffee
+    fetch_bin coffee
+    require_dep bluebird
+    fetch_pkg bluebird
+    require_dep browserify
+    fetch_bin browserify
+    check_admin_deps
     optional Python
     check_bin python
 }
