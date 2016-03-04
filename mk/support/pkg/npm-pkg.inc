@@ -9,10 +9,9 @@ npm_conf=$(niceabspath "$conf_dir/npm.conf")
 npm () {
     cache_dir=$(mktemp -d "$external_dir/npm_cache-XXXXXXXX")
     if [[ "$OS" = Windows ]]; then
+        # Simplify the call to npm, because we are using the Windows npm from inside cygwin
         nocygpath "$NPM" "$@"
     else
-        echo OH NO
-        exit 1
         "$NPM" --userconfig "$npm_conf" --cache "$cache_dir" "$@"
     fi
     rm -rf "$cache_dir"
