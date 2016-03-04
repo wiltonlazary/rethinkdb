@@ -270,6 +270,7 @@ struct sindex_rangespec_t {
     boost::optional<region_t> region;
     // For dealing with truncation and `get_all`.
     ql::datumspec_t datumspec;
+    bool require_sindex;
 };
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(sindex_rangespec_t);
 
