@@ -118,6 +118,7 @@ public:
     virtual const char *name() const { return "outer_join"; }
 };
 
+/*
 class eq_join_term_t : public rewrite_term_t {
 public:
     eq_join_term_t(compile_env_t *env, const raw_term_t &term)
@@ -150,6 +151,7 @@ private:
     }
     virtual const char *name() const { return "eq_join"; }
 };
+*/
 
 class delete_term_t : public rewrite_term_t {
 public:
@@ -274,10 +276,6 @@ counted_t<term_t> make_inner_join_term(
 counted_t<term_t> make_outer_join_term(
         compile_env_t *env, const raw_term_t &term) {
     return make_counted<outer_join_term_t>(env, term);
-}
-counted_t<term_t> make_eq_join_term(
-        compile_env_t *env, const raw_term_t &term) {
-    return make_counted<eq_join_term_t>(env, term);
 }
 counted_t<term_t> make_update_term(
         compile_env_t *env, const raw_term_t &term) {

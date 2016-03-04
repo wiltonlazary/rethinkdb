@@ -537,6 +537,42 @@ void rget_response_reader_t::accumulate(env_t *env,
     acc->add_res(env, &res, readgen->sorting(batchspec));
 }
 
+std::vector<rget_item_t> rget_response_reader_t::raw_next_batch(
+    env_t *env,
+    const batchspec_t &batchspec) {
+    started = true;
+    if (!load_items(env, batchspec)) {
+        return std::vector<rget_item_t>();
+    }
+    r_sanity_check(items_index < items.size());
+
+    std::vector<rget_item_t> res;
+    switch (batchspec.get_batch_type()) {
+    case batch_type_t::NORMAL: // fallthru
+    case batch_type_t::NORMAL_FIRST: // fallthru
+    case batch_type_t::SINDEX_CONSTANT:
+    case batch_type_t::TERMINAL: {
+        res.reserve(items.size() - items_index);
+        for (; items_index < items.size(); ++items_index) {
+            res.push_back(std::move(items[items_index]));
+        }
+    } break;
+    default:
+        unreachable();
+    }
+    if (items_index >= items.size()) { // free memory immediately
+        items_index = 0;
+        std::vector<rget_item_t> tmp;
+        tmp.swap(items);
+    }
+
+    if (res.size() == 0) {
+        r_sanity_check(shards_exhausted());
+    }
+
+    return res;
+
+}
 std::vector<datum_t> rget_response_reader_t::next_batch(
     env_t *env, const batchspec_t &batchspec) {
     started = true;
@@ -1338,6 +1374,7 @@ datum_t eager_datum_stream_t::as_array(env_t *env) {
 }
 
 // LAZY_DATUM_STREAM_T
+
 lazy_datum_stream_t::lazy_datum_stream_t(scoped_ptr_t<reader_t> &&_reader,
                                          backtrace_id_t bt)
     : datum_stream_t(bt),
@@ -2098,6 +2135,110 @@ bool map_datum_stream_t::is_exhausted() const {
         if (stream->is_exhausted()) {
             return batch_cache_exhausted();
         }
+    }
+    return false;
+}
+
+eq_join_datum_stream_t::eq_join_datum_stream_t(counted_t<datum_stream_t> _stream,
+                                               counted_t<table_t> _table,
+                                               datum_string_t _join_index,
+                                               counted_t<const func_t> &&_predicate,
+                                               datum_t _field,
+                                               backtrace_id_t bt) :
+    eager_datum_stream_t(bt),
+    stream(std::move(_stream)),
+    table(std::move(_table)),
+    join_index(_join_index),
+    predicate(std::move(_predicate)),
+    field(_field) {
+
+    is_array_eq_join = stream->is_array();
+    eq_join_type = stream->cfeed_type();
+    rcheck(!stream->is_infinite(),
+           base_exc_t::LOGIC,
+           "Cannot use an infinite stream with an `eqJoin`.");
+}
+
+std::vector<datum_t> eq_join_datum_stream_t::next_raw_batch(env_t *env,
+                                       const batchspec_t &batchspec) {
+    batcher_t batcher = batchspec.to_batcher();
+
+    std::vector<datum_t> res;
+    while (!is_exhausted() && !batcher.should_send_batch()) {
+        if (!get_all_reader.has() ||
+            (get_all_reader->is_finished() &&
+             get_all_items.empty())) {
+            // Get a new batch of keys
+            std::vector<datum_t> stream_batch = stream->next_batch(env, batchspec);
+            // Basically do a get all on the new keys
+            sindex_to_datum.clear();
+            std::map<datum_t, uint64_t> keys;
+            for (size_t i = 0; i < stream_batch.size(); ++i) {
+                datum_t key_val;
+                try {
+                    if (field.has()) {
+                        key_val = stream_batch[i].get_field(field.as_str(), NOTHROW);
+                    } else {
+                        key_val = predicate->call(
+                            env,
+                            std::vector<datum_t>{stream_batch[i]})->as_datum();
+                    }
+                } catch (const exc_t &e) {
+                    fprintf(stderr, "Error");
+                    if (e.get_type() == base_exc_t::NON_EXISTENCE) {
+                        continue;
+                    } else {
+                        e.rethrow_with_type(e.get_type());
+                    }
+                }
+                sindex_to_datum.insert(std::pair<datum_t, datum_t>{
+                        key_val, stream_batch[i]});
+                keys.insert(std::make_pair(std::move(key_val),
+                                           1));
+            }
+            guarantee(table);
+
+            get_all_reader = table->get_all_with_sindexes(
+                env,
+                datumspec_t(std::move(keys)),
+                join_index.to_std(),
+                backtrace());
+        }
+        if (get_all_items.empty()) {
+            get_all_items = get_all_reader->raw_next_batch(env, batchspec);
+        }
+        rget_item_t item;
+        if (!get_all_items.empty()) {
+            item = get_all_items.back();
+            get_all_items.pop_back();
+        }
+        if (!item.data.has()) {
+            continue;
+        }
+        std::pair<std::multimap<datum_t, datum_t>::iterator,
+                  std::multimap<datum_t, datum_t>::iterator> range;
+        range = sindex_to_datum.equal_range(item.sindex_key);
+        for (std::multimap<datum_t, datum_t>::iterator pair = range.first;
+             pair != range.second;
+             ++pair) {
+            ql::datum_object_builder_t res_item;
+            bool r = true;
+            r &= res_item.add("right", item.data);
+            r &= res_item.add("left", pair->second);
+            guarantee(!r);
+            datum_t res_datum = std::move(res_item).to_datum();
+            batcher.note_el(res_datum);
+            res.push_back(std::move(res_datum));
+        }
+    }
+    return res;
+}
+
+bool eq_join_datum_stream_t::is_exhausted() const {
+    if (stream->is_exhausted() &&
+        get_all_items.empty() &&
+        get_all_reader->is_finished()) {
+        return batch_cache_exhausted();
     }
     return false;
 }

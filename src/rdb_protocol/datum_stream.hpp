@@ -26,6 +26,7 @@
 #include "rdb_protocol/protocol.hpp"
 #include "rdb_protocol/real_table.hpp"
 #include "rdb_protocol/shards.hpp"
+#include "rdb_protocol/val.hpp"
 
 namespace ql {
 
@@ -752,6 +753,8 @@ public:
     virtual void accumulate_all(env_t *env, eager_acc_t *acc) = 0;
     virtual std::vector<datum_t> next_batch(
         env_t *env, const batchspec_t &batchspec) = 0;
+    virtual std::vector<rget_item_t> raw_next_batch(
+        env_t *, const batchspec_t &) { unreachable(); }
     virtual bool is_finished() const = 0;
 
     virtual changefeed::keyspec_t get_changespec() const = 0;
@@ -797,6 +800,8 @@ public:
     virtual void accumulate(env_t *env, eager_acc_t *acc, const terminal_variant_t &tv);
     virtual void accumulate_all(env_t *env, eager_acc_t *acc) = 0;
     virtual std::vector<datum_t> next_batch(env_t *env, const batchspec_t &batchspec);
+    virtual std::vector<rget_item_t> raw_next_batch(env_t *env,
+                                                    const batchspec_t &batchspec);
     virtual bool is_finished() const;
 
     virtual changefeed::keyspec_t get_changespec() const {
@@ -874,8 +879,53 @@ private:
     std::set<store_key_t> processed_pkeys;
 };
 
+class lazy_datum_stream_t;
+class eq_join_datum_stream_t : public eager_datum_stream_t {
+public:
+    eq_join_datum_stream_t(counted_t<datum_stream_t> _stream,
+                           counted_t<table_t> _table,
+                           datum_string_t _join_index,
+                           counted_t<const func_t> &&_predicate,
+                           datum_t _field,
+                           backtrace_id_t bt);
+
+    bool is_array() const final {
+        return is_array_eq_join;
+    }
+    bool is_infinite() const final {
+        return false;
+    }
+    bool is_exhausted() const final;
+
+    std::vector<datum_t>
+    next_raw_batch(env_t *env, const batchspec_t &batchspec);
+
+    feed_type_t cfeed_type() const final {
+        return eq_join_type;
+    }
+
+private:
+    bool is_array_eq_join;
+    counted_t<datum_stream_t> stream;
+    scoped_ptr_t<reader_t> get_all_reader;
+    std::vector<rget_item_t> get_all_items;
+
+    feed_type_t eq_join_type;
+
+    counted_t<table_t> table;
+    datum_string_t join_index;
+
+    std::multimap<ql::datum_t, ql::datum_t> sindex_to_datum;
+
+    counted_t<const func_t> predicate;
+    datum_t field;
+};
+
 class lazy_datum_stream_t : public datum_stream_t {
 public:
+    // So we can get the rget_response_reader
+    friend class eq_join_datum_stream_t;
+
     lazy_datum_stream_t(
         scoped_ptr_t<reader_t> &&_reader,
         backtrace_id_t bt);

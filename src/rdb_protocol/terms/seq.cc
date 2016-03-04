@@ -209,6 +209,52 @@ private:
     virtual const char *name() const { return "map"; }
 };
 
+class eq_join_term_t : public grouped_seq_op_term_t {
+public:
+    eq_join_term_t(compile_env_t *env, const raw_term_t &term)
+        : grouped_seq_op_term_t(env,
+                                term,
+                                argspec_t(3),
+                                optargspec_t({"index"})) { }
+
+    virtual const char *name() const { return "eqjoin"; }
+private:
+    virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env,
+                                          args_t *args,
+                                          eval_flags_t) const {
+        counted_t<datum_stream_t> stream = args->arg(env, 0)->as_seq(env->env);
+        counted_t<table_t> table = args->arg(env, 2)->as_table();
+
+        // Either a field name or a predicate function:
+        counted_t<const func_t> predicate_function;
+        datum_t field_name;
+
+        scoped_ptr_t<val_t> function_or_field = args->arg(env, 1);
+        if (function_or_field->get_type().is_convertible(val_t::type_t::FUNC)) {
+            predicate_function = function_or_field->as_func();
+        } else {
+            field_name = function_or_field->as_datum();
+        }
+
+        datum_t key;
+        scoped_ptr_t<val_t> maybe_key = args->optarg(env, "index");
+        if (maybe_key.has()) {
+            key = maybe_key->as_datum();
+        } else {
+            key = datum_t(datum_string_t(table->get_pkey()));
+        }
+        counted_t<eq_join_datum_stream_t> eq_join_stream =
+            make_counted<eq_join_datum_stream_t>(stream,
+                                                 table,
+                                                 key.as_str(),
+                                                 std::move(predicate_function),
+                                                 field_name,
+                                                 backtrace());
+
+        return new_val(env->env, eq_join_stream);
+    }
+};
+
 class fold_term_t : public grouped_seq_op_term_t {
 public:
     fold_term_t(compile_env_t *env, const raw_term_t &term)
@@ -842,6 +888,11 @@ counted_t<term_t> make_reduce_term(
 counted_t<term_t> make_map_term(
         compile_env_t *env, const raw_term_t &term) {
     return make_counted<map_term_t>(env, term);
+}
+
+counted_t<term_t> make_eq_join_term(
+        compile_env_t *env, const raw_term_t &term) {
+    return make_counted<eq_join_term_t>(env, term);
 }
 
 counted_t<term_t> make_fold_term(
