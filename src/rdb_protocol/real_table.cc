@@ -107,7 +107,13 @@ scoped_ptr_t<ql::reader_t> real_table_t::read_all_with_sindexes(
         return make_scoped<ql::rget_reader_t>(
 	        counted_t<real_table_t>(this),
                 ql::sindex_readgen_t::make(
-                    env, table_name, read_mode, sindex, datumspec, sorting));
+                    env,
+                    table_name,
+                    read_mode,
+                    sindex,
+                    datumspec,
+                    sorting,
+                    true));
     }
 }
 

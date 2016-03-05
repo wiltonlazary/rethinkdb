@@ -417,7 +417,8 @@ public:
 scoped_ptr_t<accumulator_t> make_append(region_t region,
                                         store_key_t last_key,
                                         sorting_t sorting,
-                                        batcher_t *batcher);
+                                        batcher_t *batcher,
+                                        bool require_sindex_val);
 scoped_ptr_t<accumulator_t> make_unsharding_append();
 scoped_ptr_t<accumulator_t> make_terminal(const terminal_variant_t &t);
 scoped_ptr_t<eager_acc_t> make_to_array();

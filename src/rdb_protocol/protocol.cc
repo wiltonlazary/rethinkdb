@@ -1384,7 +1384,7 @@ RDB_IMPL_SERIALIZABLE_4_FOR_CLUSTER(sindex_rangespec_t,
                                     id,
                                     region,
                                     datumspec,
-                                    require_sindex);
+                                    require_sindex_val);
 
 ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(
         sorting_t, int8_t,

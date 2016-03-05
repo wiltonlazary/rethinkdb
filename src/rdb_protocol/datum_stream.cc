@@ -817,11 +817,13 @@ rget_readgen_t::rget_readgen_t(
     const datumspec_t &_datumspec,
     profile_bool_t _profile,
     read_mode_t _read_mode,
-    sorting_t _sorting)
+    sorting_t _sorting,
+    bool _require_sindex_val)
     : readgen_t(std::move(_global_optargs),
                 std::move(_table_name),
                 _profile, _read_mode, _sorting),
-      datumspec(_datumspec) { }
+      datumspec(_datumspec),
+      require_sindex_val(_require_sindex_val) { }
 
 read_t rget_readgen_t::next_read(
     const boost::optional<active_ranges_t> &active_ranges,
@@ -872,7 +874,8 @@ primary_readgen_t::primary_readgen_t(
         datumspec,
         _profile,
         _read_mode,
-        sorting) {
+        sorting,
+        false) {
     store_keys = datumspec.primary_key_map();
 }
 
@@ -1013,14 +1016,16 @@ sindex_readgen_t::sindex_readgen_t(
     const datumspec_t &datumspec,
     profile_bool_t _profile,
     read_mode_t _read_mode,
-    sorting_t sorting)
+    sorting_t sorting,
+    bool require_sindex_val)
     : rget_readgen_t(
         std::move(global_optargs),
         std::move(table_name),
         datumspec,
         _profile,
         _read_mode,
-        sorting),
+        sorting,
+        require_sindex_val),
       sindex(_sindex),
       sent_first_read(false) { }
 
@@ -1030,7 +1035,8 @@ scoped_ptr_t<readgen_t> sindex_readgen_t::make(
     read_mode_t read_mode,
     const std::string &sindex,
     const datumspec_t &datumspec,
-    sorting_t sorting) {
+    sorting_t sorting,
+    bool require_sindex_val) {
     return scoped_ptr_t<readgen_t>(
         new sindex_readgen_t(
             env->get_all_optargs(),
@@ -1039,7 +1045,8 @@ scoped_ptr_t<readgen_t> sindex_readgen_t::make(
             datumspec,
             env->profile(),
             read_mode,
-            sorting));
+            sorting,
+            require_sindex_val));
 }
 
 void sindex_readgen_t::sindex_sort(
@@ -1089,7 +1096,10 @@ rget_read_t sindex_readgen_t::next_read_impl(
         batchspec,
         std::move(transforms),
         boost::optional<terminal_variant_t>(),
-        sindex_rangespec_t(sindex, std::move(region), std::move(ds)),
+        sindex_rangespec_t(sindex,
+                           std::move(region),
+                           std::move(ds),
+                           require_sindex_val),
         sorting(batchspec));
 }
 
@@ -2217,7 +2227,11 @@ std::vector<datum_t> eq_join_datum_stream_t::next_raw_batch(env_t *env,
         }
         std::pair<std::multimap<datum_t, datum_t>::iterator,
                   std::multimap<datum_t, datum_t>::iterator> range;
-        range = sindex_to_datum.equal_range(item.sindex_key);
+        if (item.sindex_key.has()) {
+            range = sindex_to_datum.equal_range(item.sindex_key);
+        } else {
+            range = sindex_to_datum.equal_range(item.data.get_field(join_index));
+        }
         for (std::multimap<datum_t, datum_t>::iterator pair = range.first;
              pair != range.second;
              ++pair) {

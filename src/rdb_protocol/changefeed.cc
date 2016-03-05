@@ -1070,6 +1070,7 @@ public:
                     ops}),
             *pk_range,
             sorting,
+            false,
             *ref.sindex_info,
             &resp,
             release_superblock_t::KEEP);
