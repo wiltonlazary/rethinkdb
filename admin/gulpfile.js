@@ -7,7 +7,7 @@ var gulp = require('gulp'),
     newer = require('gulp-newer'),
     less = require('gulp-less'),
     browserify = require('browserify'),
-    uberWatchify = require('uber-watchify'),
+    watchify = require('watchify'),
     File = require('vinyl'),
     vinylSource = require('vinyl-source-stream'),
     buffer = require('vinyl-buffer'),
@@ -114,23 +114,22 @@ function createBundler(watch) {
   // This is the browserify bundler, used by both the build and watch
   // tasks. Only one should be created, and re-used so that it can
   // cache build results when rebuilding on file changes
-  var retval = uberWatchify(browserify({
+  var wrap = watch ? watchify : function(a){ return a; };
+  var retval = wrap(browserify({
     entries: [BROWSERIFY_BUNDLE_ENTRY_POINT],
-    cache: uberWatchify.getCache(BROWSERIFY_CACHE_FILE),
     extensions: ['.coffee', '.hbs'],
-    packageCache: {},
     fullPaths: true,
-  }),{
-    // special uber-watchify only options
-    cacheFile: BROWSERIFY_CACHE_FILE,
-    watch: watch,
-  })
+    cache: {},
+    packageCache: {}
+  }))
     // Allows var r = require('rethinkdb') without including the
     // driver source in this bundle
     .exclude('rethinkdb')
     // Need to exclude the version file so we don't accidentally pick
     // up something off the filesystem
     .exclude('rethinkdb-version')
+    // Ignore the tls module, it isn't used in the web driver
+    .exclude('tls')
     // convert coffee files first
     .transform(coffeeify)
     // convert handlebars files & insert handlebars runtime
@@ -142,8 +141,8 @@ function createBundler(watch) {
 
   return retval
     .add(VERSION_FILE, {expose: 'rethinkdb-version'})
-    .add(DRIVER_BUILD_DIR+'/rethinkdb.js',
-         {expose: 'rethinkdb'})
+//    .add(DRIVER_BUILD_DIR+'/rethinkdb.js',
+//         {expose: 'rethinkdb'})
     .on('update', rebundle)
     .on('error', function(e){error("Browserify error:", e);})
     .on('log', function(msg){info("Browserify: "+msg);});

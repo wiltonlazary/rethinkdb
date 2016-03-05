@@ -70,7 +70,7 @@
       <xsl:for-each select="build">
         <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='{@configuration}|{@platform}'">
           <LinkIncremental>true</LinkIncremental>
-          <IncludePath>$(ProjectDir)\precompiled\proto;$(ProjectDir)\src;$(IncludePath)</IncludePath>
+          <IncludePath>$(ProjectDir)\build\proto;$(ProjectDir)\src;$(IncludePath)</IncludePath>
           <LibraryPath>$(ProjectDir)\build\windows_deps\lib\<xsl:value-of select="@platform" />\<xsl:value-of select="@configuration" />;$(LibraryPath)</LibraryPath>
         </PropertyGroup>
 
@@ -171,7 +171,7 @@
         </ItemDefinitionGroup>
 
         <ItemGroup Condition="'$(Configuration)|$(Platform)'=='{@configuration}|{@platform}'">
-          <ClCompile Include="precompiled\web_assets\web_assets.cc" />
+          <ClCompile Include="build\web_assets\web_assets.cc" />
           <ClCompile Include="build\proto\rdb_protocol\ql2.pb.cc" />
           <ClCompile Include="src\**\*.cc">
             <xsl:choose>

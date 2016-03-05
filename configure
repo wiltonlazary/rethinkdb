@@ -119,15 +119,7 @@ configure_unixlike () {
         esac
     fi
     check_cxx11
-    require "Precompiled web assets"
-    if [[ -z "$enable_precompiled_web" ]]; then
-        if test -d precompiled/web_assets; then
-            enable_precompiled_web=true
-        else
-            enable_precompiled_web=false
-        fi
-    fi
-    boolvar USE_PRECOMPILED_WEB_ASSETS $enable_precompiled_web
+    check_precompiled_web
     for bin in $required_bin_deps; do
         require_dep $bin
         check_bin $bin
@@ -197,8 +189,7 @@ configure_windows () {
     var PTHREAD_LIBS
     var CROSS_COMPILING 0
     var CXX false
-    require Precompiled assets
-    check_precompiled
+    boolvar USE_PRECOMPILED_WEB_ASSETS false
     for pkg in protobuf curl v8 zlib re2 openssl gtest boost; do
         require_dep $pkg
         fetch_lib $pkg
@@ -1281,14 +1272,6 @@ check_vs_bin () {
     fi
 }
 
-check_precompiled () {
-    if test -d precompiled; then
-        show yes
-    else
-        error "The 'precompiled/' folder is missing. Get it from a RethinkDB source tarball or build it on linux."
-    fi
-}
-
 check_windows () {
     if winver=`cmd /c ver | xargs` 2>&1; then
         require "Operating System"
@@ -1313,6 +1296,18 @@ check_windows_platform () {
             *) var PLATFORM Win32 ;;
         esac
     fi
+}
+
+check_precompiled_web () {
+    optional "Precompiled web assets"
+    if [[ -z "$enable_precompiled_web" ]]; then
+        if test -d precompiled/web_assets; then
+            enable_precompiled_web=true
+        else
+            enable_precompiled_web=false
+        fi
+    fi
+    boolvar USE_PRECOMPILED_WEB_ASSETS $enable_precompiled_web
 }
 
 # The root of the source tree

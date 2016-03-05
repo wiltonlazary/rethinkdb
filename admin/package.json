@@ -33,12 +33,12 @@
     "hbsfy": "^2.5.1",
     "less": "^2.6.1",
     "moment": "^2.11.2",
-    "uber-watchify": "^3.5.0",
     "uglifyify": "^3.0.1",
     "vinyl": "^1.1.1",
     "vinyl-buffer": "^1.0.0",
     "vinyl-source-stream": "^1.1.0",
     "virtual-dom": "^2.1.1",
+    "watchify": "^3.7.0",
     "yargs": "^4.2.0"
   }
 }
