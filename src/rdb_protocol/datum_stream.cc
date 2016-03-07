@@ -2161,6 +2161,7 @@ eq_join_datum_stream_t::eq_join_datum_stream_t(counted_t<datum_stream_t> _stream
     predicate(std::move(_predicate)) {
 
     is_array_eq_join = stream->is_array();
+    is_infinite_eq_join = stream->is_infinite();
     eq_join_type = stream->cfeed_type();
     rcheck(!stream->is_infinite(),
            base_exc_t::LOGIC,
@@ -2184,9 +2185,17 @@ std::vector<datum_t> eq_join_datum_stream_t::next_raw_batch(env_t *env,
             std::map<datum_t, uint64_t> keys;
             for (size_t i = 0; i < stream_batch.size(); ++i) {
                 datum_t key_val;
-                key_val = predicate->call(
-                    env,
-                    std::vector<datum_t>{stream_batch[i]})->as_datum();
+                try {
+                    key_val = predicate->call(
+                        env,
+                        std::vector<datum_t>{stream_batch[i]})->as_datum();
+                } catch (const exc_t &e) {
+                    if (e.get_type() == base_exc_t::NON_EXISTENCE) {
+                        continue;
+                    } else {
+                        e.rethrow_with_type(e.get_type());
+                    }
+                }
                 // Build a multimap from sindex value to datums from left side stream.
                 sindex_to_datum.insert(std::pair<datum_t, datum_t>{
                         key_val, stream_batch[i]});

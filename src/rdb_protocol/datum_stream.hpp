@@ -896,7 +896,7 @@ public:
         return is_array_eq_join;
     }
     bool is_infinite() const final {
-        return false;
+        return is_infinite_eq_join;
     }
     bool is_exhausted() const final;
 
@@ -909,6 +909,7 @@ public:
 
 private:
     bool is_array_eq_join;
+    bool is_infinite_eq_join;
     counted_t<datum_stream_t> stream;
     scoped_ptr_t<reader_t> get_all_reader;
     std::vector<rget_item_t> get_all_items;
@@ -918,16 +919,14 @@ private:
     counted_t<table_t> table;
     datum_string_t join_index;
 
-    std::multimap<ql::datum_t, ql::datum_t> sindex_to_datum;
+    std::multimap<ql::datum_t,
+                  ql::datum_t> sindex_to_datum;
 
     counted_t<const func_t> predicate;
 };
 
 class lazy_datum_stream_t : public datum_stream_t {
 public:
-    // So we can get the rget_response_reader
-    friend class eq_join_datum_stream_t;
-
     lazy_datum_stream_t(
         scoped_ptr_t<reader_t> &&_reader,
         backtrace_id_t bt);
