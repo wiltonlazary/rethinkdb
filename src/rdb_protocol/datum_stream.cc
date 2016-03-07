@@ -2163,9 +2163,6 @@ eq_join_datum_stream_t::eq_join_datum_stream_t(counted_t<datum_stream_t> _stream
     is_array_eq_join = stream->is_array();
     is_infinite_eq_join = stream->is_infinite();
     eq_join_type = stream->cfeed_type();
-    rcheck(!stream->is_infinite(),
-           base_exc_t::LOGIC,
-           "Cannot use an infinite stream with an `eqJoin`.");
 }
 
 std::vector<datum_t> eq_join_datum_stream_t::next_raw_batch(env_t *env,

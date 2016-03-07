@@ -144,7 +144,7 @@ public:
         const ql::datumspec_t &,
         sorting_t,
         read_mode_t) {
-        unreachable();
+        crash("This should only be used on a real_table_t.");
     }
 
     virtual ql::datum_t read_row(ql::env_t *env,
