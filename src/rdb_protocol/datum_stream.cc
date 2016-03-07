@@ -2153,14 +2153,12 @@ eq_join_datum_stream_t::eq_join_datum_stream_t(counted_t<datum_stream_t> _stream
                                                counted_t<table_t> _table,
                                                datum_string_t _join_index,
                                                counted_t<const func_t> &&_predicate,
-                                               datum_t _field,
                                                backtrace_id_t bt) :
     eager_datum_stream_t(bt),
     stream(std::move(_stream)),
     table(std::move(_table)),
     join_index(_join_index),
-    predicate(std::move(_predicate)),
-    field(_field) {
+    predicate(std::move(_predicate)) {
 
     is_array_eq_join = stream->is_array();
     eq_join_type = stream->cfeed_type();
@@ -2181,32 +2179,20 @@ std::vector<datum_t> eq_join_datum_stream_t::next_raw_batch(env_t *env,
             // Get a new batch of keys
             std::vector<datum_t> stream_batch = stream->next_batch(env, batchspec);
             // Basically do a get all on the new keys
+            // but we get the reader directly so we can read the sindex from the lookup.
             sindex_to_datum.clear();
             std::map<datum_t, uint64_t> keys;
             for (size_t i = 0; i < stream_batch.size(); ++i) {
                 datum_t key_val;
-                try {
-                    if (field.has()) {
-                        key_val = stream_batch[i].get_field(field.as_str(), NOTHROW);
-                    } else {
-                        key_val = predicate->call(
-                            env,
-                            std::vector<datum_t>{stream_batch[i]})->as_datum();
-                    }
-                } catch (const exc_t &e) {
-                    fprintf(stderr, "Error");
-                    if (e.get_type() == base_exc_t::NON_EXISTENCE) {
-                        continue;
-                    } else {
-                        e.rethrow_with_type(e.get_type());
-                    }
-                }
+                key_val = predicate->call(
+                    env,
+                    std::vector<datum_t>{stream_batch[i]})->as_datum();
+                // Build a multimap from sindex value to datums from left side stream.
                 sindex_to_datum.insert(std::pair<datum_t, datum_t>{
                         key_val, stream_batch[i]});
                 keys.insert(std::make_pair(std::move(key_val),
                                            1));
             }
-            guarantee(table);
 
             get_all_reader = table->get_all_with_sindexes(
                 env,
@@ -2225,6 +2211,8 @@ std::vector<datum_t> eq_join_datum_stream_t::next_raw_batch(env_t *env,
         if (!item.data.has()) {
             continue;
         }
+        // Get each item in get_all results, and match it with all datums that match
+        // in the multimap from the left side stream.
         std::pair<std::multimap<datum_t, datum_t>::iterator,
                   std::multimap<datum_t, datum_t>::iterator> range;
         if (item.sindex_key.has()) {
@@ -2232,13 +2220,15 @@ std::vector<datum_t> eq_join_datum_stream_t::next_raw_batch(env_t *env,
         } else {
             range = sindex_to_datum.equal_range(item.data.get_field(join_index));
         }
+        datum_string_t right("right");
+        datum_string_t left("left");
         for (std::multimap<datum_t, datum_t>::iterator pair = range.first;
              pair != range.second;
              ++pair) {
             ql::datum_object_builder_t res_item;
             bool r = true;
-            r &= res_item.add("right", item.data);
-            r &= res_item.add("left", pair->second);
+            r &= res_item.add(right, item.data);
+            r &= res_item.add(left, pair->second);
             guarantee(!r);
             datum_t res_datum = std::move(res_item).to_datum();
             batcher.note_el(res_datum);

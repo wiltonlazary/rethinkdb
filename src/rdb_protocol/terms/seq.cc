@@ -227,14 +227,8 @@ private:
 
         // Either a field name or a predicate function:
         counted_t<const func_t> predicate_function;
-        datum_t field_name;
 
-        scoped_ptr_t<val_t> function_or_field = args->arg(env, 1);
-        if (function_or_field->get_type().is_convertible(val_t::type_t::FUNC)) {
-            predicate_function = function_or_field->as_func();
-        } else {
-            field_name = function_or_field->as_datum();
-        }
+        predicate_function = args->arg(env, 1)->as_func(GET_FIELD_SHORTCUT);
 
         datum_t key;
         scoped_ptr_t<val_t> maybe_key = args->optarg(env, "index");
@@ -248,7 +242,6 @@ private:
                                                  table,
                                                  key.as_str(),
                                                  std::move(predicate_function),
-                                                 field_name,
                                                  backtrace());
 
         return new_val(env->env, eq_join_stream);

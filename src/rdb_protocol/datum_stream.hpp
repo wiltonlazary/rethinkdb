@@ -890,7 +890,6 @@ public:
                            counted_t<table_t> _table,
                            datum_string_t _join_index,
                            counted_t<const func_t> &&_predicate,
-                           datum_t _field,
                            backtrace_id_t bt);
 
     bool is_array() const final {
@@ -922,7 +921,6 @@ private:
     std::multimap<ql::datum_t, ql::datum_t> sindex_to_datum;
 
     counted_t<const func_t> predicate;
-    datum_t field;
 };
 
 class lazy_datum_stream_t : public datum_stream_t {
