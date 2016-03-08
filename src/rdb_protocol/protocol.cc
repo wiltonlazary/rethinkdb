@@ -1194,9 +1194,13 @@ struct rdb_w_shard_visitor_t : public boost::static_visitor<bool> {
                 shard_inserts.push_back(*it);
             }
         }
+
         if (!shard_inserts.empty()) {
-            *payload_out = batched_insert_t(std::move(shard_inserts), bi.pkey,
-                                            bi.conflict_behavior, bi.limits,
+            *payload_out = batched_insert_t(std::move(shard_inserts),
+                                            bi.pkey,
+                                            bi.conflict_behavior,
+                                            bi.conflict_func,
+                                            bi.limits,
                                             bi.return_changes);
             return true;
         } else {
@@ -1426,8 +1430,8 @@ RDB_IMPL_SERIALIZABLE_3_FOR_CLUSTER(write_response_t, response, event_log, n_sha
 
 RDB_IMPL_SERIALIZABLE_5_FOR_CLUSTER(
         batched_replace_t, keys, pkey, f, optargs, return_changes);
-RDB_IMPL_SERIALIZABLE_5_FOR_CLUSTER(
-        batched_insert_t, inserts, pkey, conflict_behavior, limits, return_changes);
+RDB_IMPL_SERIALIZABLE_6_FOR_CLUSTER(
+        batched_insert_t, inserts, pkey, conflict_behavior, conflict_func, limits, return_changes);
 
 RDB_IMPL_SERIALIZABLE_3_SINCE_v1_13(point_write_t, key, data, overwrite);
 RDB_IMPL_SERIALIZABLE_1_SINCE_v1_13(point_delete_t, key);
