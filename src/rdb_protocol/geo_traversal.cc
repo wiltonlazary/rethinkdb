@@ -62,7 +62,7 @@ geo_job_data_t::geo_job_data_t(
                                     std::move(last_key),
                                     sorting_t::UNORDERED,
                                     batcher.get(),
-                                    false)) {
+                                    require_sindexes_t::NO)) {
     for (size_t i = 0; i < _transforms.size(); ++i) {
         transformers.push_back(ql::make_op(_transforms[i]));
     }

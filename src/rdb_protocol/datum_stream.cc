@@ -540,39 +540,15 @@ void rget_response_reader_t::accumulate(env_t *env,
 std::vector<rget_item_t> rget_response_reader_t::raw_next_batch(
     env_t *env,
     const batchspec_t &batchspec) {
+    rassert(batchspec.get_batch_type() != batch_type_t::SINDEX_CONSTANT);
     started = true;
-    if (!load_items(env, batchspec)) {
-        return std::vector<rget_item_t>();
-    }
-    r_sanity_check(items_index < items.size());
-
+    bool loaded = load_items(env, batchspec);
+    r_sanity_check(items_index == 0 && (items.size() != 0) == loaded);
     std::vector<rget_item_t> res;
-    switch (batchspec.get_batch_type()) {
-    case batch_type_t::NORMAL: // fallthru
-    case batch_type_t::NORMAL_FIRST: // fallthru
-    case batch_type_t::SINDEX_CONSTANT:
-    case batch_type_t::TERMINAL: {
-        res.reserve(items.size() - items_index);
-        for (; items_index < items.size(); ++items_index) {
-            res.push_back(std::move(items[items_index]));
-        }
-    } break;
-    default:
-        unreachable();
-    }
-    if (items_index >= items.size()) { // free memory immediately
-        items_index = 0;
-        std::vector<rget_item_t> tmp;
-        tmp.swap(items);
-    }
-
-    if (res.size() == 0) {
-        r_sanity_check(shards_exhausted());
-    }
-
+    res.swap(items);
     return res;
-
 }
+
 std::vector<datum_t> rget_response_reader_t::next_batch(
     env_t *env, const batchspec_t &batchspec) {
     started = true;
@@ -818,7 +794,7 @@ rget_readgen_t::rget_readgen_t(
     profile_bool_t _profile,
     read_mode_t _read_mode,
     sorting_t _sorting,
-    bool _require_sindex_val)
+    require_sindexes_t _require_sindex_val)
     : readgen_t(std::move(_global_optargs),
                 std::move(_table_name),
                 _profile, _read_mode, _sorting),
@@ -875,7 +851,7 @@ primary_readgen_t::primary_readgen_t(
         _profile,
         _read_mode,
         sorting,
-        false) {
+        require_sindexes_t::NO) {
     store_keys = datumspec.primary_key_map();
 }
 
@@ -1017,7 +993,7 @@ sindex_readgen_t::sindex_readgen_t(
     profile_bool_t _profile,
     read_mode_t _read_mode,
     sorting_t sorting,
-    bool require_sindex_val)
+    require_sindexes_t require_sindex_val)
     : rget_readgen_t(
         std::move(global_optargs),
         std::move(table_name),
@@ -1036,7 +1012,7 @@ scoped_ptr_t<readgen_t> sindex_readgen_t::make(
     const std::string &sindex,
     const datumspec_t &datumspec,
     sorting_t sorting,
-    bool require_sindex_val) {
+    require_sindexes_t require_sindex_val) {
     return scoped_ptr_t<readgen_t>(
         new sindex_readgen_t(
             env->get_all_optargs(),
@@ -2152,18 +2128,16 @@ bool map_datum_stream_t::is_exhausted() const {
 eq_join_datum_stream_t::eq_join_datum_stream_t(counted_t<datum_stream_t> _stream,
                                                counted_t<table_t> _table,
                                                datum_string_t _join_index,
-                                               counted_t<const func_t> &&_predicate,
+                                               counted_t<const func_t> _predicate,
                                                backtrace_id_t bt) :
     eager_datum_stream_t(bt),
     stream(std::move(_stream)),
     table(std::move(_table)),
-    join_index(_join_index),
-    predicate(std::move(_predicate)) {
-
-    is_array_eq_join = stream->is_array();
-    is_infinite_eq_join = stream->is_infinite();
-    eq_join_type = stream->cfeed_type();
-}
+    join_index(std::move(_join_index)),
+    predicate(std::move(_predicate)),
+    is_array_eq_join(stream->is_array()),
+    is_infinite_eq_join(stream->is_infinite()),
+    eq_join_type(stream->cfeed_type()) { }
 
 std::vector<datum_t> eq_join_datum_stream_t::next_raw_batch(env_t *env,
                                        const batchspec_t &batchspec) {

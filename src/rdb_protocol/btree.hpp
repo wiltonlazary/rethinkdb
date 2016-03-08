@@ -158,7 +158,7 @@ void rdb_rget_secondary_slice(
     const boost::optional<ql::terminal_variant_t> &terminal,
     const key_range_t &pk_range,
     sorting_t sorting,
-    bool require_sindex_val,
+    require_sindexes_t require_sindex_val,
     const sindex_disk_info_t &sindex_info,
     rget_read_response_t *response,
     release_superblock_t release_superblock);

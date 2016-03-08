@@ -241,7 +241,7 @@ private:
             make_counted<eq_join_datum_stream_t>(stream,
                                                  table,
                                                  key.as_str(),
-                                                 std::move(predicate_function),
+                                                 predicate_function,
                                                  backtrace());
 
         return new_val(env->env, eq_join_stream);

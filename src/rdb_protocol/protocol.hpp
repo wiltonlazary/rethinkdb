@@ -263,7 +263,7 @@ struct sindex_rangespec_t {
                        // dealing with truncated keys.
                        boost::optional<region_t> _region,
                        ql::datumspec_t _datumspec,
-                       bool _require_sindex_val = false)
+                       require_sindexes_t _require_sindex_val = require_sindexes_t::NO)
         : id(_id),
           region(std::move(_region)),
           datumspec(std::move(_datumspec)),
@@ -275,7 +275,7 @@ struct sindex_rangespec_t {
     // For dealing with truncation and `get_all`.
     ql::datumspec_t datumspec;
     // For forcing sindex values to be returned with sorting::UNORDERED, used in eq_join.
-    bool require_sindex_val;
+    require_sindexes_t require_sindex_val;
 };
 
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(sindex_rangespec_t);

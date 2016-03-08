@@ -139,7 +139,7 @@ public:
     append_t(region_t region,
              store_key_t last_key,
              sorting_t _sorting,
-             bool _require_sindex_val,
+             require_sindexes_t _require_sindex_val,
              batcher_t *_batcher)
         : grouped_acc_t<stream_t>(
             stream_t(std::move(region), std::move(last_key))),
@@ -186,7 +186,8 @@ protected:
         if (batcher) batcher->note_el(el);
         // We don't bother storing the sindex if we aren't sorting (this is
         // purely a performance optimization).
-        datum_t rget_sindex_val = !require_sindex_val &&
+        datum_t rget_sindex_val =
+            require_sindex_val != require_sindexes_t::YES &&
             (sorting == sorting_t::UNORDERED)
             ? datum_t()
             : lazy_sindex_val();
@@ -223,14 +224,14 @@ private:
     const sorting_t sorting;
     const key_le_t key_le;
     batcher_t *const batcher;
-    bool require_sindex_val;
+    require_sindexes_t require_sindex_val;
 };
 
 scoped_ptr_t<accumulator_t> make_append(region_t region,
                                         store_key_t last_key,
                                         sorting_t sorting,
                                         batcher_t *batcher,
-                                        bool require_sindex_val) {
+                                        require_sindexes_t require_sindex_val) {
     return make_scoped<append_t>(
         std::move(region), std::move(last_key), sorting, require_sindex_val, batcher);
 }
@@ -251,7 +252,11 @@ public:
         store_key_t last_key,
         sorting_t sorting,
         std::vector<scoped_ptr_t<op_t> > *_ops)
-        : append_t(region, last_key, sorting, false, &batcher),
+        : append_t(region,
+                   last_key,
+                   sorting,
+                   require_sindexes_t::NO,
+                   &batcher),
           is_primary(_is_primary),
           seen_distinct(false),
           seen(0),

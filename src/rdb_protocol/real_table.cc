@@ -113,7 +113,7 @@ scoped_ptr_t<ql::reader_t> real_table_t::read_all_with_sindexes(
                     sindex,
                     datumspec,
                     sorting,
-                    true));
+                    require_sindexes_t::YES));
     }
 }
 

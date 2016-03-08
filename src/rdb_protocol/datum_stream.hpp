@@ -588,7 +588,7 @@ public:
         profile_bool_t profile,
         read_mode_t read_mode,
         sorting_t sorting,
-        bool require_sindex_val);
+        require_sindexes_t require_sindex_val);
 
     virtual read_t terminal_read(
         const std::vector<transform_variant_t> &transform,
@@ -612,7 +612,7 @@ private:
 
 protected:
     datumspec_t datumspec;
-    bool require_sindex_val;
+    require_sindexes_t require_sindex_val;
 };
 
 class primary_readgen_t : public rget_readgen_t {
@@ -659,7 +659,7 @@ public:
         const std::string &sindex,
         const datumspec_t &datumspec = datumspec_t(datum_range_t::universe()),
         sorting_t sorting = sorting_t::UNORDERED,
-        bool require_sindex_val = false);
+        require_sindexes_t require_sindex_val = require_sindexes_t::NO);
 
     virtual void sindex_sort(std::vector<rget_item_t> *vec,
                              const batchspec_t &batchspec) const;
@@ -675,7 +675,7 @@ private:
         profile_bool_t profile,
         read_mode_t read_mode,
         sorting_t sorting,
-        bool require_sindex_val);
+        require_sindexes_t require_sindex_val);
     virtual rget_read_t next_read_impl(
         const boost::optional<active_ranges_t> &active_ranges,
         const boost::optional<reql_version_t> &reql_version,
@@ -889,7 +889,7 @@ public:
     eq_join_datum_stream_t(counted_t<datum_stream_t> _stream,
                            counted_t<table_t> _table,
                            datum_string_t _join_index,
-                           counted_t<const func_t> &&_predicate,
+                           counted_t<const func_t> _predicate,
                            backtrace_id_t bt);
 
     bool is_array() const final {
@@ -908,13 +908,9 @@ public:
     }
 
 private:
-    bool is_array_eq_join;
-    bool is_infinite_eq_join;
     counted_t<datum_stream_t> stream;
     scoped_ptr_t<reader_t> get_all_reader;
     std::vector<rget_item_t> get_all_items;
-
-    feed_type_t eq_join_type;
 
     counted_t<table_t> table;
     datum_string_t join_index;
@@ -923,6 +919,10 @@ private:
                   ql::datum_t> sindex_to_datum;
 
     counted_t<const func_t> predicate;
+
+    bool is_array_eq_join;
+    bool is_infinite_eq_join;
+    feed_type_t eq_join_type;
 };
 
 class lazy_datum_stream_t : public datum_stream_t {
