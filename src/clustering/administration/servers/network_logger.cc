@@ -19,6 +19,7 @@ void network_logger_t::on_change(
         const peer_id_t &peer_id, const cluster_directory_metadata_t *value) {
     if (value != nullptr) {
         const server_id_t &server_id = value->server_id;
+        local_connections.set_key(server_id, empty_value_t());
         switch (value->peer_type) {
             case SERVER_PEER: {
                 const name_string_t &name = value->server_config.config.name;
@@ -27,7 +28,6 @@ void network_logger_t::on_change(
                         name.c_str(), uuid_to_str(server_id).c_str());
                 }
                 connected_servers[peer_id] = std::make_pair(server_id, name);
-                local_connections.set_key(server_id, empty_value_t());
                 break;
             }
             case PROXY_PEER: {
@@ -36,7 +36,6 @@ void network_logger_t::on_change(
                         uuid_to_str(peer_id.get_uuid()).c_str());
                 }
                 connected_proxies.insert(std::make_pair(peer_id, server_id));
-                local_connections.set_key(server_id, empty_value_t());
                 break;
             }
             default: unreachable();
