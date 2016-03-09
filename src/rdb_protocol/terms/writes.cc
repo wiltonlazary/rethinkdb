@@ -143,7 +143,19 @@ private:
 
         if (conflict_behavior == conflict_behavior_t::FUNCTION) {
             conflict_func = conflict_optarg->as_func();
+            // Check correct arity on function
+            rcheck(conflict_func->arity().get() == 0 ||
+                   conflict_func->arity().get() == 3,
+                   base_exc_t::LOGIC,
+                   strprintf("The conflict function passed to `insert` should "
+                             "expect 3 arguments."));
+            // Check that insert function is atomic.
+            rcheck(conflict_func->is_deterministic() == deterministic_t::always,
+                   base_exc_t::LOGIC,
+                   strprintf("The conflict function passed to `insert` must "
+                             "be deterministic."));
         }
+
         bool done = false;
         datum_t stats = new_stats_object();
         std::vector<std::string> generated_keys;

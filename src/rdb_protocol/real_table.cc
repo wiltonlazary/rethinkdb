@@ -282,11 +282,10 @@ ql::datum_t real_table_t::write_batched_insert(
     std::vector<std::vector<ql::datum_t> > batches = split(std::move(inserts));
     for (auto &&batch : batches) {
         batched_insert_t write(
-            env,
             std::move(batch),
             pkey,
             conflict_behavior,
-            ql::wire_func_t(conflict_func),
+            conflict_func,
             env->limits(),
             return_changes);
         write_t w(std::move(write), durability, env->profile(), env->limits());

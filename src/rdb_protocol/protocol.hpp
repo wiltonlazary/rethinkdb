@@ -581,7 +581,7 @@ struct batched_insert_t {
         std::vector<ql::datum_t> &&_inserts,
         const std::string &_pkey,
         conflict_behavior_t _conflict_behavior,
-        const ql::wire_func_t &_conflict_func,
+        const counted_t<const ql::func_t> &_conflict_func,
         const ql::configured_limits_t &_limits,
         return_changes_t _return_changes)
         : inserts(std::move(_inserts)), pkey(_pkey),
