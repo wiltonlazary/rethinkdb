@@ -192,17 +192,6 @@ datum_t vals_to_change(
     }
 }
 
-datum_t change_val_to_change(
-    const change_val_t &change,
-    bool discard_old_val = false,
-    bool discard_new_val = false) {
-    return vals_to_change(
-        change.old_val ? change.old_val->val : datum_t::null(),
-        change.new_val ? change.new_val->val : datum_t::null(),
-        discard_old_val,
-        discard_new_val);
-}
-
 enum class pop_type_t { RANGE, POINT };
 class maybe_squashing_queue_t {
 public:
@@ -1341,15 +1330,25 @@ public:
             std::rethrow_exception(exc);
         }
     }
+    enum class type_t {
+        ADD = 0,
+        REMOVE = 1,
+        CHANGE = 2,
+        INITIAL = 3,
+        UNINITIAL = 4,
+        STATE = 5
+    };
 protected:
     subscription_t(feed_t *feed,
                    configured_limits_t limits,
                    const datum_t &squash,
-                   bool include_states);
+                   bool include_states,
+                   bool include_types);
     void maybe_signal_cond() THROWS_NOTHING;
     void maybe_signal_queue_nearly_full_cond() THROWS_NOTHING;
     void destructor_cleanup(std::function<void()> del_sub) THROWS_NOTHING;
 
+    datum_t maybe_add_type(datum_t &&datum, type_t type);
     // If an error occurs, we're detached and `exc` is set to an exception to rethrow.
     std::exception_ptr exc;
     // If we exceed the array size limit, elements are evicted from `els` and
@@ -1361,6 +1360,7 @@ protected:
     const configured_limits_t limits;
     const bool squash; // Whether or not to squash changes.
     const bool include_states; // Whether or not to include notes about the state.
+    const bool include_types; // Whether or not to include a type field in items.
     // Whether we're in the middle of one logical batch (only matters for squashing).
     bool mid_batch;
 private:
@@ -1376,6 +1376,63 @@ private:
     cond_t *queue_nearly_full_cond;
     DISABLE_COPYING(subscription_t);
 };
+
+datum_t add_type(datum_t &&datum, subscription_t::type_t type) {
+    datum_string_t type_string;
+    switch (type) {
+    case subscription_t::type_t::ADD:
+        type_string = datum_string_t("add");
+    case subscription_t::type_t::REMOVE:
+        type_string = datum_string_t("remove");
+    case subscription_t::type_t::CHANGE:
+        type_string = datum_string_t("change");
+    case subscription_t::type_t::INITIAL:
+        type_string = datum_string_t("initial");
+    case subscription_t::type_t::UNINITIAL:
+        type_string = datum_string_t("uninitial");
+    case subscription_t::type_t::STATE:
+        type_string = datum_string_t("state");
+    default:
+        unreachable();
+    }
+    return std::move(datum.merge(
+                         datum_t{
+                             std::map<datum_string_t, datum_t>{
+                                 std::pair<datum_string_t, datum_t>{
+                                 datum_string_t("type"),
+                                     datum_t(type_string)}}}));
+}
+
+datum_t subscription_t::maybe_add_type(datum_t &&datum, type_t type) {
+    if (!include_types) {
+        return std::move(datum);
+    }
+    return add_type(std::move(datum), type);
+}
+
+datum_t change_val_to_change(
+    const change_val_t &change,
+    bool discard_old_val = false,
+    bool discard_new_val = false,
+    bool include_type = false) {
+    subscription_t::type_t change_type;
+    if (!change.old_val && change.new_val) {
+        change_type = subscription_t::type_t::ADD;
+    } else if (change.old_val && !change.new_val) {
+        change_type = subscription_t::type_t::REMOVE;
+    } else {
+        change_type = subscription_t::type_t::CHANGE;
+    }
+    datum_t res = vals_to_change(
+        change.old_val ? change.old_val->val : datum_t::null(),
+        change.new_val ? change.new_val->val : datum_t::null(),
+        discard_old_val,
+        discard_new_val);
+    if (include_type) {
+        return add_type(std::move(res), change_type);
+    }
+    return res;
+}
 
 enum class init_squashing_queue_t { NO, YES };
 class flat_sub_t : public subscription_t {
@@ -1714,10 +1771,15 @@ public:
     empty_sub_t(feed_t *feed,
                 configured_limits_t limits,
                 const datum_t &squash,
-                bool include_states)
+                bool include_states,
+                bool include_types)
     // There will never be any changes, safe to start squashing right away.
     : flat_sub_t(init_squashing_queue_t::YES,
-                 feed, std::move(limits), squash, include_states),
+                 feed,
+                 std::move(limits),
+                 squash,
+                 include_states,
+                 include_types),
       state(state_t::INITIALIZING),
       sent_state(state_t::NONE),
       include_initial(false) {
@@ -1734,7 +1796,9 @@ public:
         if (state != sent_state && include_states) {
             sent_state = state;
             state = state_t::READY;
-            return state_datum(sent_state);
+            return maybe_add_type(
+                state_datum(sent_state),
+                type_t::STATE);
         }
         r_sanity_fail();
     }
@@ -1787,10 +1851,15 @@ public:
                 configured_limits_t limits,
                 const datum_t &squash,
                 bool include_states,
+                bool include_types,
                 datum_t _pkey)
         // For point changefeeds we start squashing right away.
         : flat_sub_t(init_squashing_queue_t::YES,
-                     feed, std::move(limits), squash, include_states),
+                     feed,
+                     std::move(limits),
+                     squash,
+                     include_states,
+                     include_types),
           pkey(std::move(_pkey)),
           stamp(0),
           started(false),
@@ -1816,7 +1885,8 @@ public:
     datum_t pop_el() final {
         if (state != sent_state && include_states) {
             sent_state = state;
-            return state_datum(state);
+            return maybe_add_type(state_datum(state),
+                                  type_t::STATE);
         }
         datum_t ret;
         if (state != state_t::READY && include_initial) {
@@ -1825,12 +1895,17 @@ public:
             if (!ret.has()) {
                 // This is the one place where it's legal to have a document
                 // like `{new_val: null}`.
-                ret = datum_t(
-                    std::map<datum_string_t, datum_t>{{
-                        datum_string_t("new_val"), datum_t::null()}});
+                ret = maybe_add_type(datum_t(
+                                         std::map<datum_string_t, datum_t>{{
+                                                 datum_string_t("new_val"),
+                                                 datum_t::null()}}),
+                                     type_t::INITIAL);
             }
         } else {
-            ret = change_val_to_change(pop_change_val());
+            ret = change_val_to_change(pop_change_val(),
+                                       false,
+                                       false,
+                                       include_types);
         }
         initial_val = boost::none;
         state = state_t::READY;
@@ -1959,12 +2034,17 @@ public:
                 configured_limits_t limits,
                 const datum_t &squash,
                 bool include_states,
+                bool include_types,
                 env_t *outer_env,
                 keyspec_t::range_t _spec)
         // We don't turn on squashing until later for range subs.  (We need to
         // wait until we've purged and all the initial values are reconciled.)
         : flat_sub_t(init_squashing_queue_t::NO,
-                     feed, std::move(limits), squash, include_states),
+                     feed,
+                     std::move(limits),
+                     squash,
+                     include_states,
+                     include_types),
           spec(std::move(_spec)),
           state(state_t::READY),
           sent_state(state_t::NONE),
@@ -2037,7 +2117,8 @@ public:
             if (artificial_include_initial && artificial_initial_vals.size() == 0) {
                 state = state_t::READY;
             }
-            return state_datum(sent_state);
+            return maybe_add_type(state_datum(sent_state),
+                                  type_t::STATE);
         }
         if (artificial_initial_vals.size() != 0) {
             datum_t d = artificial_initial_vals.back();
@@ -2197,8 +2278,13 @@ public:
                 const datum_t &squash,
                 bool _include_offsets,
                 bool include_states,
+                bool include_types,
                 keyspec_t::limit_t _spec)
-        : subscription_t(feed, limits, squash, include_states),
+        : subscription_t(feed,
+                         limits,
+                         squash,
+                         include_states,
+                         include_types),
           uuid(generate_uuid()),
           need_init(-1),
           got_init(0),
@@ -2223,7 +2309,8 @@ public:
         if (need_init == got_init) {
             ASSERT_NO_CORO_WAITING;
             if (include_initial) {
-                if (include_states) els.push_back(initializing_datum());
+                if (include_states) els.push_back(maybe_add_type(initializing_datum(),
+                                                                 type_t::STATE));
                 size_t i = 0;
                 for (auto it = active_data.rbegin(); it != active_data.rend(); ++it) {
                     std::map<datum_string_t, datum_t> m;
@@ -2232,10 +2319,12 @@ public:
                         m[datum_string_t("new_offset")] =
                             datum_t(static_cast<double>(i++));
                     }
-                    els.push_back(datum_t(std::move(m)));
+                    els.push_back(maybe_add_type(datum_t(std::move(m)),
+                                                 type_t::INITIAL));
                 }
             }
-            if (include_states) els.push_back(ready_datum());
+            if (include_states) els.push_back(maybe_add_type(ready_datum(),
+                                                             type_t::STATE));
 
             if (!squash) {
                 decltype(queued_changes) changes;
@@ -2982,12 +3071,14 @@ subscription_t::subscription_t(
     feed_t *_feed,
     configured_limits_t _limits,
     const datum_t &_squash,
-    bool _include_states)
+    bool _include_states,
+    bool _include_types)
     : skipped(0),
       feed(_feed),
       limits(std::move(_limits)),
       squash(_squash.as_bool()),
       include_states(_include_states),
+      include_types(_include_types),
       mid_batch(false),
       min_interval(_squash.get_type() == datum_t::R_NUM ? _squash.as_num() : 0.0),
       cond(NULL),
@@ -3488,24 +3579,44 @@ scoped_ptr_t<subscription_t> new_sub(
             rcheck_datum(!ss->include_offsets, base_exc_t::LOGIC,
                          "Cannot include offsets for range subs.");
             return new range_sub_t(
-                feed, ss->limits, ss->squash, ss->include_states, env, range);
+                feed,
+                ss->limits,
+                ss->squash,
+                ss->include_states,
+                ss->include_types,
+                env,
+                range);
         }
         subscription_t *operator()(const keyspec_t::empty_t &) const {
             rcheck_datum(!ss->include_offsets, base_exc_t::LOGIC,
                          "Cannot include offsets for empty subs.");
             return new empty_sub_t(
-                feed, ss->limits, ss->squash, ss->include_states);
+                feed,
+                ss->limits,
+                ss->squash,
+                ss->include_states,
+                ss->include_types);
         }
         subscription_t *operator()(const keyspec_t::limit_t &limit) const {
             return new limit_sub_t(
-                feed, ss->limits, ss->squash, ss->include_offsets,
-                ss->include_states, limit);
+                feed,
+                ss->limits,
+                ss->squash,
+                ss->include_offsets,
+                ss->include_states,
+                ss->include_types,
+                limit);
         }
         subscription_t *operator()(const keyspec_t::point_t &point) const {
             rcheck_datum(!ss->include_offsets, base_exc_t::LOGIC,
                          "Cannot include offsets for point subs.");
             return new point_sub_t(
-                feed, ss->limits, ss->squash, ss->include_states, point.key);
+                feed,
+                ss->limits,
+                ss->squash,
+                ss->include_states,
+                ss->include_types,
+                point.key);
         }
         env_t *env;
         feed_t *feed;
@@ -3519,6 +3630,7 @@ streamspec_t::streamspec_t(counted_t<datum_stream_t> _maybe_src,
                            std::string _table_name,
                            bool _include_offsets,
                            bool _include_states,
+                           bool _include_types,
                            configured_limits_t _limits,
                            datum_t _squash,
                            keyspec_t::spec_t _spec) :
@@ -3526,6 +3638,7 @@ streamspec_t::streamspec_t(counted_t<datum_stream_t> _maybe_src,
     table_name(std::move(_table_name)),
     include_offsets(std::move(_include_offsets)),
     include_states(std::move(_include_states)),
+    include_types(std::move(_include_types)),
     limits(std::move(_limits)),
     squash(std::move(_squash)),
     spec(std::move(_spec)) { }
