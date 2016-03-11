@@ -43,3 +43,19 @@ tests:
 
     - py: tbl.insert({'id': 2, 'num': 5})
       ot: partial({'inserted': 1})
+
+    # Test for point changefeed
+    - py: tbl.delete()
+    - py: tbl.insert({"id":1, "num":2})
+      ot: partial({'inserted': 1})
+    - py: d = tbl.get(1).changes(include_types=True, include_initial=True)
+    - py: fetch(d)
+      ot: partial([{'type': 'initial'}])
+    - py: tbl.get(1).update({"num": 42})
+      ot: partial({'replaced': 1})
+    - py: fetch(d)
+      ot: partial([{'type': 'change'}])
+    - py: tbl.get(1).delete()
+      ot: partial({'deleted': 1})
+    - py: fetch(d)
+      ot: partial([{'type': 'uninitial'}]) # TODO: is this correct?
