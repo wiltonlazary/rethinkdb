@@ -1,0 +1,45 @@
+desc: Test that types in a changefeed work as expected
+table_variable_name: tbl
+tests:
+
+    - py: tbl.index_create('num')
+
+    # Test all types on whole document changefeed
+    - py: tbl.insert({'id': 1})
+      ot: partial({'inserted': 1})
+
+    - py: a = tbl.changes(include_initial=True, include_states=True, include_types=True)
+    - py: fetch(a)
+      ot: [{'state': 'initializing', 'type': 'state'}, {'new_val': {'id': 1}, 'type': 'initial'}, {'state': 'ready', 'type': 'state'}]
+    - py: tbl.insert({'id': 2})
+    - py: fetch(a)
+      ot: partial([{'type': 'add'}])
+    - py: tbl.delete()
+    - py: fetch(a)
+      ot: partial([{'type': 'remove'}])
+
+    - py: tbl.insert({'id': 2, 'num': 5})
+      ot: partial({'inserted': 1})
+    - py: b = tbl.between(1, 10, index="num").changes(include_initial=True, include_types=True)
+    - py: tbl.get(2).update({'num': 666})
+    - py: fetch(b)
+      ot: partial([{'type':'initial'}, {'type': 'uninitial'}])
+
+    # Test all types on row changefeed
+
+    - py: tbl.delete()
+    - py: tbl.insert({'id': 1, 'num': 1})
+      ot: partial({'inserted': 1})
+
+    - py: c = tbl.pluck('num').changes(include_initial=True, include_states=True, include_types=True)
+    - py: fetch(c)
+      ot: [{'state': 'initializing', 'type': 'state'}, {'new_val': {'num': 1}, 'type': 'initial'}, {'state': 'ready', 'type': 'state'}]
+    - py: tbl.insert({'id': 2})
+    - py: fetch(c)
+      ot: partial([{'type': 'add'}])
+    - py: tbl.delete()
+    - py: fetch(c)
+      ot: partial([{'type': 'remove'}])
+
+    - py: tbl.insert({'id': 2, 'num': 5})
+      ot: partial({'inserted': 1})

@@ -25,6 +25,7 @@ namespace changefeed {
 struct indexed_datum_t {
     indexed_datum_t(datum_t _val, datum_t _index, boost::optional<uint64_t> _tag_num)
         : val(std::move(_val)), index(std::move(_index)), tag_num(std::move(_tag_num)) {
+        guarantee(val.has());
     }
     datum_t val, index;
     boost::optional<uint64_t> tag_num;
@@ -1301,8 +1302,7 @@ public:
         CHANGE = 2,
         INITIAL = 3,
         UNINITIAL = 4,
-        STATE = 5,
-        ERROR = 6
+        STATE = 5
     };
 protected:
     subscription_t(feed_t *feed,
@@ -1364,7 +1364,6 @@ datum_t add_type(datum_t &&datum, subscription_t::type_t type) {
     case subscription_t::type_t::STATE:
         type_string = datum_string_t("state");
         break;
-    case subscription_t::type_t::ERROR:
     default:
         unreachable();
     }
