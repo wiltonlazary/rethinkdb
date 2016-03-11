@@ -25,7 +25,6 @@ namespace changefeed {
 struct indexed_datum_t {
     indexed_datum_t(datum_t _val, datum_t _index, boost::optional<uint64_t> _tag_num)
         : val(std::move(_val)), index(std::move(_index)), tag_num(std::move(_tag_num)) {
-        guarantee(val.has());
     }
     datum_t val, index;
     boost::optional<uint64_t> tag_num;
@@ -156,40 +155,6 @@ std::string print(const change_val_t &cv) {
 template<class T>
 void debug_print(printf_buffer_t *buf, const T &t) {
     buf->appendf("%s", debug::print(t).c_str());
-}
-
-datum_t vals_to_change(
-    datum_t old_val,
-    datum_t new_val,
-    bool discard_old_val = false,
-    bool discard_new_val = false,
-    bool include_offsets = false,
-    boost::optional<size_t> old_offset = boost::none,
-    boost::optional<size_t> new_offset = boost::none) {
-    if ((discard_old_val || old_val.get_type() == datum_t::R_NULL)
-        && (discard_new_val || new_val.get_type() == datum_t::R_NULL)) {
-        return datum_t();
-    } else {
-        std::map<datum_string_t, datum_t> ret;
-        if (!discard_old_val) {
-            ret[datum_string_t("old_val")] = std::move(old_val);
-            if (include_offsets) {
-                ret[datum_string_t("old_offset")] = old_offset
-                    ? datum_t(static_cast<double>(*old_offset))
-                    : datum_t::null();
-            }
-        }
-        if (!discard_new_val) {
-            ret[datum_string_t("new_val")] = std::move(new_val);
-            if (include_offsets) {
-                ret[datum_string_t("new_offset")] = new_offset
-                    ? datum_t(static_cast<double>(*new_offset))
-                    : datum_t::null();
-            }
-        }
-        guarantee(ret.size() != 0);
-        return datum_t(std::move(ret));
-    }
 }
 
 enum class pop_type_t { RANGE, POINT };
@@ -1336,7 +1301,8 @@ public:
         CHANGE = 2,
         INITIAL = 3,
         UNINITIAL = 4,
-        STATE = 5
+        STATE = 5,
+        ERROR = 6
     };
 protected:
     subscription_t(feed_t *feed,
@@ -1382,16 +1348,23 @@ datum_t add_type(datum_t &&datum, subscription_t::type_t type) {
     switch (type) {
     case subscription_t::type_t::ADD:
         type_string = datum_string_t("add");
+        break;
     case subscription_t::type_t::REMOVE:
         type_string = datum_string_t("remove");
+        break;
     case subscription_t::type_t::CHANGE:
         type_string = datum_string_t("change");
+        break;
     case subscription_t::type_t::INITIAL:
         type_string = datum_string_t("initial");
+        break;
     case subscription_t::type_t::UNINITIAL:
         type_string = datum_string_t("uninitial");
+        break;
     case subscription_t::type_t::STATE:
         type_string = datum_string_t("state");
+        break;
+    case subscription_t::type_t::ERROR:
     default:
         unreachable();
     }
@@ -1410,27 +1383,81 @@ datum_t subscription_t::maybe_add_type(datum_t &&datum, type_t type) {
     return add_type(std::move(datum), type);
 }
 
+
+datum_t vals_to_change(
+    datum_t old_val,
+    datum_t new_val,
+    bool discard_old_val = false,
+    bool discard_new_val = false,
+    bool include_type = false,
+    bool include_offsets = false,
+    boost::optional<size_t> old_offset = boost::none,
+    boost::optional<size_t> new_offset = boost::none) {
+    subscription_t::type_t change_type;
+
+    fprintf(stderr, "Check datums:\n\n%s\n\n%s\n\n",
+            old_val.print().c_str(),
+            new_val.print().c_str());
+
+    if (!old_val.has() && new_val.has()) {
+        change_type = subscription_t::type_t::INITIAL;
+        discard_old_val = true;
+    } else if (old_val.has() && !new_val.has()) {
+        change_type = subscription_t::type_t::UNINITIAL;
+        discard_new_val = true;
+    } else if (old_val.has()
+               && old_val.get_type() == datum_t::R_NULL) {
+        change_type = subscription_t::type_t::ADD;
+    } else if (new_val.has()
+               && new_val.get_type() == datum_t::R_NULL) {
+        change_type = subscription_t::type_t::REMOVE;
+    } else {
+        // Either it's a change, or we're about to return.
+        change_type = subscription_t::type_t::CHANGE;
+    }
+    // Status type is handled where statuses are generated.
+
+    if ((discard_old_val || old_val.get_type() == datum_t::R_NULL)
+        && (discard_new_val || new_val.get_type() == datum_t::R_NULL)) {
+        return datum_t();
+    } else {
+        std::map<datum_string_t, datum_t> ret;
+        if (!discard_old_val) {
+            ret[datum_string_t("old_val")] = std::move(old_val);
+            if (include_offsets) {
+                ret[datum_string_t("old_offset")] = old_offset
+                    ? datum_t(static_cast<double>(*old_offset))
+                    : datum_t::null();
+            }
+        }
+        if (!discard_new_val) {
+            ret[datum_string_t("new_val")] = std::move(new_val);
+            if (include_offsets) {
+                ret[datum_string_t("new_offset")] = new_offset
+                    ? datum_t(static_cast<double>(*new_offset))
+                    : datum_t::null();
+            }
+        }
+        guarantee(ret.size() != 0);
+        datum_t res = datum_t(std::move(ret));
+        if (include_type) {
+            return add_type(std::move(res), change_type);
+        }
+        return res;
+    }
+}
+
 datum_t change_val_to_change(
     const change_val_t &change,
     bool discard_old_val = false,
     bool discard_new_val = false,
     bool include_type = false) {
-    subscription_t::type_t change_type;
-    if (!change.old_val && change.new_val) {
-        change_type = subscription_t::type_t::ADD;
-    } else if (change.old_val && !change.new_val) {
-        change_type = subscription_t::type_t::REMOVE;
-    } else {
-        change_type = subscription_t::type_t::CHANGE;
-    }
     datum_t res = vals_to_change(
-        change.old_val ? change.old_val->val : datum_t::null(),
-        change.new_val ? change.new_val->val : datum_t::null(),
+        change.old_val ? change.old_val->val : datum_t(),
+        change.new_val ? change.new_val->val : datum_t(),
         discard_old_val,
-        discard_new_val);
-    if (include_type) {
-        return add_type(std::move(res), change_type);
-    }
+        discard_new_val,
+        include_type);
     return res;
 }
 
@@ -1895,12 +1922,12 @@ public:
             if (!ret.has()) {
                 // This is the one place where it's legal to have a document
                 // like `{new_val: null}`.
-                ret = maybe_add_type(datum_t(
-                                         std::map<datum_string_t, datum_t>{{
-                                                 datum_string_t("new_val"),
-                                                 datum_t::null()}}),
-                                     type_t::INITIAL);
+                ret = datum_t(
+                    std::map<datum_string_t, datum_t>{{
+                            datum_string_t("new_val"),
+                            datum_t::null()}});
             }
+            ret = maybe_add_type(std::move(ret), type_t::INITIAL);
         } else {
             ret = change_val_to_change(pop_change_val(),
                                        false,
@@ -2126,9 +2153,14 @@ public:
             if (artificial_initial_vals.size() == 0) {
                 state = state_t::READY;
             }
-            return vals_to_change(datum_t(), d, true);
+            return maybe_add_type(
+                vals_to_change(datum_t(), d, true),
+                type_t::INITIAL);
         }
-        return change_val_to_change(pop_change_val());
+        return change_val_to_change(pop_change_val(),
+                                    false,
+                                    false,
+                                    include_types);
     }
     bool has_el() final {
         return (include_states && state != sent_state)
@@ -2423,11 +2455,13 @@ public:
         if (lc.old_d.has() && lc.new_d.has()) {
             rassert(lc.old_d != lc.new_d || lc.old_offset != lc.new_offset);
         }
+
         datum_t el = vals_to_change(
             lc.old_d.has() ? std::move(lc.old_d) : datum_t::null(),
             lc.new_d.has() ? std::move(lc.new_d) : datum_t::null(),
             false,
             false,
+            include_types,
             include_offsets,
             std::move(lc.old_offset),
             std::move(lc.new_offset));
@@ -2900,7 +2934,8 @@ private:
                             cv.old_val->tag_num, cv.source_stamp, *cv.old_val),
                         cv.new_val && discard(
                             cv.pkey,
-                            cv.new_val->tag_num, cv.source_stamp, *cv.new_val));
+                            cv.new_val->tag_num, cv.source_stamp, *cv.new_val),
+                        sub->include_types);
                     if (el.has()) {
                         batcher.note_el(el);
                         ret.push_back(std::move(el));
@@ -2910,7 +2945,9 @@ private:
                 remove_outdated_ranges();
             } else {
                 if (sub->include_states) {
-                    ret.push_back(state_datum(state_t::INITIALIZING));
+                    ret.push_back(sub->maybe_add_type(
+                                      state_datum(state_t::INITIALIZING),
+                                      subscription_t::type_t::STATE));
                 }
             }
             if (!src->is_exhausted() && !batcher.should_send_batch()) {
@@ -2927,7 +2964,9 @@ private:
                     ret.reserve(ret.size() + batch.size());
                     for (auto &&datum : batch) {
                         ret.push_back(
-                            vals_to_change(datum_t(), std::move(datum), true));
+                            sub->maybe_add_type(
+                                vals_to_change(datum_t(), std::move(datum), true),
+                            subscription_t::type_t::INITIAL));
                     }
                 }
             } else {
