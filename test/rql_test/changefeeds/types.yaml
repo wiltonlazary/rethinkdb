@@ -59,3 +59,18 @@ tests:
       ot: partial({'deleted': 1})
     - py: fetch(d)
       ot: partial([{'type': 'uninitial'}]) # TODO: is this correct?
+
+    # Test for limit changefeed
+    - py: tbl.delete()
+    - py: tbl.insert({"id":1, "num":5})
+      ot: partial({'inserted': 1})
+    - py: e = tbl.order_by(index="num").limit(1).changes(include_types=True, include_initial=True)
+    - py: fetch(e)
+      ot: [{'new_val': {'id': 1, 'num': 5}, 'type': 'initial'}]
+    - py: tbl.insert({"id":2, "num":1})
+    - py: fetch(e)
+      ot: [{'new_val': {'id': 2, 'num': 1}, 'old_val': {'id': 1, 'num': 5}, 'type': 'change'}]
+    - py: tbl.delete()
+      ot: partial({'deleted': 2})
+    - py: fetch(e)
+      ot: [{'new_val': None, 'old_val': {'id': 2, 'num': 1}, 'type': 'remove'}]

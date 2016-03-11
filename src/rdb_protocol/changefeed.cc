@@ -2959,7 +2959,9 @@ private:
                     ret.reserve(ret.size() + batch.size());
                     for (auto &&datum : batch) {
                         ret.push_back(
-                                vals_to_change(datum_t(), std::move(datum), true));
+                            sub->maybe_add_type(
+                                vals_to_change(datum_t(), std::move(datum), true),
+                            subscription_t::type_t::INITIAL));
                     }
                 }
             } else {
