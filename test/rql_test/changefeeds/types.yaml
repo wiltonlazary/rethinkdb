@@ -3,6 +3,7 @@ table_variable_name: tbl
 tests:
 
     - py: tbl.index_create('num')
+    - py: tbl.wait()
 
     # Test all types on whole document changefeed
     - py: tbl.insert({'id': 1})
@@ -58,19 +59,21 @@ tests:
     - py: tbl.get(1).delete()
       ot: partial({'deleted': 1})
     - py: fetch(d)
-      ot: partial([{'type': 'uninitial'}]) # TODO: is this correct?
+      ot: partial([{'type': 'uninitial'}])
 
     # Test for limit changefeed
     - py: tbl.delete()
     - py: tbl.insert({"id":1, "num":5})
       ot: partial({'inserted': 1})
     - py: e = tbl.order_by(index="num").limit(1).changes(include_types=True, include_initial=True)
-    - py: fetch(e)
+    - py: fetch(e, timeout = 3)
       ot: [{'new_val': {'id': 1, 'num': 5}, 'type': 'initial'}]
     - py: tbl.insert({"id":2, "num":1})
-    - py: fetch(e)
+      ot: partial({'inserted': 1})
+    - py: fetch(e, timeout = 3)
       ot: [{'new_val': {'id': 2, 'num': 1}, 'old_val': {'id': 1, 'num': 5}, 'type': 'change'}]
-    - py: tbl.delete()
-      ot: partial({'deleted': 2})
-    - py: fetch(e)
+    - py: tbl.get(1).delete()
+    - py: tbl.get(2).delete()
+      ot: partial({'deleted': 1})
+    - py: fetch(e, timeout = 3)
       ot: [{'new_val': None, 'old_val': {'id': 2, 'num': 1}, 'type': 'remove'}]
