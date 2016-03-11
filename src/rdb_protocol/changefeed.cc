@@ -1394,16 +1394,12 @@ datum_t vals_to_change(
     boost::optional<size_t> new_offset = boost::none) {
     subscription_t::type_t change_type;
 
-    fprintf(stderr, "Check datums:\n\n%s\n\n%s\n\n",
-            old_val.print().c_str(),
-            new_val.print().c_str());
-
     if (!old_val.has() && new_val.has()) {
         change_type = subscription_t::type_t::INITIAL;
-        discard_old_val = true;
+        old_val = datum_t::null();
     } else if (old_val.has() && !new_val.has()) {
         change_type = subscription_t::type_t::UNINITIAL;
-        discard_new_val = true;
+        new_val = datum_t::null();
     } else if (old_val.has()
                && old_val.get_type() == datum_t::R_NULL) {
         change_type = subscription_t::type_t::ADD;
@@ -2963,9 +2959,7 @@ private:
                     ret.reserve(ret.size() + batch.size());
                     for (auto &&datum : batch) {
                         ret.push_back(
-                            sub->maybe_add_type(
-                                vals_to_change(datum_t(), std::move(datum), true),
-                            subscription_t::type_t::INITIAL));
+                                vals_to_change(datum_t(), std::move(datum), true));
                     }
                 }
             } else {
