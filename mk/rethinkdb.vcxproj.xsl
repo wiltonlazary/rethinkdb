@@ -130,7 +130,7 @@
 
             <AdditionalOptions>
               /bigobj <!-- Allow more symbols in object files -->
-              /Zm50   <!-- Reduce memory allocation of compiler -->
+              /Zm10   <!-- Reduce memory allocation of compiler -->
             </AdditionalOptions>
 
             <!-- Enable this at your own risk. System headers are not excluded.

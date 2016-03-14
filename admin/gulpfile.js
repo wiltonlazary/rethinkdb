@@ -129,7 +129,7 @@ function createBundler(watch) {
     // up something off the filesystem
     .exclude('rethinkdb-version')
     // Ignore the tls module, it isn't used in the web driver
-    .exclude('tls')
+    .ignore('tls')
     // convert coffee files first
     .transform(coffeeify)
     // convert handlebars files & insert handlebars runtime
@@ -141,8 +141,8 @@ function createBundler(watch) {
 
   return retval
     .add(VERSION_FILE, {expose: 'rethinkdb-version'})
-//    .add(DRIVER_BUILD_DIR+'/rethinkdb.js',
-//         {expose: 'rethinkdb'})
+    .add(DRIVER_BUILD_DIR+'/rethinkdb.js',
+         {expose: 'rethinkdb'})
     .on('update', rebundle)
     .on('error', function(e){error("Browserify error:", e);})
     .on('log', function(msg){info("Browserify: "+msg);});
