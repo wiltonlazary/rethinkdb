@@ -525,18 +525,26 @@ private:
     std::string info;
 };
 
-std::set<ip_address_t> get_local_addresses(const std::vector<std::string> &bind_options,
+std::set<ip_address_t> get_local_addresses(const std::vector<std::string> &specific_options,
+                                           const std::vector<std::string> &default_options,
                                            local_ip_filter_t filter_type) {
     std::set<ip_address_t> set_filter;
 
+    const std::vector<std::string> *bind_options;
+    if (specific_options.size() > 0) {
+        bind_options = &specific_options;
+    } else {
+        bind_options = &default_options;
+    }
+
     // Scan through specified bind options
-    for (size_t i = 0; i < bind_options.size(); ++i) {
-        if (bind_options[i] == "all") {
+    for (size_t i = 0; i < (*bind_options).size(); ++i) {
+        if ((*bind_options)[i] == "all") {
             filter_type = local_ip_filter_t::ALL;
         } else {
             // Verify that all specified addresses are valid ip addresses
             try {
-                ip_address_t addr(bind_options[i]);
+                ip_address_t addr((*bind_options)[i]);
                 if (addr.is_any()) {
                     filter_type = local_ip_filter_t::ALL;
                 } else {
@@ -544,7 +552,7 @@ std::set<ip_address_t> get_local_addresses(const std::vector<std::string> &bind_
                 }
             } catch (const std::exception &ex) {
                 throw address_lookup_exc_t(strprintf("bind ip address '%s' could not be parsed: %s",
-                                                     bind_options[i].c_str(),
+                                                     (*bind_options)[i].c_str(),
                                                      ex.what()));
             }
         }
@@ -634,11 +642,24 @@ peer_address_t get_canonical_addresses(const std::map<std::string, options::valu
 service_address_ports_t get_service_address_ports(const std::map<std::string, options::values_t> &opts) {
     const int port_offset = get_single_int(opts, "--port-offset");
     const int cluster_port = offseted_port(get_single_int(opts, "--cluster-port"), port_offset);
+
+    local_ip_filter_t filter =
+        exists_option(opts, "--no-default-bind") ?
+            local_ip_filter_t::MATCH_FILTER :
+            local_ip_filter_t::MATCH_FILTER_OR_LOOPBACK;
     return service_address_ports_t(
         get_local_addresses(all_options(opts, "--bind"),
-                            exists_option(opts, "--no-default-bind") ?
-                                local_ip_filter_t::MATCH_FILTER :
-                                local_ip_filter_t::MATCH_FILTER_OR_LOOPBACK),
+                            all_options(opts, "--bind"),
+                            filter),
+        get_local_addresses(all_options(opts, "--bind-cluster"),
+                            all_options(opts, "--bind"),
+                            filter),
+        get_local_addresses(all_options(opts, "--bind-driver"),
+                            all_options(opts, "--bind"),
+                            filter),
+        get_local_addresses(all_options(opts, "--bind-http"),
+                            all_options(opts, "--bind"),
+                            filter),
         get_canonical_addresses(opts, cluster_port),
         cluster_port,
         get_single_int(opts, "--client-port"),
@@ -1091,6 +1112,12 @@ options::help_section_t get_web_options(std::vector<options::option_t> *options_
 options::help_section_t get_network_options(const bool join_required, std::vector<options::option_t> *options_out) {
     options::help_section_t help("Network options");
     options_out->push_back(options::option_t(options::names_t("--bind"),
+                                             options::OPTIONAL_REPEAT));
+    options_out->push_back(options::option_t(options::names_t("--bind-cluster"),
+                                             options::OPTIONAL_REPEAT));
+    options_out->push_back(options::option_t(options::names_t("--bind-driver"),
+                                             options::OPTIONAL_REPEAT));
+    options_out->push_back(options::option_t(options::names_t("--bind-http"),
                                              options::OPTIONAL_REPEAT));
     help.add("--bind {all | addr}", "add the address of a local interface to listen on when accepting connections, loopback addresses are enabled by default");
 
