@@ -84,9 +84,9 @@ bool server_status_artificial_table_backend_t::format_row(
         }
         if (server_id != pair.first) {
             bool is_connected = false;
-            if (connect.connected_to.count(server_id) == 1 &&
-                  connect.connected_to.at(server_id).find(pair.first)
-                  != connect.connected_to.at(server_id).end()) {
+            const auto server_it = connect.connected_to.find(server_id);
+            if (server_it != connect.connected_to.end() &&
+                  server_it->second.count(pair.first) > 0) {
                 is_connected = true;
             }
             guarantee(
