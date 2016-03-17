@@ -242,12 +242,33 @@ class IterableResult
         pending = []
 
         userCb = (data) ->
-            return Promise.resolve(cb(data)) if cb.length <= 1 # either synchronous or awaits promise
-            return Promise.fromNode (handler) -> cb(data, handler) # callback-style async
-
+            if cb.length <= 1
+                ret = Promise.resolve(cb(data)) # either synchronous or awaits promise
+            else
+                handlerCalled = false
+                doneChecking = false
+                handlerArg = undefined
+                ret = Promise.fromNode (handler) ->
+                    asyncRet = cb(data, (err) ->
+                        handlerCalled = true
+                        if doneChecking
+                            handler(err)
+                        else
+                            handlerArg = err
+                        ) # callback-style async
+                    unless asyncRet is undefined
+                        handler(new error.ReqlDriverError "A two-argument row handler for eachAsync may only return undefined.")
+                    else if handlerCalled
+                        handler(handlerArg)
+                    doneChecking = true
+            return ret
+            .then (data) ->
+                return data if data is undefined or typeof data is Promise
+                throw new error.ReqlDriverError "Row handler for eachAsync may only return a Promise or undefined."
         nextCb = =>
             if @_closeCbPromise?
-                return Promise.reject(new error.ReqlDriverError("Cursor is closed."))
+                return Promise.resolve().then (data) ->
+                    throw new error.ReqlDriverError "Cursor is closed."
             else
                 return @_next().then (data) ->
                     return data if pending.length < options.concurrency
@@ -263,7 +284,11 @@ class IterableResult
                     throw err if err?.message isnt 'No more rows in the cursor.'
                     return Promise.all(pending) # await any queued promises before returning
 
-        return nextCb().nodeify(errCb)
+        return nextCb().then () ->
+            errCb(null) if errCb?
+        .catch (err) ->
+            return errCb(err) if errCb?
+            throw err
     )
 
     _each: @::each
@@ -274,7 +299,12 @@ class IterableResult
             throw new error.ReqlDriverCompileError "First argument to `toArray` must be a function or undefined."
 
         results = []
-        return @eachAsync(results.push.bind(results)).return(results).nodeify(cb)
+        wrapper = (res) =>
+            results.push(res)
+            return undefined
+        return @eachAsync(wrapper).then(() =>
+            return results
+        ).nodeify(cb)
 
     _makeEmitter: ->
         @emitter = new EventEmitter
