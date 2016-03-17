@@ -215,7 +215,7 @@ public:
         : grouped_seq_op_term_t(env,
                                 term,
                                 argspec_t(3),
-                                optargspec_t({"index"})) { }
+                                optargspec_t({"index", "ordered"})) { }
 
     virtual const char *name() const { return "eqjoin"; }
 private:
@@ -230,6 +230,11 @@ private:
 
         predicate_function = args->arg(env, 1)->as_func(GET_FIELD_SHORTCUT);
 
+        bool ordered = false;
+        scoped_ptr_t<val_t> maybe_ordered = args->optarg(env, "ordered");
+        if (maybe_ordered.has()) {
+            ordered = maybe_ordered->as_bool();
+        }
         datum_t key;
         scoped_ptr_t<val_t> maybe_key = args->optarg(env, "index");
         if (maybe_key.has()) {
@@ -242,6 +247,7 @@ private:
                                                  table,
                                                  key.as_str(),
                                                  predicate_function,
+                                                 ordered,
                                                  backtrace());
 
         return new_val(env->env, eq_join_stream);

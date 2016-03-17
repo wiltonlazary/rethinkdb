@@ -540,7 +540,7 @@ void rget_response_reader_t::accumulate(env_t *env,
 std::vector<rget_item_t> rget_response_reader_t::raw_next_batch(
     env_t *env,
     const batchspec_t &batchspec) {
-    rassert(batchspec.get_batch_type() != batch_type_t::SINDEX_CONSTANT);
+    r_sanity_check(batchspec.get_batch_type() != batch_type_t::SINDEX_CONSTANT);
     started = true;
     bool loaded = load_items(env, batchspec);
     r_sanity_check(items_index == 0 && (items.size() != 0) == loaded);
@@ -2129,19 +2129,26 @@ eq_join_datum_stream_t::eq_join_datum_stream_t(counted_t<datum_stream_t> _stream
                                                counted_t<table_t> _table,
                                                datum_string_t _join_index,
                                                counted_t<const func_t> _predicate,
+                                               bool _ordered,
                                                backtrace_id_t bt) :
     eager_datum_stream_t(bt),
     stream(std::move(_stream)),
     table(std::move(_table)),
     join_index(std::move(_join_index)),
     predicate(std::move(_predicate)),
+    ordered(_ordered),
     is_array_eq_join(stream->is_array()),
     is_infinite_eq_join(stream->is_infinite()),
     eq_join_type(stream->cfeed_type()) { }
 
-std::vector<datum_t> eq_join_datum_stream_t::next_raw_batch(env_t *env,
-                                       const batchspec_t &batchspec) {
+std::vector<datum_t> eq_join_datum_stream_t::next_raw_batch(
+    env_t *env,
+    const batchspec_t &batchspec) {
     batcher_t batcher = batchspec.to_batcher();
+
+    batchspec_t inner_batchspec = ordered ?
+        batchspec_t::all().with_at_most(1) :
+        batchspec;
 
     std::vector<datum_t> res;
     while (!is_exhausted() && !batcher.should_send_batch()) {
@@ -2149,7 +2156,8 @@ std::vector<datum_t> eq_join_datum_stream_t::next_raw_batch(env_t *env,
             (get_all_reader->is_finished() &&
              get_all_items.empty())) {
             // Get a new batch of keys
-            std::vector<datum_t> stream_batch = stream->next_batch(env, batchspec);
+            std::vector<datum_t> stream_batch = stream->next_batch(env,
+                                                                   inner_batchspec);
             // Basically do a get all on the new keys
             // but we get the reader directly so we can read the sindex from the lookup.
             sindex_to_datum.clear();
@@ -2164,16 +2172,16 @@ std::vector<datum_t> eq_join_datum_stream_t::next_raw_batch(env_t *env,
                     if (e.get_type() == base_exc_t::NON_EXISTENCE) {
                         continue;
                     } else {
-                        e.rethrow_with_type(e.get_type());
+                        throw;
                     }
                 }
                 // Build a multimap from sindex value to datums from left side stream.
-                sindex_to_datum.insert(std::pair<datum_t, datum_t>{
-                        key_val, stream_batch[i]});
-                keys.insert(std::make_pair(std::move(key_val),
-                                           1));
+                if (key_val.get_type() != datum_t::type_t::R_NULL) {
+                    sindex_to_datum.insert(std::pair<datum_t, datum_t>{
+                            key_val, stream_batch[i]});
+                    keys[key_val] = 1;
+                }
             }
-
             get_all_reader = table->get_all_with_sindexes(
                 env,
                 datumspec_t(std::move(keys)),
@@ -2202,14 +2210,12 @@ std::vector<datum_t> eq_join_datum_stream_t::next_raw_batch(env_t *env,
         }
         datum_string_t right("right");
         datum_string_t left("left");
-        for (std::multimap<datum_t, datum_t>::iterator pair = range.first;
-             pair != range.second;
-             ++pair) {
+        for (auto pair = range.first; pair != range.second; ++pair) {
             ql::datum_object_builder_t res_item;
-            bool r = true;
-            r &= res_item.add(right, item.data);
-            r &= res_item.add(left, pair->second);
-            guarantee(!r);
+            bool conflict = true;
+            conflict &= res_item.add(right, item.data);
+            conflict &= res_item.add(left, pair->second);
+            guarantee(!conflict);
             datum_t res_datum = std::move(res_item).to_datum();
             batcher.note_el(res_datum);
             res.push_back(std::move(res_datum));
@@ -2221,7 +2227,7 @@ std::vector<datum_t> eq_join_datum_stream_t::next_raw_batch(env_t *env,
 bool eq_join_datum_stream_t::is_exhausted() const {
     if (stream->is_exhausted() &&
         get_all_items.empty() &&
-        get_all_reader->is_finished()) {
+        (!get_all_reader.has() || get_all_reader->is_finished())) {
         return batch_cache_exhausted();
     }
     return false;

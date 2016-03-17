@@ -782,6 +782,10 @@ public:
     virtual std::vector<datum_t> next_batch(env_t *, const batchspec_t &) {
         return std::vector<datum_t>();
     }
+    virtual std::vector<rget_item_t> raw_next_batch(
+        env_t *, const batchspec_t &) final {
+        return std::vector<rget_item_t>{};
+    }
     virtual bool is_finished() const {
         return true;
     }
@@ -890,6 +894,7 @@ public:
                            counted_t<table_t> _table,
                            datum_string_t _join_index,
                            counted_t<const func_t> _predicate,
+                           bool _ordered,
                            backtrace_id_t bt);
 
     bool is_array() const final {
@@ -919,6 +924,8 @@ private:
                   ql::datum_t> sindex_to_datum;
 
     counted_t<const func_t> predicate;
+
+    bool ordered;
 
     bool is_array_eq_join;
     bool is_infinite_eq_join;
