@@ -103,8 +103,8 @@ bool convert_connected_server_id_to_datum(
         return false;
     }
     if (server_name_or_uuid_out != nullptr) {
-        *server_name_or_uuid_out =
-            convert_name_or_uuid_to_datum(*name, server_id, identifier_format);
+        *server_name_or_uuid_out = convert_name_or_uuid_to_datum(
+                *name, server_id.get_uuid(), identifier_format);
     }
     if (server_name_out != nullptr) *server_name_out = *name;
     return true;

@@ -16,6 +16,7 @@ class table_inactive_persistent_state_t;
 class table_raft_state_t;
 class table_raft_stored_header_t;
 class table_raft_stored_snapshot_t;
+class server_id_t;
 
 /* This file defines the keys that are used to index the `metadata_file_t`. Changing
 these keys will break the on-disk format. */

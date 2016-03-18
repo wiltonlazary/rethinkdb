@@ -64,9 +64,11 @@ bool convert_server_id_from_datum(
             return true;
         }
     } else {
-        if (!convert_uuid_from_datum(datum, server_id_out, error_out)) {
+        uuid_u server_uuid;
+        if (!convert_uuid_from_datum(datum, &server_uuid, error_out)) {
             return false;
         }
+        *server_id_out = server_id_t::from_uuid(server_uuid);
         /* We know the server's UUID, but we need to confirm that it exists and determine
         its name. First we look up the server name in `get_server_config_map()`; if that
         fails, then we look it up in `old_server_names`. We prefer
@@ -93,7 +95,7 @@ bool convert_server_id_from_datum(
         }
         *error_out = admin_err_t{
             strprintf("There is no server with UUID `%s`.",
-                      uuid_to_str(*server_id_out).c_str()),
+                      uuid_to_str(server_id_out->get_uuid()).c_str()),
             query_state_t::FAILED};
         return false;
     }
@@ -106,7 +108,7 @@ ql::datum_t convert_replica_list_to_datum(
     ql::datum_array_builder_t replicas_builder(ql::configured_limits_t::unlimited);
     for (const server_id_t &replica : replicas) {
         replicas_builder.add(convert_name_or_uuid_to_datum(
-            server_names.get(replica), replica, identifier_format));
+            server_names.get(replica), replica.get_uuid(), identifier_format));
     }
     return std::move(replicas_builder).to_datum();
 }
@@ -218,7 +220,7 @@ ql::datum_t convert_table_config_shard_to_datum(
             shard.nonvoting_replicas, identifier_format, server_names));
     builder.overwrite("primary_replica",
         convert_name_or_uuid_to_datum(server_names.get(shard.primary_replica),
-            shard.primary_replica, identifier_format));
+            shard.primary_replica.get_uuid(), identifier_format));
 
     return std::move(builder).to_datum();
 }

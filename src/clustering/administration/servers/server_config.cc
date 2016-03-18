@@ -29,10 +29,12 @@ bool convert_server_config_from_datum(
     if (!converter.get("id", &id_datum, error_out)) {
         return false;
     }
-    if (!convert_uuid_from_datum(id_datum, server_id_out, error_out)) {
+    uuid_u server_uuid;
+    if (!convert_uuid_from_datum(id_datum, &server_uuid, error_out)) {
         error_out->msg = "In `id`: " + error_out->msg;
         return false;
     }
+    *server_id_out = server_id_t::from_uuid(server_uuid);
 
     ql::datum_t tags_datum;
     if (!converter.get("tags", &tags_datum, error_out)) {
@@ -108,7 +110,7 @@ bool server_config_artificial_table_backend_t::format_row(
 
     builder.overwrite("name",
         convert_name_to_datum(metadata.server_config.config.name));
-    builder.overwrite("id", convert_uuid_to_datum(server_id));
+    builder.overwrite("id", convert_uuid_to_datum(server_id.get_uuid()));
     builder.overwrite("tags", convert_set_to_datum<name_string_t>(
             &convert_name_to_datum, metadata.server_config.config.tags));
 

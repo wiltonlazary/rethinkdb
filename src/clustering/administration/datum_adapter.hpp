@@ -10,6 +10,7 @@
 #include "containers/name_string.hpp"
 #include "rdb_protocol/context.hpp"
 #include "rdb_protocol/datum.hpp"
+#include "rpc/connectivity/server_id.hpp"
 #include "time.hpp"
 
 class cluster_semilattice_metadata_t;

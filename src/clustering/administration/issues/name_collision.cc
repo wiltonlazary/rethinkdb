@@ -37,6 +37,7 @@ private:
         admin_identifier_format_t identifier_format,
         ql::datum_t *info_out,
         datum_string_t *description_out) const;
+    std::vector<uuid_u> server_ids_to_uuids(const std::vector<server_id_t> &ids) const;
 };
 
 // Issue for database name collisions
@@ -44,7 +45,7 @@ class db_name_collision_issue_t : public name_collision_issue_t {
 public:
     explicit db_name_collision_issue_t(
         const name_string_t &_name,
-        const std::vector<server_id_t> &_collided_ids);
+        const std::vector<database_id_t> &_collided_ids);
     const datum_string_t &get_name() const { return db_name_collision_issue_type; }
 
 private:
@@ -65,7 +66,7 @@ public:
     table_name_collision_issue_t(
         const name_string_t &_name,
         const database_id_t &_db_id,
-        const std::vector<server_id_t> &_collided_ids);
+        const std::vector<namespace_id_t> &_collided_ids);
     const datum_string_t &get_name() const { return table_name_collision_issue_type; }
 
 private:
@@ -137,8 +138,17 @@ server_name_collision_issue_t::server_name_collision_issue_t(
         const name_string_t &_name,
         const std::vector<server_id_t> &_collided_ids) :
     name_collision_issue_t(from_hash(base_issue_id, _name),
-                          _name,
-                          _collided_ids) { }
+                           _name,
+                           server_ids_to_uuids(_collided_ids)) { }
+
+std::vector<uuid_u> server_name_collision_issue_t::server_ids_to_uuids(
+        const std::vector<server_id_t> &ids) const {
+    std::vector<uuid_u> res;
+    for (const auto &id : ids) {
+        res.push_back(id.get_uuid());
+    }
+    return res;
+}
 
 bool server_name_collision_issue_t::build_info_and_description(
         UNUSED const metadata_t &metadata,
@@ -157,8 +167,8 @@ db_name_collision_issue_t::db_name_collision_issue_t(
         const name_string_t &_name,
         const std::vector<database_id_t> &_collided_ids) :
     name_collision_issue_t(from_hash(base_issue_id, _name),
-                          _name,
-                          _collided_ids) { }
+                           _name,
+                           _collided_ids) { }
 
 bool db_name_collision_issue_t::build_info_and_description(
         UNUSED const metadata_t &metadata,
