@@ -131,10 +131,8 @@ private:
         counted_t<table_t> t = args->arg(env, 0)->as_table();
         return_changes_t return_changes = parse_return_changes(env, args, backtrace());
 
-        counted_t<const func_t> conflict_func =
-            new_constant_func(
-            ql::datum_t::boolean(false),
-            backtrace());
+        boost::optional<const ql::func_t&> conflict_func;
+
         scoped_ptr_t<val_t> conflict_optarg = args->optarg(env, "conflict");
         const conflict_behavior_t conflict_behavior
             = parse_conflict_optarg(args->optarg(env, "conflict"));
@@ -142,7 +140,7 @@ private:
             = parse_durability_optarg(args->optarg(env, "durability"));
 
         if (conflict_behavior == conflict_behavior_t::FUNCTION) {
-            conflict_func = conflict_optarg->as_func();
+            conflict_func = *(conflict_optarg->as_func());
             // Check correct arity on function
             rcheck(conflict_func->arity().get() == 0 ||
                    conflict_func->arity().get() == 3,

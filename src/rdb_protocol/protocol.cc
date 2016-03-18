@@ -1196,10 +1196,14 @@ struct rdb_w_shard_visitor_t : public boost::static_visitor<bool> {
         }
 
         if (!shard_inserts.empty()) {
+            boost::optional<const ql::func_t&> func;
+            if (bi.conflict_func) {
+                func = *(bi.conflict_func->compile_wire_func());
+            }
             *payload_out = batched_insert_t(std::move(shard_inserts),
                                             bi.pkey,
                                             bi.conflict_behavior,
-                                            bi.conflict_func.compile_wire_func(),
+                                            func,
                                             bi.limits,
                                             bi.return_changes);
             return true;
@@ -1249,6 +1253,42 @@ bool write_t::shard(const region_t &region,
     bool result = boost::apply_visitor(v, write);
     *write_out = write_t(payload, durability_requirement, profile, limits);
     return result;
+}
+
+batched_insert_t::batched_insert_t(
+        std::vector<ql::datum_t> &&_inserts,
+        const std::string &_pkey,
+        conflict_behavior_t _conflict_behavior,
+        boost::optional<const ql::func_t&> _conflict_func,
+        const ql::configured_limits_t &_limits,
+        return_changes_t _return_changes)
+        : inserts(std::move(_inserts)), pkey(_pkey),
+          conflict_behavior(_conflict_behavior),
+          limits(_limits),
+          return_changes(_return_changes) {
+    r_sanity_check(inserts.size() != 0);
+
+    if (_conflict_func) {
+        counted_t<const ql::func_t> func(&(*_conflict_func));
+        conflict_func = ql::wire_func_t(func);
+    }
+#ifndef NDEBUG
+    // These checks are done above us, but in debug mode we do them
+    // again.  (They're slow.)  We do them above us because the code in
+    // val.cc knows enough to report the write errors correctly while
+    // still doing the other writes.
+    for (auto it = inserts.begin(); it != inserts.end(); ++it) {
+        ql::datum_t keyval =
+            it->get_field(datum_string_t(pkey), ql::NOTHROW);
+        r_sanity_check(keyval.has());
+        try {
+            keyval.print_primary(); // ERROR CHECKING
+            continue;
+        } catch (const ql::base_exc_t &e) {
+        }
+        r_sanity_check(false); // throws, so can't do this in exception handler
+    }
+#endif // NDEBUG
 }
 
 template <class T>
