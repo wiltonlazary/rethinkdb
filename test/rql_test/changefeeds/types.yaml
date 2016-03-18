@@ -77,3 +77,6 @@ tests:
       ot: partial({'deleted': 1})
     - py: fetch(e, timeout = 3)
       ot: [{'new_val': None, 'old_val': {'id': 2, 'num': 1}, 'type': 'remove'}]
+    - py: f = tbl.get(12345).changes(include_initial=True, include_types=True)
+    - py: fetch(f)
+      ot: [{'new_val': None, 'type': 'initial'}]

@@ -1260,6 +1260,15 @@ protected:
     }
 };
 
+enum class change_type_t {
+    ADD = 0,
+    REMOVE = 1,
+    CHANGE = 2,
+    INITIAL = 3,
+    UNINITIAL = 4,
+    STATE = 5
+};
+
 // Uses the home thread of the subscriber, not the client.
 class feed_t;
 class subscription_t : public home_thread_mixin_t {
@@ -1296,14 +1305,6 @@ public:
             std::rethrow_exception(exc);
         }
     }
-    enum class type_t {
-        ADD = 0,
-        REMOVE = 1,
-        CHANGE = 2,
-        INITIAL = 3,
-        UNINITIAL = 4,
-        STATE = 5
-    };
 protected:
     subscription_t(feed_t *feed,
                    configured_limits_t limits,
@@ -1314,7 +1315,7 @@ protected:
     void maybe_signal_queue_nearly_full_cond() THROWS_NOTHING;
     void destructor_cleanup(std::function<void()> del_sub) THROWS_NOTHING;
 
-    datum_t maybe_add_type(datum_t &&datum, type_t type);
+    datum_t maybe_add_type(datum_t &&datum, change_type_t type);
     // If an error occurs, we're detached and `exc` is set to an exception to rethrow.
     std::exception_ptr exc;
     // If we exceed the array size limit, elements are evicted from `els` and
@@ -1343,39 +1344,44 @@ private:
     DISABLE_COPYING(subscription_t);
 };
 
-datum_t add_type(datum_t &&datum, subscription_t::type_t type) {
+datum_string_t type_to_string(change_type_t type) {
     datum_string_t type_string;
     switch (type) {
-    case subscription_t::type_t::ADD:
+    case change_type_t::ADD:
         type_string = datum_string_t("add");
         break;
-    case subscription_t::type_t::REMOVE:
+    case change_type_t::REMOVE:
         type_string = datum_string_t("remove");
         break;
-    case subscription_t::type_t::CHANGE:
+    case change_type_t::CHANGE:
         type_string = datum_string_t("change");
         break;
-    case subscription_t::type_t::INITIAL:
+    case change_type_t::INITIAL:
         type_string = datum_string_t("initial");
         break;
-    case subscription_t::type_t::UNINITIAL:
+    case change_type_t::UNINITIAL:
         type_string = datum_string_t("uninitial");
         break;
-    case subscription_t::type_t::STATE:
+    case change_type_t::STATE:
         type_string = datum_string_t("state");
         break;
     default:
         unreachable();
     }
-    return std::move(datum.merge(
-                         datum_t{
-                             std::map<datum_string_t, datum_t>{
-                                 std::pair<datum_string_t, datum_t>{
-                                 datum_string_t("type"),
-                                     datum_t(type_string)}}}));
+
+    return type_string;
+}
+datum_t add_type(datum_t &&datum, change_type_t type) {
+    datum_string_t type_string = type_to_string(type);
+    return datum.merge(
+        datum_t{
+            std::map<datum_string_t, datum_t>{
+                std::pair<datum_string_t, datum_t>{
+                    datum_string_t("type"),
+                        datum_t(type_string)}}});
 }
 
-datum_t subscription_t::maybe_add_type(datum_t &&datum, type_t type) {
+datum_t subscription_t::maybe_add_type(datum_t &&datum, change_type_t type) {
     if (!include_types) {
         return std::move(datum);
     }
@@ -1392,23 +1398,23 @@ datum_t vals_to_change(
     bool include_offsets = false,
     boost::optional<size_t> old_offset = boost::none,
     boost::optional<size_t> new_offset = boost::none) {
-    subscription_t::type_t change_type;
+    change_type_t change_type;
 
     if (!old_val.has() && new_val.has()) {
-        change_type = subscription_t::type_t::INITIAL;
+        change_type = change_type_t::INITIAL;
         old_val = datum_t::null();
     } else if (old_val.has() && !new_val.has()) {
-        change_type = subscription_t::type_t::UNINITIAL;
+        change_type = change_type_t::UNINITIAL;
         new_val = datum_t::null();
     } else if (old_val.has()
                && old_val.get_type() == datum_t::R_NULL) {
-        change_type = subscription_t::type_t::ADD;
+        change_type = change_type_t::ADD;
     } else if (new_val.has()
                && new_val.get_type() == datum_t::R_NULL) {
-        change_type = subscription_t::type_t::REMOVE;
+        change_type = change_type_t::REMOVE;
     } else {
         // Either it's a change, or we're about to return.
-        change_type = subscription_t::type_t::CHANGE;
+        change_type = change_type_t::CHANGE;
     }
     // Status type is handled where statuses are generated.
 
@@ -1434,11 +1440,14 @@ datum_t vals_to_change(
             }
         }
         guarantee(ret.size() != 0);
-        datum_t res = datum_t(std::move(ret));
+
         if (include_type) {
-            return add_type(std::move(res), change_type);
+            ret[datum_string_t("type")] =
+                datum_t(
+                    type_to_string(change_type));
         }
-        return res;
+        datum_t ret_datum = datum_t(std::move(ret));
+        return ret_datum;
     }
 }
 
@@ -1820,7 +1829,7 @@ public:
             state = state_t::READY;
             return maybe_add_type(
                 state_datum(sent_state),
-                type_t::STATE);
+                change_type_t::STATE);
         }
         r_sanity_fail();
     }
@@ -1908,7 +1917,7 @@ public:
         if (state != sent_state && include_states) {
             sent_state = state;
             return maybe_add_type(state_datum(state),
-                                  type_t::STATE);
+                                  change_type_t::STATE);
         }
         datum_t ret;
         if (state != state_t::READY && include_initial) {
@@ -1922,7 +1931,7 @@ public:
                             datum_string_t("new_val"),
                             datum_t::null()}});
             }
-            ret = maybe_add_type(std::move(ret), type_t::INITIAL);
+            ret = maybe_add_type(std::move(ret), change_type_t::INITIAL);
         } else {
             ret = change_val_to_change(pop_change_val(),
                                        false,
@@ -2140,7 +2149,7 @@ public:
                 state = state_t::READY;
             }
             return maybe_add_type(state_datum(sent_state),
-                                  type_t::STATE);
+                                  change_type_t::STATE);
         }
         if (artificial_initial_vals.size() != 0) {
             datum_t d = artificial_initial_vals.back();
@@ -2150,7 +2159,7 @@ public:
             }
             return maybe_add_type(
                 vals_to_change(datum_t(), d, true),
-                type_t::INITIAL);
+                change_type_t::INITIAL);
         }
         return change_val_to_change(pop_change_val(),
                                     false,
@@ -2337,7 +2346,7 @@ public:
             ASSERT_NO_CORO_WAITING;
             if (include_initial) {
                 if (include_states) els.push_back(maybe_add_type(initializing_datum(),
-                                                                 type_t::STATE));
+                                                                 change_type_t::STATE));
                 size_t i = 0;
                 for (auto it = active_data.rbegin(); it != active_data.rend(); ++it) {
                     std::map<datum_string_t, datum_t> m;
@@ -2347,11 +2356,11 @@ public:
                             datum_t(static_cast<double>(i++));
                     }
                     els.push_back(maybe_add_type(datum_t(std::move(m)),
-                                                 type_t::INITIAL));
+                                                 change_type_t::INITIAL));
                 }
             }
             if (include_states) els.push_back(maybe_add_type(ready_datum(),
-                                                             type_t::STATE));
+                                                             change_type_t::STATE));
 
             if (!squash) {
                 decltype(queued_changes) changes;
@@ -2942,7 +2951,7 @@ private:
                 if (sub->include_states) {
                     ret.push_back(sub->maybe_add_type(
                                       state_datum(state_t::INITIALIZING),
-                                      subscription_t::type_t::STATE));
+                                      change_type_t::STATE));
                 }
             }
             if (!src->is_exhausted() && !batcher.should_send_batch()) {
@@ -2961,7 +2970,7 @@ private:
                         ret.push_back(
                             sub->maybe_add_type(
                                 vals_to_change(datum_t(), std::move(datum), true),
-                            subscription_t::type_t::INITIAL));
+                                change_type_t::INITIAL));
                     }
                 }
             } else {
