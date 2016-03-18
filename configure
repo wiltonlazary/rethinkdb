@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2010-2016 RethinkDB, all rights reserved.
+# Copyright 2010-2015 RethinkDB, all rights reserved.
 
 # This script detects the build settings local to the local build
 # environment and saves them in the config.mk file.
@@ -41,7 +41,7 @@ init () {
     default_allocator_linux=jemalloc
     default_allocator_osx=system
 
-    allowed_arg_vars="CXXFLAGS LDFLAGS"
+    allowed_arg_vars="CFLAGS CXXFLAGS LDFLAGS"
 }
 
 # The main configuration steps
@@ -98,6 +98,7 @@ configure () {
         case "$OS" in
             Darwin) var_append LDFLAGS -lc++
                     var_append LDFLAGS -mmacosx-version-min="$osx_min_version"
+                    var_append CFLAGS -mmacosx-version-min="$osx_min_version"
                     var_append CXXFLAGS -stdlib=libc++
                     var_append CXXFLAGS -mmacosx-version-min="$osx_min_version" ;;
             *) var_append LDFLAGS -lstdc++ ;;
