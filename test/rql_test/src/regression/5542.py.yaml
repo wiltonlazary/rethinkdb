@@ -8,4 +8,4 @@ tests:
       ot: partial({"inserted": 1})
     - py: tbl.between([r.minval], [r.maxval], left_bound="open", index="v").count()
       ot: 0
-      
+

@@ -20,4 +20,4 @@ tests:
       ot: 0
     - py: tbl.order_by(index="max_arr").count()
       ot: 0
-      
+
