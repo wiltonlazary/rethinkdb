@@ -80,26 +80,13 @@ counted_t<ql::datum_stream_t> artificial_table_t::read_all(
 
 counted_t<ql::datum_stream_t> artificial_table_t::read_changes(
     ql::env_t *env,
-    counted_t<ql::datum_stream_t> maybe_src,
-    ql::configured_limits_t limits,
-    const ql::datum_t &,
-    bool include_states,
-    ql::changefeed::keyspec_t::spec_t &&spec,
-    ql::backtrace_id_t bt,
-    UNUSED const std::string &table_name) {
+    const ql::changefeed::streamspec_t &ss,
+    ql::backtrace_id_t bt) {
 
     counted_t<ql::datum_stream_t> stream;
     admin_err_t error;
     if (!backend->read_changes(
-            env,
-            maybe_src.has(),
-            include_states,
-            std::move(limits),
-            bt,
-            std::move(spec),
-            env->interruptor,
-            &stream,
-            &error)) {
+            env, ss, bt, env->interruptor, &stream, &error)) {
         REQL_RETHROW_DATUM(error);
     }
     return stream;
@@ -241,8 +228,9 @@ void artificial_table_t::do_single_update(
     }
 
     ql::datum_t resp;
+    ql::datum_t new_row;
     try {
-        ql::datum_t new_row = function(old_row);
+        new_row = function(old_row);
         rcheck_row_replacement(datum_string_t(primary_key),
             store_key_t(pval.print_primary()), old_row, new_row);
         if (new_row.get_type() == ql::datum_t::R_NULL) {
@@ -261,7 +249,7 @@ void artificial_table_t::do_single_update(
             old_row, new_row, return_changes, &dummy_was_changed);
     } catch (const ql::base_exc_t &e) {
         resp = make_row_replacement_error_stats(
-            old_row, return_changes, e.what());
+            old_row, new_row, return_changes, e.what());
     }
     *stats_inout = (*stats_inout).merge(
         resp, ql::stats_merge, env->limits(), conditions_inout);

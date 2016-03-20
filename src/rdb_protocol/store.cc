@@ -251,6 +251,7 @@ void do_read(ql::env_t *env,
                 rget.terminal,
                 rget.region.inner,
                 rget.sorting,
+                rget.sindex->require_sindex_val,
                 sindex_info,
                 res,
                 release_superblock_t::RELEASE);
@@ -639,7 +640,8 @@ void store_t::protocol_read(const read_t &read,
     scoped_ptr_t<profile::trace_t> trace = ql::maybe_make_profile_trace(read.profile);
 
     {
-        profile::starter_t start_read("Perform read on shard.", trace);
+        PROFILE_STARTER_IF_ENABLED(
+            read.profile == profile_bool_t::PROFILE, "Perform read on shard.", trace);
         rdb_read_visitor_t v(btree.get(), this,
                              superblock,
                              ctx, response, trace.get_or_null(), interruptor);
