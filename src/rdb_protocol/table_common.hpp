@@ -66,7 +66,7 @@ ql::datum_t resolve_insert_conflict(
         ql::datum_t old_row,
         ql::datum_t insert_row,
         conflict_behavior_t conflict_behavior,
-        boost::optional<const ql::func_t&> conflict_func);
+        boost::optional<counted_t<const ql::func_t> > conflict_func);
 
 #endif /* RDB_PROTOCOL_TABLE_COMMON_HPP_ */
 

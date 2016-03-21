@@ -1196,14 +1196,10 @@ struct rdb_w_shard_visitor_t : public boost::static_visitor<bool> {
         }
 
         if (!shard_inserts.empty()) {
-            boost::optional<const ql::func_t&> func;
-            if (bi.conflict_func) {
-                func = *(bi.conflict_func->compile_wire_func());
-            }
             *payload_out = batched_insert_t(std::move(shard_inserts),
                                             bi.pkey,
                                             bi.conflict_behavior,
-                                            func,
+                                            bi.conflict_func->compile_wire_func(),
                                             bi.limits,
                                             bi.return_changes);
             return true;
@@ -1259,7 +1255,7 @@ batched_insert_t::batched_insert_t(
         std::vector<ql::datum_t> &&_inserts,
         const std::string &_pkey,
         conflict_behavior_t _conflict_behavior,
-        boost::optional<const ql::func_t&> _conflict_func,
+        boost::optional<counted_t<const ql::func_t> > _conflict_func,
         const ql::configured_limits_t &_limits,
         return_changes_t _return_changes)
         : inserts(std::move(_inserts)), pkey(_pkey),
@@ -1269,8 +1265,7 @@ batched_insert_t::batched_insert_t(
     r_sanity_check(inserts.size() != 0);
 
     if (_conflict_func) {
-        counted_t<const ql::func_t> func(&(*_conflict_func));
-        conflict_func = ql::wire_func_t(func);
+        conflict_func = ql::wire_func_t(*_conflict_func);
     }
 #ifndef NDEBUG
     // These checks are done above us, but in debug mode we do them

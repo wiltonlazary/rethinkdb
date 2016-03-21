@@ -581,7 +581,7 @@ struct batched_insert_t {
         std::vector<ql::datum_t> &&_inserts,
         const std::string &_pkey,
         conflict_behavior_t _conflict_behavior,
-        boost::optional<const ql::func_t&> _conflict_func,
+        boost::optional<counted_t<const ql::func_t> > _conflict_func,
         const ql::configured_limits_t &_limits,
         return_changes_t _return_changes);
 

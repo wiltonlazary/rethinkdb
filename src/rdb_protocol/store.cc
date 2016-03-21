@@ -684,7 +684,7 @@ public:
           pkey(bi.pkey),
           return_changes(bi.return_changes) {
         if (bi.conflict_func) {
-            conflict_func = *(bi.conflict_func->compile_wire_func().get());
+            conflict_func = bi.conflict_func->compile_wire_func();
         }
     }
     ql::datum_t replace(const ql::datum_t &d,
@@ -705,7 +705,7 @@ private:
     const conflict_behavior_t conflict_behavior;
     const std::string pkey;
     const return_changes_t return_changes;
-    boost::optional<const ql::func_t&> conflict_func;
+boost::optional<counted_t<const ql::func_t> > conflict_func;
 };
 
 struct rdb_write_visitor_t : public boost::static_visitor<void> {

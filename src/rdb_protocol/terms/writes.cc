@@ -131,7 +131,7 @@ private:
         counted_t<table_t> t = args->arg(env, 0)->as_table();
         return_changes_t return_changes = parse_return_changes(env, args, backtrace());
 
-        boost::optional<const ql::func_t&> conflict_func;
+        boost::optional<counted_t<const ql::func_t> > conflict_func;
 
         scoped_ptr_t<val_t> conflict_optarg = args->optarg(env, "conflict");
         const conflict_behavior_t conflict_behavior
@@ -140,15 +140,15 @@ private:
             = parse_durability_optarg(args->optarg(env, "durability"));
 
         if (conflict_behavior == conflict_behavior_t::FUNCTION) {
-            conflict_func = *(conflict_optarg->as_func());
+            conflict_func = conflict_optarg->as_func();
             // Check correct arity on function
-            rcheck(conflict_func->arity().get() == 0 ||
-                   conflict_func->arity().get() == 3,
+            rcheck((*conflict_func)->arity().get() == 0 ||
+                   (*conflict_func)->arity().get() == 3,
                    base_exc_t::LOGIC,
                    strprintf("The conflict function passed to `insert` should "
                              "expect 3 arguments."));
             // Check that insert function is atomic.
-            rcheck(conflict_func->is_deterministic() == deterministic_t::always,
+            rcheck((*conflict_func)->is_deterministic() == deterministic_t::always,
                    base_exc_t::LOGIC,
                    strprintf("The conflict function passed to `insert` must "
                              "be deterministic."));
