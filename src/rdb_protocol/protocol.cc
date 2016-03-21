@@ -1196,10 +1196,15 @@ struct rdb_w_shard_visitor_t : public boost::static_visitor<bool> {
         }
 
         if (!shard_inserts.empty()) {
+            boost::optional<counted_t<const ql::func_t> > temp_conflict_func;
+            if (bi.conflict_func) {
+                temp_conflict_func = bi.conflict_func->compile_wire_func();
+            }
+
             *payload_out = batched_insert_t(std::move(shard_inserts),
                                             bi.pkey,
                                             bi.conflict_behavior,
-                                            bi.conflict_func->compile_wire_func(),
+                                            temp_conflict_func,
                                             bi.limits,
                                             bi.return_changes);
             return true;
