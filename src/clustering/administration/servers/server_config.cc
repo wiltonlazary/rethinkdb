@@ -29,12 +29,10 @@ bool convert_server_config_from_datum(
     if (!converter.get("id", &id_datum, error_out)) {
         return false;
     }
-    uuid_u server_uuid;
-    if (!convert_uuid_from_datum(id_datum, &server_uuid, error_out)) {
+    if (!convert_serverid_from_datum(id_datum, server_id_out, error_out)) {
         error_out->msg = "In `id`: " + error_out->msg;
         return false;
     }
-    *server_id_out = server_id_t::from_uuid(server_uuid);
 
     ql::datum_t tags_datum;
     if (!converter.get("tags", &tags_datum, error_out)) {

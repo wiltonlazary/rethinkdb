@@ -406,7 +406,7 @@ contract_t calculate_contract(
         has three voters, A, B, and C. Suppose that voter B is lagging behind the others,
         and voter C is removed by emergency repair. Then the normal algorithm could pick
         voter B as the primary, even though it's missing some data. */
-        server_id_t best_primary = server_id_t::from_uuid(nil_uuid());
+        server_id_t best_primary = server_id_t::from_server_uuid(nil_uuid());
         state_timestamp_t best_timestamp = state_timestamp_t::zero();
         bool all_present = true;
         for (const server_id_t &server : new_c.voters) {

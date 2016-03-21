@@ -24,7 +24,7 @@ void network_logger_t::on_change(
                 const server_id_t &server_id = value->server_id;
                 if (peer_id != us && connected_servers.count(peer_id) == 0) {
                     logNTC("Connected to server \"%s\" %s",
-                        name.c_str(), uuid_to_str(server_id.get_uuid()).c_str());
+                        name.c_str(), server_id.print().c_str());
                 }
                 connected_servers[peer_id] = std::make_pair(server_id, name);
                 local_connections.set_key(server_id, empty_value_t());
@@ -34,7 +34,7 @@ void network_logger_t::on_change(
                 const server_id_t &proxy_id = value->server_id;
                 if (peer_id != us && connected_proxies.count(peer_id) == 0) {
                     logNTC("Connected to proxy %s",
-                        uuid_to_str(proxy_id.get_uuid()).c_str());
+                        proxy_id.print().c_str());
                 }
                 connected_proxies[peer_id] = proxy_id;
                 break;
@@ -47,7 +47,7 @@ void network_logger_t::on_change(
             if (peer_id != us) {
                 logNTC("Disconnected from server \"%s\" %s",
                        it->second.second.c_str(),
-                       uuid_to_str(it->second.first.get_uuid()).c_str());
+                       it->second.first.print().c_str());
             }
             local_connections.delete_key(it->second.first);
             connected_servers.erase(it);
@@ -56,7 +56,7 @@ void network_logger_t::on_change(
             if (jt != connected_proxies.end()) {
                 if (peer_id != us) {
                     logNTC("Disconnected from proxy %s",
-                           uuid_to_str(jt->second.get_uuid()).c_str());
+                           jt->second.print().c_str());
                 }
                 connected_proxies.erase(jt);
             }

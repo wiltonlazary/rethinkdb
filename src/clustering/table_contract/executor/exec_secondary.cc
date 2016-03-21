@@ -33,7 +33,7 @@ secondary_execution_t::secondary_execution_t(
         primary = c.primary->server;
     } else {
         connect_to_primary = false;
-        primary = server_id_t::from_uuid(nil_uuid());
+        primary = server_id_t::from_server_uuid(nil_uuid());
     }
 
     branch = _branch;

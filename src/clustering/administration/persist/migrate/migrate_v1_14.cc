@@ -303,7 +303,7 @@ metadata_v1_16::namespace_semilattice_metadata_t migrate_table(
             /* This is probably impossible unless the user was mucking around with
             `/ajax`, but fortunately there's a pretty simple translation that won't break
             anything. */
-            s->primary_replica = server_id_t::from_uuid(nil_uuid());
+            s->primary_replica = server_id_t::from_server_uuid(nil_uuid());
         }
     }
 

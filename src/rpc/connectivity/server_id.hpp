@@ -17,26 +17,30 @@ public:
     // Creates a new `server_id_t` for a regular server
     static server_id_t generate_server_id();
 
-    static server_id_t from_uuid(uuid_u _uuid);
+    static server_id_t from_server_uuid(uuid_u _uuid);
+    static server_id_t from_proxy_uuid(uuid_u _uuid);
 
     // Used for deserialization. `uuid` is initialized to unset
     server_id_t() { }
 
     bool operator<(const server_id_t &p) const {
-        return p.uuid < uuid;
+        return (proxy_flag && !p.proxy_flag)
+            || (proxy_flag == p.proxy_flag && p.uuid < uuid);
     }
     bool operator==(const server_id_t &p) const {
-        return p.uuid == uuid;
+        return p.proxy_flag == proxy_flag && p.uuid == uuid;
     }
     bool operator!=(const server_id_t &p) const {
-        return p.uuid != uuid;
+        return !(p == *this);
     }
 
     uuid_u get_uuid() const {
         return uuid;
     }
 
-    bool is_proxy() const;
+    bool is_proxy() const {
+        return proxy_flag;
+    }
 
     std::string print() const;
 
@@ -44,7 +48,11 @@ public:
 
 private:
     uuid_u uuid;
+    bool proxy_flag;
 };
+
+// Inverse of `server_id_t::print`.
+bool str_to_serverid(const std::string &in, server_id_t *out);
 
 void serialize_universal(write_message_t *wm, const server_id_t &server_id);
 archive_result_t deserialize_universal(read_stream_t *s, server_id_t *server_id);

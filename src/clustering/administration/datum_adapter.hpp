@@ -53,6 +53,18 @@ ql::datum_t convert_name_or_uuid_to_datum(
         const uuid_u &uuid,
         admin_identifier_format_t identifier_format);
 
+ql::datum_t convert_serverid_to_datum(
+        const server_id_t &value);
+bool convert_serverid_from_datum(
+        ql::datum_t datum,
+        server_id_t *value_out,
+        admin_err_t *error_out);
+
+ql::datum_t convert_name_or_serverid_to_datum(
+        const name_string_t &name,
+        const server_id_t &sid,
+        admin_identifier_format_t identifier_format);
+
 /* If the given server is connected, sets `*server_name_or_uuid_out` to a datum
 representation of the server and returns `true`. If it's not connected, returns `false`.
 */

@@ -64,11 +64,9 @@ bool convert_server_id_from_datum(
             return true;
         }
     } else {
-        uuid_u server_uuid;
-        if (!convert_uuid_from_datum(datum, &server_uuid, error_out)) {
+        if (!convert_serverid_from_datum(datum, server_id_out, error_out)) {
             return false;
         }
-        *server_id_out = server_id_t::from_uuid(server_uuid);
         /* We know the server's UUID, but we need to confirm that it exists and determine
         its name. First we look up the server name in `get_server_config_map()`; if that
         fails, then we look it up in `old_server_names`. We prefer
