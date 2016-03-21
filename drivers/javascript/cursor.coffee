@@ -284,11 +284,13 @@ class IterableResult
                     throw err if err?.message isnt 'No more rows in the cursor.'
                     return Promise.all(pending) # await any queued promises before returning
 
-        return nextCb().then () ->
+        resPromise = nextCb().then () ->
             errCb(null) if errCb?
         .catch (err) ->
             return errCb(err) if errCb?
             throw err
+        return resPromise unless errCb?
+        return null
     )
 
     _each: @::each
