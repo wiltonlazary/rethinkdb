@@ -188,11 +188,19 @@ class IterableResult
                 # called. Just return a promise that resolves
                 # immediately.
                 @_closeCbPromise = Promise.resolve().nodeify(cb)
+                # Also clear any buffered results, so future calls to
+                # `next` fail.
+                @_responses = []
+                @_responseIndex = 0
             else
                 # We aren't ended, and we need to. Create a promise
                 # that's resolved when the END query is acknowledged.
                 @_closeCbPromise = new Promise((resolve, reject) =>
                     @_closeCb = (err) =>
+                        # Clear any buffered results, so future calls to
+                        # `next` fail.
+                        @_responses = []
+                        @_responseIndex = 0
                         # Clear all callbacks for outstanding requests
                         while @_cbQueue.length > 0
                             @_cbQueue.shift()
@@ -431,6 +439,8 @@ class ArrayResult extends IterableResult
 
 
     close: ->
+        # Clear the array
+        @.length = 0
         return @
 
     makeIterable: (response) ->
