@@ -544,7 +544,7 @@ for (var i = 0; i < numRows; i++) {
                         return testCursor.eachAsync(
                             function(row) {
                                 assert.deepEqual(row, {'id':i});
-                                if (row == 10) {
+                                if (row.id == 10) {
                                     return false; // pre #5474 this would bail out early, now it is an error
                                 }
                                 i++;
@@ -881,7 +881,7 @@ for (var i = 0; i < numRows; i++) {
                         return testCursor.eachAsync(
                             function(row) {
                                 assert.deepEqual(row, {'id':i});
-                                if (row == 10) {
+                                if (row.id == 10) {
                                     return false; // pre #5474 this would bail out early, now it is an error
                                 }
                                 i++;
