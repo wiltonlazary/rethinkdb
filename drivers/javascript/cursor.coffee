@@ -422,6 +422,9 @@ class ArrayResult extends IterableResult
 
     toArray: varar 0, 1, (cb) ->
         fn = (cb) =>
+            if @_closeCbPromise?
+                cb(new error.ReqlDriverError("Cursor is closed."))
+        
             # IterableResult.toArray would create a copy
             if @__index?
                 cb(null, @.slice(@__index, @.length))
@@ -438,10 +441,14 @@ class ArrayResult extends IterableResult
         ).nodeify cb
 
 
-    close: ->
+    close: varar 0, 1, (cb) ->
         # Clear the array
         @.length = 0
-        return @
+        @__index = 0
+        # We set @_closeCbPromise so that functions such as `eachAsync`
+        # know that we have been closed and can error accordingly.
+        @_closeCbPromise = Promise.resolve().nodeify(cb)
+        return @_closeCbPromise
 
     makeIterable: (response) ->
         response.__proto__ = {}
