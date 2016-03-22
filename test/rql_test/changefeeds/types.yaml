@@ -24,7 +24,7 @@ tests:
     - py: b = tbl.between(1, 10, index="num").changes(include_initial=True, include_types=True)
     - py: tbl.get(2).update({'num': 666})
     - py: fetch(b)
-      ot: partial([{'type':'initial'}, {'type': 'uninitial'}])
+      ot: partial([{'type':'initial'}, {'type': 'remove'}])
 
     # Test all types on row changefeed
 
@@ -59,7 +59,7 @@ tests:
     - py: tbl.get(1).delete()
       ot: partial({'deleted': 1})
     - py: fetch(d)
-      ot: partial([{'type': 'uninitial'}])
+      ot: partial([{'type': 'remove'}])
 
     # Test for limit changefeed
     - py: tbl.delete()

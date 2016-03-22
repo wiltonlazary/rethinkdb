@@ -1459,8 +1459,8 @@ datum_t change_val_to_change(
     datum_t res = vals_to_change(
         change.old_val ? change.old_val->val : datum_t::null(),
         change.new_val ? change.new_val->val : datum_t::null(),
-        change.old_val ? discard_old_val : true,
-        change.new_val ? discard_new_val : true,
+        discard_old_val,
+        discard_new_val,
         include_type);
     return res;
 }
