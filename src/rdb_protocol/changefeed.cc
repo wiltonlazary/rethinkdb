@@ -1400,16 +1400,16 @@ datum_t vals_to_change(
     boost::optional<size_t> new_offset = boost::none) {
     change_type_t change_type;
 
-    if (!old_val.has() && new_val.has()) {
+    if (discard_old_val && !discard_new_val) {
         change_type = change_type_t::INITIAL;
         old_val = datum_t::null();
-    } else if (old_val.has() && !new_val.has()) {
+    } else if (!discard_old_val && discard_new_val) {
         change_type = change_type_t::UNINITIAL;
         new_val = datum_t::null();
-    } else if (old_val.has()
+    } else if (!discard_old_val
                && old_val.get_type() == datum_t::R_NULL) {
         change_type = change_type_t::ADD;
-    } else if (new_val.has()
+    } else if (!discard_new_val
                && new_val.get_type() == datum_t::R_NULL) {
         change_type = change_type_t::REMOVE;
     } else {
@@ -1457,10 +1457,10 @@ datum_t change_val_to_change(
     bool discard_new_val = false,
     bool include_type = false) {
     datum_t res = vals_to_change(
-        change.old_val ? change.old_val->val : datum_t(),
-        change.new_val ? change.new_val->val : datum_t(),
-        discard_old_val,
-        discard_new_val,
+        change.old_val ? change.old_val->val : datum_t::null(),
+        change.new_val ? change.new_val->val : datum_t::null(),
+        change.old_val ? discard_old_val : true,
+        change.new_val ? discard_new_val : true,
         include_type);
     return res;
 }
