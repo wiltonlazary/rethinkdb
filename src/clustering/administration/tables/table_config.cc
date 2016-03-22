@@ -64,7 +64,7 @@ bool convert_server_id_from_datum(
             return true;
         }
     } else {
-        if (!convert_serverid_from_datum(datum, server_id_out, error_out)) {
+        if (!convert_server_id_from_datum(datum, server_id_out, error_out)) {
             return false;
         }
         /* We know the server's UUID, but we need to confirm that it exists and determine

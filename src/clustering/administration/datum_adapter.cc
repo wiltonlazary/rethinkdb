@@ -56,7 +56,7 @@ ql::datum_t convert_uuid_to_datum(
     return ql::datum_t(datum_string_t(uuid_to_str(value)));
 }
 
-ql::datum_t convert_serverid_to_datum(
+ql::datum_t convert_server_id_to_datum(
         const server_id_t &value) {
     return ql::datum_t(datum_string_t(value.print()));
 }
@@ -80,7 +80,7 @@ bool convert_uuid_from_datum(
     return true;
 }
 
-bool convert_serverid_from_datum(
+bool convert_server_id_from_datum(
         ql::datum_t datum,
         server_id_t *value_out,
         admin_err_t *error_out) {
@@ -90,7 +90,7 @@ bool convert_serverid_from_datum(
             query_state_t::FAILED};
         return false;
     }
-    if (!str_to_serverid(datum.as_str().to_std(), value_out)) {
+    if (!str_to_server_id(datum.as_str().to_std(), value_out)) {
         *error_out = admin_err_t{
             "Expected a server ID; got " + datum.print(),
             query_state_t::FAILED};
@@ -110,14 +110,14 @@ ql::datum_t convert_name_or_uuid_to_datum(
     }
 }
 
-ql::datum_t convert_name_or_serverid_to_datum(
+ql::datum_t convert_name_or_server_id_to_datum(
         const name_string_t &name,
         const server_id_t &sid,
         admin_identifier_format_t identifier_format) {
     if (identifier_format == admin_identifier_format_t::name) {
         return convert_name_to_datum(name);
     } else {
-        return convert_serverid_to_datum(sid);
+        return convert_server_id_to_datum(sid);
     }
 }
 

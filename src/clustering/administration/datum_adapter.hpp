@@ -53,14 +53,14 @@ ql::datum_t convert_name_or_uuid_to_datum(
         const uuid_u &uuid,
         admin_identifier_format_t identifier_format);
 
-ql::datum_t convert_serverid_to_datum(
+ql::datum_t convert_server_id_to_datum(
         const server_id_t &value);
-bool convert_serverid_from_datum(
+bool convert_server_id_from_datum(
         ql::datum_t datum,
         server_id_t *value_out,
         admin_err_t *error_out);
 
-ql::datum_t convert_name_or_serverid_to_datum(
+ql::datum_t convert_name_or_server_id_to_datum(
         const name_string_t &name,
         const server_id_t &sid,
         admin_identifier_format_t identifier_format);

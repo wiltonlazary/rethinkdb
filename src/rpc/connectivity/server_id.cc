@@ -12,8 +12,6 @@ server_id_t server_id_t::generate_server_id() {
     server_id_t res;
     res.uuid = generate_uuid();
     res.proxy_flag = false;
-
-    guarantee((res.uuid.data()[8] & 0x80) == 0x80);
     return res;
 }
 
@@ -39,7 +37,7 @@ std::string server_id_t::print() const {
     }
 }
 
-bool str_to_serverid(const std::string &in, server_id_t *out) {
+bool str_to_server_id(const std::string &in, server_id_t *out) {
     bool is_proxy;
     std::string uuid_str;
     if (in.length() >= 6 && in.substr(0, 6) == "proxy-") {

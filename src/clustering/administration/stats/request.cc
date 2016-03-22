@@ -54,7 +54,7 @@ parsed_stats_t::parsed_stats_t(const std::vector<ql::datum_t> &stats) {
                                                   ql::throw_bool_t::NOTHROW);
         server_id_t server_id;
         admin_err_t error;
-        bool res = convert_serverid_from_datum(server_id_datum, &server_id, &error);
+        bool res = convert_server_id_from_datum(server_id_datum, &server_id, &error);
         guarantee(res, "Stats contained an invalid server id. %s", error.msg.c_str());
 
         server_stats_t &serv_stats = servers[server_id];
@@ -393,7 +393,7 @@ bool server_stats_request_t::parse(const ql::datum_t &info,
 
     server_id_t s;
     admin_err_t dummy_error;
-    if (!convert_serverid_from_datum(info.get(1), &s, &dummy_error)) {
+    if (!convert_server_id_from_datum(info.get(1), &s, &dummy_error)) {
         return false;
     }
     request_out->init(new server_stats_request_t(s));
@@ -479,7 +479,7 @@ bool table_server_stats_request_t::parse(const ql::datum_t &info,
     if (!convert_uuid_from_datum(info.get(1), &t, &dummy_error)) {
         return false;
     }
-    if (!convert_serverid_from_datum(info.get(2), &s, &dummy_error)) {
+    if (!convert_server_id_from_datum(info.get(2), &s, &dummy_error)) {
         return false;
     }
     request_out->init(new table_server_stats_request_t(t, s));

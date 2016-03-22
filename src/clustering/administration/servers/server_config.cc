@@ -29,7 +29,7 @@ bool convert_server_config_from_datum(
     if (!converter.get("id", &id_datum, error_out)) {
         return false;
     }
-    if (!convert_serverid_from_datum(id_datum, server_id_out, error_out)) {
+    if (!convert_server_id_from_datum(id_datum, server_id_out, error_out)) {
         error_out->msg = "In `id`: " + error_out->msg;
         return false;
     }

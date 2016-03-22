@@ -52,7 +52,7 @@ private:
 };
 
 // Inverse of `server_id_t::print`.
-bool str_to_serverid(const std::string &in, server_id_t *out);
+bool str_to_server_id(const std::string &in, server_id_t *out);
 
 void serialize_universal(write_message_t *wm, const server_id_t &server_id);
 archive_result_t deserialize_universal(read_stream_t *s, server_id_t *server_id);
