@@ -71,9 +71,9 @@ void serialize_universal(write_message_t *wm, const server_id_t &server_id) {
     // The reason for this is so that we don't break compatibility with older servers
     // that expect a plain `uuid_u`.
     uuid_u flagged_uuid = server_id.get_uuid();
-    guarantee((flagged_uuid.data()[8] & 0x80) == 0x80);
+    guarantee((flagged_uuid.data()[8] & 0x40) == 0);
     if (server_id.is_proxy()) {
-        flagged_uuid.data()[8] = flagged_uuid.data()[8] ^ 0x80;
+        flagged_uuid.data()[8] = flagged_uuid.data()[8] ^ 0x40;
     }
     serialize_universal(wm, flagged_uuid);
 }
@@ -81,11 +81,11 @@ archive_result_t deserialize_universal(read_stream_t *s, server_id_t *server_id)
     uuid_u flagged_uuid;
     archive_result_t res = deserialize_universal(s, &flagged_uuid);
     if (bad(res)) { return res; }
-    bool is_proxy = (flagged_uuid.data()[8] & 0x80) == 0;
+    bool is_proxy = (flagged_uuid.data()[8] & 0x40) == 0x40;
     if (is_proxy) {
         // Undo the flagging
         uuid_u uuid = flagged_uuid;
-        uuid.data()[8] = uuid.data()[8] | 0x80;
+        uuid.data()[8] = uuid.data()[8] ^ 0x40;
         *server_id = server_id_t::from_proxy_uuid(uuid);
     } else {
         *server_id = server_id_t::from_server_uuid(flagged_uuid);
