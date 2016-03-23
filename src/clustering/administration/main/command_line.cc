@@ -677,12 +677,12 @@ bool load_tls_key_and_cert(
     SSL_CTX *tls_ctx, const std::string &key_file, const std::string &cert_file) {
     if(SSL_CTX_use_PrivateKey_file(tls_ctx, key_file.c_str(), SSL_FILETYPE_PEM) <= 0) {
         ERR_print_errors_fp(stderr);
-        return false;      
+        return false;
     }
 
     if(SSL_CTX_use_certificate_file(tls_ctx, cert_file.c_str(), SSL_FILETYPE_PEM) <= 0) {
         ERR_print_errors_fp(stderr);
-        return false;      
+        return false;
     }
 
     if(1 != SSL_CTX_check_private_key(tls_ctx)) {
@@ -726,7 +726,7 @@ bool configure_driver_tls(
     if (ca_file) {
         if (!SSL_CTX_load_verify_locations(driver_tls, ca_file->c_str(), nullptr)) {
             ERR_print_errors_fp(stderr);
-            return false; 
+            return false;
         }
 
         // Mutual authentication.
@@ -756,7 +756,7 @@ bool configure_cluster_tls(
 
     if (!SSL_CTX_load_verify_locations(cluster_tls, ca_file->c_str(), nullptr)) {
         ERR_print_errors_fp(stderr);
-        return false; 
+        return false;
     }
 
     // Mutual authentication.
@@ -915,7 +915,7 @@ bool configure_tls(
     SSL_library_init();
     SSL_load_error_strings();
 
-    logNTC("%s\n", SSLeay_version(SSLEAY_VERSION));
+    logINF("Initializing %s\n", SSLeay_version(SSLEAY_VERSION));
 
     if(!exists_option(opts, "--no-http-admin") && exists_option(opts, "--web-tls")) {
         if (!(initialize_tls_ctx(opts, &(tls_configs_out->web)) &&
