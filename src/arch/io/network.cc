@@ -753,6 +753,12 @@ linux_secure_tcp_conn_t::~linux_secure_tcp_conn_t() THROWS_NOTHING {
     if (is_open()) shutdown();
 }
 
+void linux_secure_tcp_conn_t::rethread(threadnum_t thread) {
+    closed.rethread(thread);
+
+    linux_tcp_conn_t::rethread(thread);
+}
+
 void linux_secure_tcp_conn_t::perform_handshake(signal_t *interruptor)
     THROWS_ONLY(linux_tcp_conn_t::connect_failed_exc_t, interrupted_exc_t) {
     // Perform TLS handshake.
@@ -847,13 +853,13 @@ size_t linux_secure_tcp_conn_t::read_internal(void *buffer, size_t size)
             break;
         default:
             // Some other error. Assume that the connection is unusable.
-            on_shutdown();
+            shutdown_socket();
             throw tcp_conn_read_closed_exc_t();
         }
 
         if (closed.is_pulsed()) {
             /* We were closed for whatever reason. Whatever signalled us has
-            already called on_shutdown(). */
+            already called shutdown_socket(). */
             throw tcp_conn_read_closed_exc_t();
         }
 
@@ -921,13 +927,13 @@ void linux_secure_tcp_conn_t::perform_write(const void *buffer, size_t size) {
             break;
         default:
             // Some other error. Assume that the connection is unusable.
-            on_shutdown();
+            shutdown_socket();
             return;
         }
 
         if (closed.is_pulsed()) {
             /* We were closed for whatever reason. Whatever signalled
-            us has already called on_shutdown(). */
+            us has already called shutdown_socket(). */
             throw tcp_conn_read_closed_exc_t();
         }
 
@@ -935,8 +941,16 @@ void linux_secure_tcp_conn_t::perform_write(const void *buffer, size_t size) {
     }
 }
 
+/* It is not possible to close only the read or write side of a TLS connection
+so we use only a single shutdown method which attempts to shutdown the TLS
+before shutting down the underlying tcp connection */
 void linux_secure_tcp_conn_t::shutdown() {
     assert_thread();
+
+    // If something else already shut us down, abort immediately.
+    if (closed.is_pulsed()) {
+        return;
+    }
 
     // Wait at most 5 seconds for the orderly shutdown. If it doesn't complete by then,
     // we simply shutdown the socket.
@@ -988,6 +1002,15 @@ void linux_secure_tcp_conn_t::shutdown() {
         }
     }
 
+    shutdown_socket();
+}
+
+void linux_secure_tcp_conn_t::shutdown_socket() {
+    assert_thread();
+    rassert(!closed.is_pulsed());
+    rassert(!read_closed.is_pulsed());
+    rassert(!write_closed.is_pulsed());
+
     // Shutdown the underlying TCP connection.
     int res = ::shutdown(sock.get(), SHUT_RDWR);
     if (res != 0 && get_errno() != ENOTCONN) {
@@ -995,19 +1018,6 @@ void linux_secure_tcp_conn_t::shutdown() {
             "Could not shutdown socket for reading and writing: %s",
             errno_string(get_errno()).c_str());
     }
-
-    on_shutdown();
-}
-
-/* It is not possible to close only the read or write side of a TLS connection
-so we use only a single shutdown method which attempts to shutdown the TLS
-before shutting down the underlying tcp connection */
-void linux_secure_tcp_conn_t::on_shutdown() {
-    assert_thread();
-
-    rassert(!closed.is_pulsed());
-    rassert(!read_closed.is_pulsed());
-    rassert(!write_closed.is_pulsed());
 
     closed.pulse();
     read_closed.pulse();
