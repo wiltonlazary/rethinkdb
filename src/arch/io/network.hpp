@@ -374,8 +374,8 @@ public:
     the full TLS shutdown procedure, because they're assumed not to block.
     Our usual `shutdown` does block and it also assumes that no other operation is
     currently ongoing on the connection, which we can't guarantee here. */
-    virtual void shutdown_read() { shutdown_socket(); };
-    virtual void shutdown_write() { shutdown_socket(); };
+    virtual void shutdown_read() { shutdown_socket(); }
+    virtual void shutdown_write() { shutdown_socket(); }
 
     virtual void rethread(threadnum_t thread);
 
@@ -402,7 +402,7 @@ private:
     void shutdown();
     void shutdown_socket();
 
-    bool is_open() { return !closed.is_pulsed(); };
+    bool is_open() { return !closed.is_pulsed(); }
 
     tls_conn_wrapper_t conn;
 
