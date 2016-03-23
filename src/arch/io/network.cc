@@ -1030,15 +1030,22 @@ linux_tcp_conn_descriptor_t::linux_tcp_conn_descriptor_t(fd_t fd) : fd_(fd) {
 }
 
 linux_tcp_conn_descriptor_t::~linux_tcp_conn_descriptor_t() {
-    rassert(fd_ == -1);
+    if (fd_ != -1) {
+        int res = ::shutdown(fd_, SHUT_RDWR);
+        if (res != 0 && get_errno() != ENOTCONN) {
+            logERR(
+                "Could not shutdown socket for reading and writing: %s",
+                errno_string(get_errno()).c_str());
+        }
+    }
 }
 
 void linux_tcp_conn_descriptor_t::make_server_connection(
     SSL_CTX *tls_ctx, scoped_ptr_t<linux_tcp_conn_t> *tcp_conn, signal_t *closer
 ) THROWS_ONLY(linux_tcp_conn_t::connect_failed_exc_t, interrupted_exc_t) {
+    // We pass ownership of `fd_` to the connection.
     fd_t sock = fd_;
     fd_ = -1;
-
     if (tls_ctx == nullptr) {
         tcp_conn->init(new linux_tcp_conn_t(sock));
     } else {
@@ -1049,12 +1056,14 @@ void linux_tcp_conn_descriptor_t::make_server_connection(
 void linux_tcp_conn_descriptor_t::make_server_connection(
     SSL_CTX *tls_ctx, linux_tcp_conn_t **tcp_conn_out, signal_t *closer
 ) THROWS_ONLY(linux_tcp_conn_t::connect_failed_exc_t, interrupted_exc_t) {
-    if (tls_ctx == nullptr) {
-        *tcp_conn_out = new linux_tcp_conn_t(fd_);
-    } else {
-        *tcp_conn_out = new linux_secure_tcp_conn_t(tls_ctx, fd_, closer);
-    }
+    // We pass ownership of `fd_` to the connection.
+    fd_t sock = fd_;
     fd_ = -1;
+    if (tls_ctx == nullptr) {
+        *tcp_conn_out = new linux_tcp_conn_t(sock);
+    } else {
+        *tcp_conn_out = new linux_secure_tcp_conn_t(tls_ctx, sock, closer);
+    }
 }
 
 /* Network listener object */
