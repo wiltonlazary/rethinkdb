@@ -3,8 +3,7 @@ from __future__ import print_function
 
 import sys, os, datetime, time, shutil, tarfile, tempfile, subprocess, os.path
 from optparse import OptionParser
-from _backup import *
-#TODO put this back
+from ._backup import *
 
 info = "'rethinkdb restore' loads data into a RethinkDB cluster from an archive"
 usage = "rethinkdb restore FILE [-c HOST:PORT] [-a AUTH_KEY] [--clients NUM] [--shards NUM_SHARDS] [--replicas NUM_REPLICAS] [--force] [-i (DB | DB.TABLE)]..."

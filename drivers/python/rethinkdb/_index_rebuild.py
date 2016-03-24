@@ -3,7 +3,7 @@ from __future__ import print_function
 
 import sys, os, datetime, time, shutil, tempfile, subprocess, random
 from optparse import OptionParser
-from _backup import *
+from ._backup import *
 
 info = "'rethinkdb index-rebuild' recreates outdated secondary indexes in a cluster.\n" + \
        "  This should be used after upgrading to a newer version of rethinkdb.  There\n" + \

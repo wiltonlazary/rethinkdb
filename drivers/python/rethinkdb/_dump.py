@@ -3,8 +3,7 @@ from __future__ import print_function
 
 import sys, os, datetime, time, shutil, tarfile, tempfile, subprocess, os.path
 from optparse import OptionParser
-from _backup import *
-#TODO put back
+from ._backup import *
 
 info = "'rethinkdb dump' creates an archive of data from a RethinkDB cluster"
 usage = "rethinkdb dump [-c HOST:PORT] [-a AUTH_KEY] [-f FILE] [--clients NUM] [-e (DB | DB.TABLE)]..."

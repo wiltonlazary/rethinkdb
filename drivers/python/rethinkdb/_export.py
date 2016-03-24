@@ -9,7 +9,7 @@ signal.signal(signal.SIGINT, signal.SIG_DFL)
 import sys, os, datetime, time, json, traceback, csv
 import multiprocessing, subprocess, re, ctypes, numbers
 from optparse import OptionParser
-from _backup import *
+from ._backup import *
 import rethinkdb as r
 
 try:
