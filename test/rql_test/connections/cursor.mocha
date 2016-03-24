@@ -746,10 +746,6 @@ for (var i = 0; i < numRows; i++) {
                             function(value) { i++; },
                             function(err) {}
                         );
-                        assert(promiseValue instanceof r._bluebird.Promise);
-                        return promiseValue.then(function() {
-                            assert.equal(i, numRows);
-                        });
                     });
                     
                     it('errors on an initially closed cursor', function() { // issue #5432 empty data buffer on JavaScript cursor when it is closed
@@ -788,11 +784,7 @@ for (var i = 0; i < numRows; i++) {
                                     assert.fail(undefined, undefined, 'The `final` function was called on a closed cursor without an error');
                                 }
                             }
-                        ).catch(r.Error.ReqlDriverError, function(err) {
-                            if(err.message == 'Cursor is closed.') {
-                                assert.fail(undefined, undefined, 'row error passed through outer promise rather than final function');
-                            }
-                        });
+                        );
                     });
                     
                     it('processes values in the right order', function() {
@@ -829,12 +821,7 @@ for (var i = 0; i < numRows; i++) {
                                 assert.equal(i, numRows);
                                 assert.equal(j, numRows);
                             }
-                        )
-                        .then(function() {
-                            if(!calledFinal) { assert.fail(undefined, undefined, 'Did not call final function before resolving promise'); }
-                            assert.equal(i, numRows);
-                            assert.equal(j, numRows);
-                        });
+                        );
                     });
                     
                     it('stops on an error thrown in Promise returned by a row handler', function() {
@@ -863,16 +850,7 @@ for (var i = 0; i < numRows; i++) {
                                 assert.equal(err.message, 'something aync random');
                                 calledFinal = true;
                             }
-                        ).then(function() {
-                            if(!calledFinal) { assert.fail(undefined, undefined, 'Did not call final function before resolving promise'); }
-                        })
-                        .catch(Error, function(err) {
-                            if(err.message == 'something aync random') {
-                                assert.fail(undefined, undefined, 'row error passed through outer promise rather than final function');
-                            } else {
-                                throw err;
-                            }
-                        });
+                        );
                     });
                     
                     it.skip('errors on a non-Promise row handler return value', function() {
@@ -892,9 +870,7 @@ for (var i = 0; i < numRows; i++) {
                                 assert(err instanceof r.Error.ReqlRuntimeError, 'Expected ReqlRuntimeError, got: ' + err)
                                 assert.equal(err.message, 'fill me in')
                             }
-                        ).then(function() {
-                            assert.equal(calledFinal, true);
-                        });
+                        );
                     });
                     
                     it('stops on row handler error', function() {
@@ -916,14 +892,7 @@ for (var i = 0; i < numRows; i++) {
                                     assert.fail(undefined, undefined, 'The `final` function was called without an error');
                                 }
                             }
-                        )
-                        .catch(Error, function(err) {
-                            if(err.message == 'something random') {
-                                assert.fail(undefined, undefined, 'row error passed through outer promise rather than final function');
-                            } else {
-                                throw err;
-                            }
-                        });
+                        );
                     });
                     
                     it('stops on row Promise rejection', function() {
@@ -941,18 +910,7 @@ for (var i = 0; i < numRows; i++) {
                                 assert(err instanceof Error);
                                 assert.equal(err.message, 'stop value');
                             }
-                        )
-                        .then(function() {
-                            assert.equal(i, 10, 'Did not immediately stop iteration: ' + i);
-                            if(!ranFinal) {
-                                assert.fail(undefined, undefined, 'Did not resolve promise returned from final function before resolving outer promise');
-                            }
-                        })
-                        .catch(function(err) {
-                            if(err.messgae == 'stop value') {
-                                assert.fail(undefined, undefined, 'row error passed through outer promise rather than final function');
-                            }
-                        });
+                        );
                     });
 
                     it('calls the final function before resolving the promise', function() {
@@ -962,9 +920,7 @@ for (var i = 0; i < numRows; i++) {
                             function(err) {
                                 ranFinal = true;
                             }
-                        ).then(function() {
-                            assert.equal(ranFinal, true);
-                        });
+                        );
                     });
                     
                     it('resolves a returned promise from the final function before resolving the promise', function() {
@@ -977,11 +933,7 @@ for (var i = 0; i < numRows; i++) {
                                     ranFinal = true;
                                 });
                             }
-                        ).then(function() {
-                            if(!ranFinal) {
-                                assert.fail(undefined, undefined, 'Did not resolve promise returned from final function before resolving outer promise');
-                            }
-                        });
+                        );
                     });
                     
                     it('passes a value returned from the final function as promise value', function() {
@@ -990,9 +942,7 @@ for (var i = 0; i < numRows; i++) {
                             function(err) {
                                 return 'this is the return value';
                             }
-                        ).then(function(value) {
-                            assert.equal(value, 'this is the return value');
-                        });
+                        );
                     });
                     
                     it('passes a value returned from a Promise chained from the final function as promise value', function() {
@@ -1004,9 +954,7 @@ for (var i = 0; i < numRows; i++) {
                                     return 'this is the return value';
                                 });
                             }
-                        ).then(function(value) {
-                            assert.equal(value, 'this is the return value');
-                        });
+                        );
                     });
                     
                     describe('with an async handler', function() {
@@ -1033,11 +981,7 @@ for (var i = 0; i < numRows; i++) {
                                     assert.equal(j, numRows);
                                     ranFinal = true;
                                 }
-                            ).then(function() {
-                                assert.equal(ranFinal, true);
-                                assert.equal(i, numRows);
-                                assert.equal(j, numRows);
-                            });
+                            );
                         });
                         
                         it('errors when returning from row handler with `done` function', function() {
@@ -1056,17 +1000,7 @@ for (var i = 0; i < numRows; i++) {
                                     assert.equal(err.message, 'A two-argument row handler for eachAsync may only return undefined.');
                                     ranFinal = true;
                                 }
-                            )
-                            .then(function() {
-                                if(!ranFinal) { assert.fail(undefined, undefined, 'Did not run final function before resolving outer promise'); }
-                            })
-                            .catch(Error, function(err) {
-                                if(err.message == 'Unexpected return in async hander of eachAsyc') {
-                                    assert.fail(undefined, undefined, 'rowDone error passed to outer promise rather than final function')
-                                } else {
-                                    throw err;
-                                }
-                            });
+                            );
                         });
                         
                         it('stops on async return value', function() {
@@ -1099,17 +1033,7 @@ for (var i = 0; i < numRows; i++) {
                                     assert.equal(j, 10);
                                     ranFinal = true;
                                 }
-                            ).then(function() {
-                                assert.equal(ranFinal, true);
-                                assert.equal(i, 10);
-                                assert.equal(j, 10);
-                            }).catch(Error, function(err) {
-                                if(err.message == 'some random value') {
-                                    assert.fail(undefined, undefined, 'rowDone error passed to outer promise rather than final function')
-                                } else {
-                                    throw err;
-                                }
-                            });
+                            );
                         });
                                                 
                         it('stops on callback error', function() {
@@ -1133,17 +1057,7 @@ for (var i = 0; i < numRows; i++) {
                                     assert.equal(i, 10);
                                     assert.equal(j, 9);
                                 }
-                            ).then(function() {
-                                assert.equal(ranFinal, true);
-                                assert.equal(i, 10);
-                                assert.equal(j, 9);
-                            }).catch(Error, function(err) {
-                                if(err.message == 'something random') {
-                                    assert.fail(undefined, undefined, 'rowDone error passed to outer promise rather than final function')
-                                } else {
-                                    throw err;
-                                }
-                            });
+                            );
                         });
                         
                         it('errors when returning Promise from callback', function() {
@@ -1158,13 +1072,7 @@ for (var i = 0; i < numRows; i++) {
                                         throw err;
                                     }
                                 }
-                            ).catch(r.Error.ReqlDriverError, function(err) {
-                                if(err.message == 'A two-argument row handler for eachAsync may only return undefined.') {
-                                    assert.fail(undefined, undefined, 'row error passed to outer promise rather than final function')
-                                } else {
-                                    throw err;
-                                }
-                            });
+                            );
                         });
                         
                         it('errors when cursor is closed while processing rows', function() {
@@ -1192,15 +1100,7 @@ for (var i = 0; i < numRows; i++) {
                                         assert.fail(undefined, undefined, 'Did not error when calling `eachAsync` on a closed cursor');
                                     }
                                 }
-                            ).catch(r.Error.ReqlDriverError, function(err) {
-                                if(err.message == 'Unexpected return in async hander of eachAsyc') {
-                                    assert.fail(undefined, undefined, 'row error passed to outer promise rather than final function')
-                                } else {
-                                    throw err;
-                                }
-                            }).then(function() {
-                                assert.equal(i, 10);
-                            });
+                            );
                         });
                         
                         it('resolves promise given in final callback', function() {
@@ -1214,11 +1114,7 @@ for (var i = 0; i < numRows; i++) {
                                         madeIt = true;
                                     });
                                 }
-                            ).then(function() {
-                                if(!madeIt) {
-                                    assert.fail(undefined, undefined, 'Promise returned from final callback was not resolved before resolving outer promise');
-                                }
-                            });
+                            );
                         });
                         
                         it('passes a value returned from the final function as promise value', function() {
@@ -1227,9 +1123,7 @@ for (var i = 0; i < numRows; i++) {
                                 function(err) {
                                     return 'this is the return value';
                                 }
-                            ).then(function(value) {
-                                assert.equal(value, 'this is the return value');
-                            });
+                            );
                         });
                         
                         it('passes a value returned from a Promise chained from the final function as promise value', function() {
@@ -1241,9 +1135,7 @@ for (var i = 0; i < numRows; i++) {
                                         return 'this is the return value';
                                     });
                                 }
-                            ).then(function(value) {
-                                assert.equal(value, 'this is the return value');
-                            });
+                            );
                         });
                     });
                 });
