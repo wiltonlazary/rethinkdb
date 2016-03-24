@@ -4,7 +4,7 @@ from __future__ import print_function
 import json, math, numbers, os, socket, time
 import rethinkdb as r
 from optparse import OptionParser
-from ._backup import *
+from _backup import *
 
 info = "'_negative_zero_check` finds and lists inaccessible rows with negative zero in their ID"
 usage = "  _negative_zero_check [-c HOST:PORT] [-a AUTH_KEY] [-d DIR]"
@@ -35,6 +35,9 @@ def parse_options():
     parser.add_option("-a", "--auth", dest="auth_key", metavar="AUTH_KEY", default="", type="string")
     parser.add_option("-f", "--file", dest="out_file", metavar="FILE", default=None, type="string")
     parser.add_option("-h", "--help", dest="help", default=False, action="store_true")
+
+    parser.add_option("--tls-cert", dest="tls_cert", metavar="TLS_CERT", default="", type="string")
+
     (options, args) = parser.parse_args()
 
     # Check validity of arguments
@@ -49,6 +52,8 @@ def parse_options():
 
     # Verify valid host:port --connect option
     (res["host"], res["port"]) = parse_connect_option(options.host)
+
+    res["tls_cert"] = options.tls_cert
 
     # Verify valid directory option
     if options.out_file is None:
@@ -148,7 +153,11 @@ def main():
     tasks = []
 
     try:
-        c = r.connect(opts["host"], opts["port"], auth_key=opts["auth_key"])
+        ssl_op = ""
+        if (opts["tls_cert"] != ""):
+            ssl_op = {"ca_certs": opts["tls_cert"]}
+        print(ssl_op)
+        c = r.connect(opts["host"], opts["port"], ssl=ssl_op, auth_key=opts["auth_key"])
 
         # Make sure the cluster isn't pre-2.0, where positive and negative zero are stored uniquely
         check_minimum_version(None, c, (2, 0, 0))

@@ -6,7 +6,8 @@ import signal
 import sys, os, datetime, time, json, traceback, csv
 import multiprocessing, multiprocessing.queues, subprocess, re, ctypes, codecs
 from optparse import OptionParser
-from ._backup import *
+from _backup import *
+#TODO: fix me
 import rethinkdb as r
 
 # Used because of API differences in the csv module, taken from
@@ -123,6 +124,8 @@ def parse_options():
     parser.add_option("--shards", dest="shards", metavar="NUM_SHARDS", default=0, type="int")
     parser.add_option("--replicas", dest="replicas", metavar="NUM_REPLICAS", default=0, type="int")
 
+    parser.add_option("--tls-cert", dest="tls_cert", metavar="TLS_CERT", default="", type="string")
+
     # Directory import options
     parser.add_option("-d", "--directory", dest="directory", metavar="DIRECTORY", default=None, type="string")
     parser.add_option("-i", "--import", dest="tables", metavar="DB | DB.TABLE", default=[], action="append", type="string")
@@ -154,6 +157,8 @@ def parse_options():
 
     if options.clients < 1:
         raise RuntimeError("Error: --client option too low, must have at least one client connection")
+
+    res["tls_cert"] = options.tls_cert
 
     res["auth_key"] = options.auth_key
     res["clients"] = options.clients
@@ -326,9 +331,9 @@ def import_from_queue(progress, conn, task_queue, error_queue, replace_conflicts
         task = task_queue.get()
 
 # This is run for each client requested, and accepts tasks from the reader processes
-def client_process(host, port, auth_key, task_queue, error_queue, rows_written, replace_conflicts, durability):
+def client_process(host, port, auth_key, task_queue, error_queue, rows_written, replace_conflicts, durability, ssl_op):
     try:
-        conn_fn = lambda: r.connect(host, port, auth_key=auth_key)
+        conn_fn = lambda: r.connect(host, port, ssl=ssl_op, auth_key=auth_key)
         write_count = [0]
         rdb_call_wrapper(conn_fn, "import", import_from_queue, task_queue, error_queue, replace_conflicts, durability, write_count)
     except:
@@ -565,7 +570,10 @@ def table_reader(options, file_info, task_queue, error_queue, warning_queue, pro
         create_args = dict(options["create_args"])
         create_args["primary_key"] = file_info["info"]["primary_key"]
 
-        conn_fn = lambda: r.connect(options["host"], options["port"], auth_key=options["auth_key"])
+        ssl_op = ""
+        if (options["tls_cert"] != ""):
+            ssl_op = {"ca_certs": options["tls_cert"]}
+        conn_fn = lambda: r.connect(options["host"], options["port"], ssl=ssl_op, auth_key=options["auth_key"])
         try:
             rdb_call_wrapper(conn_fn, "create table", create_table, db, table, create_args,
                          file_info["info"]["indexes"] if options["create_sindexes"] else [])
@@ -643,6 +651,10 @@ def spawn_import_clients(options, files_info):
         progress_info = []
         rows_written = multiprocessing.Value(ctypes.c_longlong, 0)
 
+        ssl_op = ""
+        if (options["tls_cert"] != ""):
+            ssl_op = {"ca_certs": options["tls_cert"]}
+
         for i in xrange(options["clients"]):
             client_procs.append(multiprocessing.Process(target=client_process,
                                                         args=(options["host"],
@@ -652,7 +664,8 @@ def spawn_import_clients(options, files_info):
                                                               error_queue,
                                                               rows_written,
                                                               options["force"],
-                                                              options["durability"])))
+                                                              options["durability"],
+                                                              ssl_op)))
             client_procs[-1].start()
 
         for file_info in files_info:
@@ -814,7 +827,10 @@ def import_directory(options):
 
         db_tables.add((file_info["db"], file_info["table"]))
 
-    conn_fn = lambda: r.connect(options["host"], options["port"], auth_key=options["auth_key"])
+    ssl_op = ""
+    if (options["tls_cert"] != ""):
+        ssl_op = {"ca_certs": options["tls_cert"]}
+    conn_fn = lambda: r.connect(options["host"], options["port"], ssl=ssl_op, auth_key=options["auth_key"])
     # Make sure this isn't a pre-`reql_admin` cluster - which could result in data loss
     # if the user has a database named 'rethinkdb'
     rdb_call_wrapper(conn_fn, "version check", check_minimum_version, (1, 16, 0))
@@ -868,7 +884,10 @@ def import_file(options):
     table = options["import_db_table"][1]
 
     # Ensure that the database and table exist with the right primary key
-    conn_fn = lambda: r.connect(options["host"], options["port"], auth_key=options["auth_key"])
+    ssl_op = ""
+    if (options["tls_cert"] != ""):
+        ssl_op = {"ca_certs": options["tls_cert"]}
+    conn_fn = lambda: r.connect(options["host"], options["port"], ssl= ssl_op, auth_key=options["auth_key"])
     # Make sure this isn't a pre-`reql_admin` cluster - which could result in data loss
     # if the user has a database named 'rethinkdb'
     rdb_call_wrapper(conn_fn, "version check", check_minimum_version, (1, 16, 0))

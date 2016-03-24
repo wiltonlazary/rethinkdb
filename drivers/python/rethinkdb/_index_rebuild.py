@@ -3,7 +3,7 @@ from __future__ import print_function
 
 import sys, os, datetime, time, shutil, tempfile, subprocess, random
 from optparse import OptionParser
-from ._backup import *
+from _backup import *
 
 info = "'rethinkdb index-rebuild' recreates outdated secondary indexes in a cluster.\n" + \
        "  This should be used after upgrading to a newer version of rethinkdb.  There\n" + \
@@ -41,6 +41,8 @@ def parse_options():
     parser.add_option("-c", "--connect", dest="host", metavar="HOST:PORT", default="localhost:28015", type="string")
     parser.add_option("-a", "--auth", dest="auth_key", metavar="KEY", default="", type="string")
     parser.add_option("-r", "--rebuild", dest="tables", metavar="DB | DB.TABLE", default=[], action="append", type="string")
+    parser.add_option("--tls-cert", dest="tls_cert", metavar="TLS_CERT", default="", type="string")
+
     parser.add_option("-n", dest="concurrent", metavar="NUM", default=1, type="int")
     parser.add_option("--debug", dest="debug", default=False, action="store_true")
     parser.add_option("-h", "--help", dest="help", default=False, action="store_true")
@@ -59,6 +61,7 @@ def parse_options():
     # Verify valid host:port --connect option
     (res["host"], res["port"]) = parse_connect_option(options.host)
 
+    res["tls_cert"] = options.tls_cert
     # Verify valid --import options
     res["tables"] = parse_db_table_options(options.tables)
 
@@ -78,7 +81,11 @@ def print_progress(ratio):
 
 def do_connect(options):
     try:
-        return r.connect(options['host'], options['port'], auth_key=options['auth_key'])
+        ssl_op = ""
+        if (options["tls_cert"] != ""):
+            ssl_op = {"ca_certs": options["tls_cert"]}
+
+        return r.connect(options['host'], options['port'], ssl=ssl_op, auth_key=options['auth_key'])
     except (r.ReqlError, r.ReqlDriverError) as ex:
         raise RuntimeError("Error when connecting: %s" % ex.message)
 

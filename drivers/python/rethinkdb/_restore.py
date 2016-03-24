@@ -3,7 +3,8 @@ from __future__ import print_function
 
 import sys, os, datetime, time, shutil, tarfile, tempfile, subprocess, os.path
 from optparse import OptionParser
-from ._backup import *
+from _backup import *
+#TODO put this back
 
 info = "'rethinkdb restore' loads data into a RethinkDB cluster from an archive"
 usage = "rethinkdb restore FILE [-c HOST:PORT] [-a AUTH_KEY] [--clients NUM] [--shards NUM_SHARDS] [--replicas NUM_REPLICAS] [--force] [-i (DB | DB.TABLE)]..."
@@ -52,6 +53,8 @@ def parse_options():
 
     parser.add_option("--shards", dest="shards", metavar="NUM_SHARDS", default=0, type="int")
     parser.add_option("--replicas", dest="replicas", metavar="NUM_REPLICAS", default=0, type="int")
+
+    parser.add_option("--tls-cert", dest="tls_cert", metavar="TLS_CERT", default="", type="string")
 
     parser.add_option("--temp-dir", dest="temp_dir", metavar="directory", default=None, type="string")
     parser.add_option("--clients", dest="clients", metavar="NUM_CLIENTS", default=8, type="int")
@@ -103,6 +106,8 @@ def parse_options():
     res["force"] = options.force
     res["create_sindexes"] = options.create_sindexes
     res["debug"] = options.debug
+
+    res["tls_cert"] = options.tls_cert
     return res
 
 def do_unzip(temp_dir, options):
@@ -165,6 +170,7 @@ def do_import(temp_dir, options):
     import_args.extend(["--clients", str(options["clients"])])
     import_args.extend(["--shards", str(options["shards"])])
     import_args.extend(["--replicas", str(options["replicas"])])
+    import_args.extend(["--tls-cert", options["tls_cert"]])
 
     for db, table in options["tables"]:
         if table is None:
