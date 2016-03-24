@@ -442,7 +442,7 @@ inline void fail_if_invalid(
     }
 }
 
-datum_t datum_t::utf8(const datum_string_t &_data) {
+datum_t datum_t::utf8(datum_string_t _data) {
     ql::fail_if_invalid(_data.data(), _data.size());
     return datum_t(std::move(_data));
 }
