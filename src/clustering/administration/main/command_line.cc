@@ -30,6 +30,7 @@
 
 #include <re2/re2.h>
 
+#include "arch/io/concurrency.hpp"
 #include "arch/io/disk.hpp"
 #include "arch/os_signal.hpp"
 #include "arch/runtime/starter.hpp"
@@ -920,6 +921,32 @@ bool configure_tls(
     tls_configs_t *tls_configs_out) {
     // Setup OpenSSL context.
     SSL_library_init();
+
+    // Make OpenSSL thread-safe by registering the required callbacks
+    // `CRYPTO_THREADID_set_callback` returns an integer, but its meaning is nowhere
+    // specified. It appears to be `1` on Linux with OpenSSL 1.0.1f. Is that good?
+    // Is that bad? Nobody knows.
+    CRYPTO_THREADID_set_callback([](CRYPTO_THREADID *thread_out) {
+        CRYPTO_THREADID_set_numeric(thread_out, get_thread_id().threadnum);
+    });
+    CRYPTO_set_locking_callback(
+        [](int mode, int n, UNUSED const char *file, UNUSED int line) {
+            static std::vector<system_rwlock_t> openssl_locks(CRYPTO_num_locks());
+            rassert(n >= 0);
+            rassert(static_cast<size_t>(n) < openssl_locks.size());
+            if (mode & CRYPTO_LOCK) {
+                if (mode & CRYPTO_READ) {
+                    openssl_locks[n].lock_read();
+                } else {
+                    rassert(mode & CRYPTO_WRITE);
+                    openssl_locks[n].lock_write();
+                }
+            } else {
+                rassert(mode & CRYPTO_UNLOCK);
+                openssl_locks[n].unlock();
+            }
+        });
+
     SSL_load_error_strings();
 
     logNTC("%s\n", SSLeay_version(SSLEAY_VERSION));
