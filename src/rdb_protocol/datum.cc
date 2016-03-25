@@ -734,6 +734,9 @@ void datum_t::extrema_to_str_key(
         case extrema_encoding_t::LATEST:
             // We use a type prefix that's smaller than any "real" type prefix can be.
             // The real prefixes will be letters.
+            // We also maintain the property that all of our prefixes start with 010 in
+            // their binary representations, which allows us to use these bits for
+            // flagging key formats in the future.
             str_out->append(1, 'A' - 1);
             break;
         default: unreachable();
@@ -753,6 +756,8 @@ void datum_t::extrema_to_str_key(
         case extrema_encoding_t::LATEST:
             // We use a type prefix that's larger than any "real" type prefix can be.
             // The real prefixes will be letters.
+            // Also see the comment above for the MINVAL case regarding reserved bits in
+            // our prefixes.
             str_out->append(1, 'Z' + 1);
             break;
         default: unreachable();
