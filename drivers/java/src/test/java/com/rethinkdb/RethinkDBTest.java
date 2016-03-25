@@ -211,11 +211,6 @@ public class RethinkDBTest{
             r.dbCreate("test").run(conn);
         } catch (Exception e) {}
 
-        List test = r.array("test1", "test2");
-        for (Object l : test) {
-            System.out.println((String)l);
-        }
-
         r.expr(r.array("optargs", "conn_default")).forEach(r::dbCreate).run(conn);
         r.expr(r.array("test", "optargs", "conn_default")).forEach(dbName ->
                         r.db(dbName).tableCreate(tblName).do_((unused) ->
