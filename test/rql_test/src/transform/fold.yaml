@@ -1,5 +1,5 @@
-desc: Tests that manipulation data in tables
-table_variable_name: tbl tbl2 tbl3
+desc: Tests for the fold term
+table_variable_name: tbl
 tests:
 
     # Set up some data
