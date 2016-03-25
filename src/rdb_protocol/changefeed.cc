@@ -1070,6 +1070,7 @@ public:
                     ops}),
             *pk_range,
             sorting,
+            require_sindexes_t::NO,
             *ref.sindex_info,
             &resp,
             release_superblock_t::KEEP);
@@ -2835,14 +2836,15 @@ private:
                 update_ranges();
                 r_sanity_check(active_state);
                 read_once = true;
-
                 if (batch.size() == 0) {
                     r_sanity_check(src->is_exhausted());
                 } else {
                     ret.reserve(ret.size() + batch.size());
                     for (auto &&datum : batch) {
-                        ret.push_back(
-                            vals_to_change(datum_t(), std::move(datum), true));
+                        datum_t cv = vals_to_change(datum_t(), std::move(datum), true);
+                        if (cv.has()) {
+                            ret.push_back(std::move(cv));
+                        }
                     }
                 }
             } else {
@@ -3708,6 +3710,10 @@ counted_t<datum_stream_t> artificial_t::subscribe(
 
 void artificial_t::send_all(const msg_t &msg) {
     assert_thread();
+    // We acquire `stamp_mutex` to ensure that multiple calls to `msg_visit` don't
+    // interleave, or `feed->update_stamps` that's called from `msg_visit` might update
+    // stamps in the wrong order.
+    new_mutex_acq_t stamp_acq(&stamp_mutex);
     if (auto *change = boost::get<msg_t::change_t>(&msg.op)) {
         guarantee(change->old_val.has() || change->new_val.has());
         if (change->old_val.has() && change->new_val.has()) {
