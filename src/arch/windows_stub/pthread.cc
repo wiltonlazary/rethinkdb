@@ -77,21 +77,21 @@ int pthread_rwlock_destroy(pthread_rwlock_t *) {
 
 int pthread_rwlock_rdlock(pthread_rwlock_t *lock) {
     AcquireSRWLockShared(lock->lock);
-    lock->current_acq_mode = srw_lock_mode_t::SHARED;
+    lock->current_acq_mode = pthread_rwlock_t::srw_lock_mode_t::SHARED;
     return 0;
 }
 
 int pthread_rwlock_wrlock(pthread_rwlock_t *lock) {
     AcquireSRWLockExclusive(lock->lock);
-    lock->current_acq_mode = srw_lock_mode_t::EXCLUSIVE;
+    lock->current_acq_mode = pthread_rwlock_t::srw_lock_mode_t::EXCLUSIVE;
     return 0;
 }
 
 int pthread_rwlock_unlock(pthread_rwlock_t *lock) {
     switch (lock->current_acq_mode) {
-        case srw_lock_mode_t::SHARED:
+        case pthread_rwlock_t::srw_lock_mode_t::SHARED:
             ReleaseSRWLockShared(lock->lock);
-        case srw_lock_mode_t::EXCLUSIVE:
+        case pthread_rwlock_t::srw_lock_mode_t::EXCLUSIVE:
             ReleaseSRWLockExclusive(lock->lock);
         default:
             unreachable();

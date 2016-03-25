@@ -923,12 +923,10 @@ bool configure_tls(
     SSL_library_init();
 
     // Make OpenSSL thread-safe by registering the required callbacks
-    // `CRYPTO_THREADID_set_callback` returns an integer, but its meaning is nowhere
-    // specified. It appears to be `1` on Linux with OpenSSL 1.0.1f. Is that good?
-    // Is that bad? Nobody knows.
-    CRYPTO_THREADID_set_callback([](CRYPTO_THREADID *thread_out) {
+    int res = CRYPTO_THREADID_set_callback([](CRYPTO_THREADID *thread_out) {
         CRYPTO_THREADID_set_numeric(thread_out, get_thread_id().threadnum);
     });
+    guarantee(res == 1, "Installing the OpenSSL thread ID callback failed.");
     CRYPTO_set_locking_callback(
         [](int mode, int n, UNUSED const char *file, UNUSED int line) {
             static std::vector<system_rwlock_t> openssl_locks(CRYPTO_num_locks());
