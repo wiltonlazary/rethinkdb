@@ -61,7 +61,7 @@ def parse_options():
     # Verify valid host:port --connect option
     (res["host"], res["port"]) = parse_connect_option(options.host)
 
-    res["tls_cert"] = options.tls_cert
+    res["tls_cert"] = ssl_option(options.tls_cert)
     # Verify valid --import options
     res["tables"] = parse_db_table_options(options.tables)
 
@@ -81,11 +81,7 @@ def print_progress(ratio):
 
 def do_connect(options):
     try:
-        ssl_op = ""
-        if (options["tls_cert"] != ""):
-            ssl_op = {"ca_certs": options["tls_cert"]}
-
-        return r.connect(options['host'], options['port'], ssl=ssl_op, auth_key=options['auth_key'])
+        return r.connect(options['host'], options['port'], ssl=options['tls_cert'], auth_key=options['auth_key'])
     except (r.ReqlError, r.ReqlDriverError) as ex:
         raise RuntimeError("Error when connecting: %s" % ex.message)
 

@@ -99,7 +99,7 @@ def parse_options():
     # Verify valid host:port --connect option
     (res["host"], res["port"]) = parse_connect_option(options.host)
 
-    res["tls_cert"] = options.tls_cert
+    res["tls_cert"] = ssl_option(options.tls_cert)
 
     # Verify valid --format option
     if options.format not in ["csv", "json", "ndjson"]:
@@ -400,11 +400,7 @@ def run_clients(options, db_table_set):
     errors = [ ]
 
     try:
-        ssl_op = ""
-        if (options["tls_cert"] != ""):
-            ssl_op = {"ca_certs": options["tls_cert"]}
-
-        sizes = get_all_table_sizes(options["host"], options["port"], options["auth_key"], db_table_set, ssl_op)
+        sizes = get_all_table_sizes(options["host"], options["port"], options["auth_key"], db_table_set, options["tls_cert"])
 
         progress_info = []
 
@@ -424,7 +420,7 @@ def run_clients(options, db_table_set):
                               progress_info[-1],
                               sindex_counter,
                               exit_event,
-                              ssl_op))
+                              options["tls_cert"]))
 
 
         # Wait for all tables to finish
@@ -481,10 +477,7 @@ def main():
         return 1
 
     try:
-        ssl_op = ""
-        if (options["tls_cert"] != ""):
-            ssl_op = {"ca_certs": options["tls_cert"]}
-        conn_fn = lambda: r.connect(options["host"], options["port"], ssl=ssl_op, auth_key=options["auth_key"])
+        conn_fn = lambda: r.connect(options["host"], options["port"], ssl=options["tls_cert"], auth_key=options["auth_key"])
         # Make sure this isn't a pre-`reql_admin` cluster - which could result in data loss
         # if the user has a database named 'rethinkdb'
         rdb_call_wrapper(conn_fn, "version check", check_minimum_version, (1, 16, 0))
