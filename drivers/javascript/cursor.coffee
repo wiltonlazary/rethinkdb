@@ -462,7 +462,7 @@ class ArrayResult extends IterableResult
         fn = (cb) =>
             if @_closeCbPromise?
                 cb(new error.ReqlDriverError("Cursor is closed."))
-        
+
             # IterableResult.toArray would create a copy
             if @__index?
                 cb(null, @.slice(@__index, @.length))
