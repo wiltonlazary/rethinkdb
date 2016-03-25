@@ -170,6 +170,7 @@ class IterableResult
 
 
     close: varar 0, 1, (cb) ->
+        console.Error "Close"
         if @_closeCbPromise?
             if @_closeCbPromise.isPending()
                 # There's an existing promise and it hasn't resolved
@@ -218,6 +219,7 @@ class IterableResult
         return @_closeCbPromise
 
     each: varar(1, 2, (cb, onFinished) ->
+        console.error "Each"
         unless typeof cb is 'function'
             throw new error.ReqlDriverError "First argument to each must be a function."
         if onFinished? and typeof onFinished isnt 'function'
@@ -227,13 +229,16 @@ class IterableResult
             @_next().then (data) ->
                 return nextCb() if cb(null, data) isnt false
             .catch (err) ->
-                return if err?.message is 'No more rows in the cursor.'
+                if err?.message is 'No more rows in the cursor.'
+                    onFinished?()
+                    return
                 cb(err)
 
-        return nextCb().nodeify(onFinished)
+        return nextCb()
     )
 
     eachAsync: varar(1, 3, (cb, errCb, options = { concurrency: 1 }) ->
+        console.error "eachAsync"
         unless typeof cb is 'function'
             throw new error.ReqlDriverError 'First argument to eachAsync must be a function.'
 
@@ -444,6 +449,7 @@ class ArrayResult extends IterableResult
         @__index < @length
 
     _next: varar 0, 1, (cb) ->
+        console.error "Array Next"
         fn = (cb) =>
             if @_hasNext() is true
                 self = @
@@ -459,6 +465,7 @@ class ArrayResult extends IterableResult
         return Promise.fromNode(fn).nodeify(cb)
 
     toArray: varar 0, 1, (cb) ->
+        console.error "Array toArray"
         fn = (cb) =>
             if @_closeCbPromise?
                 cb(new error.ReqlDriverError("Cursor is closed."))
@@ -472,6 +479,7 @@ class ArrayResult extends IterableResult
         return Promise.fromNode(fn).nodeify(cb)
 
     close: varar 0, 1, (cb) ->
+        console.error "Array close"
         # Clear the array
         @.length = 0
         @__index = 0
