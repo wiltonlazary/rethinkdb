@@ -377,7 +377,7 @@ for (var i = 0; i < numRows; i++) {
                 });
                 
                 it.skip('errors on an initially closed cursor', function() { // issue #5432 empty data buffer on JavaScript cursor when it is closed
-                    return testCursor.close()
+                    testCursor.close()
                     .then(function() {
                         return testCursor.next()
                         .catch(r.Error.ReqlDriverError, function(err) {
@@ -755,7 +755,7 @@ for (var i = 0; i < numRows; i++) {
                     });
                     
                     it('errors on an initially closed cursor', function() { // issue #5432 empty data buffer on JavaScript cursor when it is closed
-                        testCursor.close(function(err) {
+                        return testCursor.close(function(err) {
                             assert.ifError(err);
                             return testCursor.eachAsync(
                                 function(value) {
@@ -1105,20 +1105,6 @@ for (var i = 0; i < numRows; i++) {
                                     } else {
                                         assert.fail(undefined, undefined, 'Did not error when calling `eachAsync` on a closed cursor');
                                     }
-                                }
-                            );
-                        });
-                        
-                        it('resolves promise given in final callback', function() {
-                            var madeIt = false;
-                            return testCursor.eachAsync(
-                                function(row, rowDone) { rowDone(); },
-                                function(err) {
-                                    assert.ifError(err);
-                                    return Promise.delay(200)
-                                    .then(function() {
-                                        madeIt = true;
-                                    });
                                 }
                             );
                         });
