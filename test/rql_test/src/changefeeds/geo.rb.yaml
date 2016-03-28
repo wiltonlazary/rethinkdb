@@ -17,18 +17,11 @@ tests:
     #
     # This is useful because the S2LatLngRect bounding box passed to the shards contains
     # 2,2 yet it should not be returned in the changefeed results.
-    - rb: feed = tbl.get_intersecting(r.circle(r.point(1,1), 130000), {index: "L"}).changes(include_initial: true)
+    - rb: feed = tbl.get_intersecting(r.circle(r.point(1,1), 130000), {index: "L"}).get_field("id").changes(include_initial: true)
 
     - rb: tbl.insert([obj11, obj12, obj21, obj22])
       ot: partial({'errors': 0, 'inserted': 4})
 
     - rb: fetch(feed, 3)
-      ot: bag([{new_val: obj11, old_val: null}, {new_val: obj12, old_val: null}, {new_val: obj21, old_val: null}])
+      ot: bag([{"new_val" => "11", "old_val" => nil}, {"new_val" => "12", "old_val" => nil}, {"new_val" => "21", "old_val" => nil}])
 
-#    - rb: feed2 = tbl.get_intersecting(r.line(end1, end2), {index: "L"}).changes(include_initial: true)
-#
-#    - rb: fetch(feed2, 3)
-#      ot: bag([{new_val: obj1, old_val: null}, {new_val: obj2, old_val: null}, {new_val: objnearline, old_val: null}])
-#
-#    - rb: tbl.get(obj1.id).update({"field": "hello"})
-#      ot: partial({'errors': 0, 'updated': 1})

@@ -233,11 +233,11 @@ def main():
     print "Starting validators"
 
     validators = []
-    for i in xrange(50):
+    for i in xrange(20):
         query_geo = yield random_geo(conn)
         validators.append(DatasetTracker(conn, "test", query_geo))
 
-    for i in range(50):
+    for i in range(20):
         print "Making changes"
         yield make_changes(conn, "test", random.randint(5,100))
         print "Validating"
