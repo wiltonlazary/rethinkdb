@@ -335,6 +335,411 @@ for (var i = 0; i < numRows; i++) {
                 });
             });
             
+            describe('eachAsync', function() {
+                it('errors when missing row handler', function() {
+                    try {
+                        return testCursor.eachAsync()
+                        .then(function() {
+                            assert.fail(undefined, undefined, 'Failed to error when no function was given to eachAsync')
+                        })
+                    } catch(err) {
+                        if(!(err instanceof r.Error.ReqlDriverCompileError) || !err.message || err.message != 'Expected between 1 and 3 arguments but found 0.') {
+                            assert.fail(undefined, undefined, 'Did not get correct ReqlDriverCompileError error: ' + err);
+                        }
+                    }
+                });
+                
+                it('does not return a Promise', function(done) {
+                    var promiseValue = testCursor.eachAsync(
+                        function(value) { },
+                        function(err) {
+                            if (!err) {
+                                try {
+                                    assert.equal(promiseValue, undefined)
+                                } catch(innerErr) { err = innerErr; }
+                            }
+                            done(err);
+                        }
+                    );
+                });
+                
+                it('errors on an initially closed cursor', function(done) { // issue #5432 empty data buffer on JavaScript cursor when it is closed
+                    testCursor.close(function(err) {
+                        if (err) {
+                            done(err);
+                            return;
+                        }
+                        testCursor.eachAsync(
+                            function(value) {
+                                assert.fail(undefined, undefined, 'Row handler called on a closed cursor');
+                            },
+                            function(err) {
+                                try {
+                                    if (err instanceof r.Error.ReqlDriverError) {
+                                        assert.equal(err.msg, 'Cursor is closed.');
+                                        err = null;
+                                    } else if (err) {
+                                        // leave the error
+                                    } else {
+                                        assert.fail(undefined, undefined, 'The `final` function was called on a closed cursor without an error');
+                                    }
+                                } catch(innerErr) { err = innerErr; }
+                                done(err);
+                            }
+                        );
+                    });
+                });
+                
+                it('errors when cursor is closed while processing rows', function(done) {
+                    var i = 0;
+                    assert(numRows > 10, 'This test does not work with less than 10 rows')
+                    testCursor.eachAsync(
+                        function(value) {
+                            i++;
+                            if (i == 10) {
+                                return testCursor.close();
+                            }
+                        },
+                        function(err) {
+                            try {
+                                if (err instanceof r.Error.ReqlDriverError) {
+                                    assert.equal(err.msg, 'Cursor is closed.');
+                                    assert.equal(i, 10, 'Did not end iteration in a timely manner: ' + i);
+                                    err = null;
+                                } else if (err) {
+                                        // leave the error
+                                } else {
+                                    assert.fail(undefined, undefined, 'The `final` function was called on a closed cursor without an error');
+                                }
+                            } catch(innerErr) { err = innerErr; }
+                            done(err);
+                        }
+                    );
+                });
+                
+                it('processes values in the right order', function(done) {
+                    var i = 0;
+                    testCursor.eachAsync(
+                        function(row) {
+                            assert.deepEqual(row, {'id':i});
+                            i++;
+                        },
+                        function(err) {
+                            try {
+                                assert.ifError(err);
+                                assert.equal(i, numRows);
+                            } catch(innerErr) { err = innerErr; }
+                            done(err);
+                        }
+                    );
+                });
+                
+                it('resolves promises returned from row handler correctly', function(done) {
+                    var i = 0;
+                    var j = 0;
+                    testCursor.eachAsync(
+                        function(value) {
+                            assert.deepEqual(value, {'id':i});
+                            i++;
+                            return Promise.delay(value, 10)
+                            .then(function(innerValue) {
+                                assert.deepEqual(innerValue, {'id':j});
+                                j++;
+                                assert.equal(i, j);
+                            });
+                        },
+                        function(err) {
+                            try {
+                                assert.equal(i, numRows);
+                                assert.equal(j, numRows);
+                            } catch(innerErr) { err = innerErr; }
+                            done(err);
+                        }
+                    );
+                });
+                
+                it('stops on an error thrown in Promise returned by a row handler', function(done) {
+                    var i = 0;
+                    var j = 0;
+                    assert(numRows > 10, 'This test does not work with less than 10 rows')
+                    testCursor.eachAsync(
+                        function(row) {
+                            assert.deepEqual(row, {'id':i});
+                            i++;
+                            return Promise.delay(row, 10)
+                            .then(function(rowInner) {
+                                assert.deepEqual(row, {'id':j});
+                                assert.equal(i, ++j);
+                                assert(i < 11);
+                                if (i >= 10) {
+                                    throw Error('something aync random');
+                                }
+                            });
+                        },
+                        function(err) {
+                            try {
+                                assert.equal(i, 10);
+                                assert.equal(j, 10);
+                                assert(err instanceof Error);
+                                assert.equal(err.message, 'something aync random');
+                                err = null;
+                            } catch(innerErr) { err = innerErr; }
+                            done(err);
+                        }
+                    );
+                });
+                
+                it('errors on a non-Promise row handler return value', function(done) {
+                    var i = 0;
+                    testCursor.eachAsync(
+                        function(row) {
+                            assert.deepEqual(row, {'id':i});
+                            if (row.id == 10) {
+                                return false; // pre #5474 this would bail out early, now it is an error
+                            }
+                            i++;
+                        },
+                        function(err) {
+                            try {
+                                assert.equal(i, 10, 'Did not immediately stop iteration: ' + i);
+                                assert(err instanceof r.Error.ReqlDriverError, 'Expected ReqlDriverError, got: ' + err);
+                                assert.equal(err.message, 'Row handler for eachAsync may only return a Promise or undefined.');
+                                err = null;
+                            } catch(innerErr) { err = innerErr; }
+                            done(err);
+                        }
+                    );
+                });
+                
+                it('stops on row handler error', function(done) {
+                    var i = 0;
+                    testCursor.eachAsync(
+                        function(row) {
+                            assert.deepEqual(row, {'id':i});
+                            if (row.id == 10) {
+                                throw Error('something random');
+                            }
+                            i++;
+                        },
+                        function(err) {
+                            try {
+                                if (err) {
+                                    assert(err instanceof Error);
+                                    assert.equal(err.message, 'something random');
+                                    assert.equal(i, 10, 'Did not immediately stop iteration: ' + i);
+                                    err = null;
+                                } else {
+                                    assert.fail(undefined, undefined, 'The `final` function was called without an error');
+                                }
+                            } catch(innerErr) { err = innerErr; }
+                            done(err);
+                        }
+                    );
+                });
+                
+                it('stops on row Promise rejection', function(done) {
+                    var i = 0;
+                    testCursor.eachAsync(
+                        function(row) {
+                            assert.deepEqual(row, {'id':i});
+                            if (row.id == 10) {
+                                return Promise.reject(Error('stop value'));
+                            }
+                            i++;
+                        },
+                        function(err) {
+                            try {
+                                assert.equal(i, 10, 'Did not immediately stop iteration: ' + i);
+                                assert(err instanceof Error);
+                                assert.equal(err.message, 'stop value');
+                                err = null;
+                            } catch(innerErr) { err = innerErr; }
+                            done(err);
+                        }
+                    );
+                });
+                
+                describe('with an async handler', function() {
+                    it('processes values in the right order', function(done) {
+                        this.slow((numRows * 10) + 400)
+                        var i = 0;
+                        var j = 0;
+                        var ranFinal = false;
+                        testCursor.eachAsync(
+                            function(row, rowDone) {
+                                assert.deepEqual(row, {'id':i});
+                                i++;
+                                setTimeout(
+                                    function() {
+                                        assert.equal(i, ++j);
+                                        rowDone();
+                                    },
+                                    10 // trying to make sure that we have the chance to fail
+                                );
+                            },
+                            function(err) {
+                                if (!err) {
+                                    try {
+                                        assert.equal(i, numRows);
+                                        assert.equal(j, numRows);
+                                    } catch(innerErr) { err = innerErr; }
+                                }
+                                done(err);
+                            }
+                        );
+                    });
+                    
+                    it('errors when returning from row handler with `done` function', function(done) {
+                        var i = 0;
+                        var ranFinal = false;
+                        assert(numRows > 10, 'This test does not work with less than 10 rows')
+                        testCursor.eachAsync(
+                            function(row, rowDone) {
+                                assert.deepEqual(row, {'id':i});
+                                i++;
+                                return 1;
+                            },
+                            function(err) {
+                                try {
+                                    if (err) {
+                                        assert.equal(i, 1);
+                                        assert(err instanceof r.Error.ReqlDriverError, 'Did not get the expected ReqlDriverError: ' + err);
+                                        assert.equal(err.message, 'A two-argument row handler for eachAsync may only return undefined.');
+                                        err = null;
+                                    } else {
+                                        assert.fail(undefined, undefined, 'Final hander did not get the expected error');
+                                    }
+                                } catch(innerErr) { err = innerErr; }
+                                done(err);
+                            }
+                        );
+                    });
+                    
+                    it('stops on async return value', function(done) {
+                        this.slow((50 * 10) + 400)
+                        var i = 0;
+                        var j = 0;
+                        var ranFinal = false;
+                        assert(numRows > 10, 'This test does not work with less than 10 rows');
+                        testCursor.eachAsync(
+                            function(row, rowDone) {
+                                assert.deepEqual(row, {'id':i});
+                                i++;
+                                setTimeout(
+                                    function() {
+                                        assert.deepEqual(row, {'id':j});
+                                        assert.equal(i, ++j);
+                                        if (i == 10) {
+                                            rowDone('some random value'); // bail out
+                                        } else {
+                                            assert(i < 11);
+                                            rowDone();
+                                        }
+                                    },
+                                    50 // trying to make sure that we have the chance to fail
+                                );
+                            },
+                            function(err) {
+                                try {
+                                    if (err) {
+                                        assert.equal(err.message, 'some random value');
+                                        assert.equal(i, 10);
+                                        assert.equal(j, 10);
+                                        err = null;
+                                    } else {
+                                        assert.fail(undefined, undefined, 'The `final` function was called without an error');
+                                    }
+                                } catch(innerErr) { err = innerErr; }
+                                done(err);
+                            }
+                        );
+                    });
+                                            
+                    it('stops on callback error', function(done) {
+                        var i = 0;
+                        var j = 0;
+                        assert(numRows > 10, 'This test does not work with less than 10 rows');
+                        testCursor.eachAsync(
+                            function(row, rowDone) {
+                                assert.deepEqual(row, {'id':i});
+                                i++;
+                                if (i == 10) {
+                                    throw Error('something random');
+                                } else {
+                                    setTimeout(function() { j++; rowDone(); }, 50);
+                                }
+                            },
+                            function(err) {
+                                try {
+                                    if (err) {
+                                        assert.equal(err.message, 'something random');
+                                        assert.equal(i, 10);
+                                        assert.equal(j, 9);
+                                        err = null;
+                                    } else {
+                                        assert.fail(undefined, undefined, 'The `final` function was called without an error');
+                                    }
+                                } catch(innerErr) { err = innerErr; }
+                                done(err);
+                            }
+                        );
+                    });
+                    
+                    it('errors when returning Promise from callback', function(done) {
+                        testCursor.eachAsync(
+                            function(row, rowDone) {
+                                return Promise.delay(5);
+                            },
+                            function(err) {
+                                try {
+                                    if(err) {
+                                        assert(err instanceof r.Error.ReqlDriverError, 'Did not get the expected ReqlDriverError, but rather: ' + err);
+                                        assert.equal(err.message, 'A two-argument row handler for eachAsync may only return undefined.');
+                                        err = null;
+                                    } else {
+                                        assert.fail(undefined, undefined, 'The `final` function was called without an error');
+                                    }
+                                } catch(innerErr) { err = innerErr; }
+                                done(err);
+                            }
+                        );
+                    });
+                    
+                    it('errors when cursor is closed while processing rows', function(done) {
+                        var i = 0;
+                        var j = 0;
+                        testCursor.eachAsync(
+                            function(row, rowDone) {
+                                assert.equal(row.id, i);
+                                if (row.id == 10) {
+                                    testCursor.close().then(function() { rowDone(); });
+                                    return;
+                                } else if (row.id > 10) {
+                                    assert.fail(undefined, undefined, 'Row handler continued to be called for too long: ' + i)
+                                } else {
+                                    setTimeout(function() { j++; rowDone(); }, 50);
+                                }
+                                i++;
+                            },
+                            function(err) {
+                                try {
+                                    assert.equal(i, 10);
+                                    assert.equal(j, 10);
+                                    if (err) {
+                                        assert(err instanceof r.Error.ReqlDriverError, 'Did not get the expected ReqlDriverError, but rather: ' + err);
+                                        assert.equal(err.message, 'Cursor is closed.');
+                                        err = null;
+                                    } else {
+                                        assert.fail(undefined, undefined, 'Did not error when calling `eachAsync` on a closed cursor');
+                                    }
+                                } catch(innerErr) { err = innerErr; }
+                                done(err);
+                            }
+                        );
+                    });
+                });
+            });
+            
             describe('close', function() {
                 it("doesn't error", function(done) {
                     testCursor.close(function(err) {
@@ -429,7 +834,6 @@ for (var i = 0; i < numRows; i++) {
             });
             
             describe('eachAsync', function() {
-                
                 it('errors when missing row handler', function() {
                     try {
                         return testCursor.eachAsync()
@@ -443,79 +847,192 @@ for (var i = 0; i < numRows; i++) {
                     }
                 });
                 
-                describe('with only a row function', function() {
-                    it('returns a promise that is resolved after all rows are processed', function() {
-                        var i = 0;
-                        var promiseValue = testCursor.eachAsync(
-                            function(value) { i++; }
-                        );
-                        assert(promiseValue instanceof r._bluebird.Promise);
-                        return promiseValue.then(function() {
-                            assert.equal(i, numRows);
-                        });
+                it('returns a promise that is resolved after all rows are processed', function() {
+                    var i = 0;
+                    var promiseValue = testCursor.eachAsync(
+                        function(value) { i++; }
+                    );
+                    assert(promiseValue instanceof r._bluebird.Promise);
+                    return promiseValue.then(function() {
+                        assert.equal(i, numRows);
                     });
-                    
-                    it('errors on an initially closed cursor', function() { // issue #5432 empty data buffer on JavaScript cursor when it is closed
-                        var i = 0;
-                        return testCursor.close()
-                        .then(function() {
-                            return testCursor.eachAsync(
-                                function(value) {
-                                    i++;
-                                    assert.fail(undefined, undefined, 'Row handler called on a closed cursor');
-                                }
-                            );
-                        }).then(function() {
-                            assert.fail(undefined, undefined, 'Did not error on a closed cursor: ' + i);
-                        })
-                        .catch(r.Error.ReqlDriverError, function(err) {
-                            assert.equal(err.msg, 'Cursor is closed.');
-                        });
-                    });
-                    
-                    it('errors when cursor is closed while processing rows', function() {
-                        var i = 0;
-                        assert(numRows > 10, 'This test does not work with less than 10 rows')
+                });
+                
+                it('errors on an initially closed cursor', function() { // issue #5432 empty data buffer on JavaScript cursor when it is closed
+                    var i = 0;
+                    return testCursor.close()
+                    .then(function() {
                         return testCursor.eachAsync(
                             function(value) {
                                 i++;
-                                if (i == 10) {
-                                    return testCursor.close();
+                                assert.fail(undefined, undefined, 'Row handler called on a closed cursor');
+                            }
+                        );
+                    }).then(function() {
+                        assert.fail(undefined, undefined, 'Did not error on a closed cursor: ' + i);
+                    })
+                    .catch(r.Error.ReqlDriverError, function(err) {
+                        assert.equal(err.msg, 'Cursor is closed.');
+                    });
+                });
+                
+                it('errors when cursor is closed while processing rows', function() {
+                    var i = 0;
+                    assert(numRows > 10, 'This test does not work with less than 10 rows')
+                    return testCursor.eachAsync(
+                        function(value) {
+                            i++;
+                            if (i == 10) {
+                                return testCursor.close();
+                            }
+                        }
+                    ).then(function() {
+                        assert.fail(undefined, undefined, 'Did not error on a closed cursor: ' + i);
+                    })
+                    .catch(r.Error.ReqlDriverError, function(err) {
+                        assert.equal(err.msg, 'Cursor is closed.');
+                        assert.equal(i, 10, 'Did not end iteration in a timely manner: ' + i);
+                    });
+                });
+                
+                it('processes values in the right order', function() {
+                    var i = 0;
+                    return testCursor.eachAsync(
+                        function(row) {
+                            assert.deepEqual(row, {'id':i});
+                            i++;
+                        }
+                    ).then(function() {
+                        assert.equal(i, numRows);
+                    });
+                });
+                
+                it('resolves promises returned from row handler correctly', function() {
+                    var i = 0;
+                    var j = 0;
+                    return testCursor.eachAsync(
+                        function(value) {
+                            assert.deepEqual(value, {'id':i});
+                            i++;
+                            return Promise.delay(value, 10)
+                            .then(function(innerValue) {
+                                assert.deepEqual(innerValue, {'id':j});
+                                assert.equal(i, ++j);
+                            });
+                        }
+                    ).then(function() {
+                        assert.equal(i, numRows);
+                        assert.equal(j, numRows);
+                    });
+                });
+                
+                it('stops on an error thrown in Promise returned by a row handler', function() {
+                    var i = 0;
+                    var j = 0;
+                    assert(numRows > 10, 'This test does not work with less than 10 rows')
+                    return testCursor.eachAsync(
+                        function(row) {
+                            assert.deepEqual(row, {'id':i});
+                            i++;
+                            return Promise.delay(row, 10)
+                            .then(function(rowInner) {
+                                assert.deepEqual(row, {'id':j});
+                                assert.equal(i, ++j);
+                                assert(i < 11);
+                                if (i >= 10) {
+                                    throw Error('something aync random');
                                 }
-                            }
-                        ).then(function() {
-                            assert.fail(undefined, undefined, 'Did not error on a closed cursor: ' + i);
-                        })
-                        .catch(r.Error.ReqlDriverError, function(err) {
-                            assert.equal(err.msg, 'Cursor is closed.');
-                            assert.equal(i, 10, 'Did not end iteration in a timely manner: ' + i);
-                        });
+                            });
+                        }
+                    )
+                    .then(function() {
+                        assert.fail(undefined, undefined, 'Did not produce an error on async callback error')
+                    })
+                    .catch(function(err) {
+                        assert.equal(i, 10);
+                        assert.equal(j, 10);
+                        assert(err instanceof Error);
+                        assert.equal(err.message, 'something aync random');
                     });
-                    
+                });
+                
+                it('errors on a non-Promise row handler return value', function() {
+                    var i = 0;
+                    return testCursor.eachAsync(
+                        function(row) {
+                            assert.deepEqual(row, {'id':i});
+                            if (row.id == 10) {
+                                return false; // pre #5474 this would bail out early, now it is an error
+                            }
+                            i++;
+                        }
+                    )
+                    .then(function() {
+                        assert.fail(undefined, undefined, 'Did not get an error');
+                    })
+                    .catch(r.Error.ReqlDriverError, function(err) {
+                        assert.equal(err.message, 'Row handler for eachAsync may only return a Promise or undefined.')
+                        assert.equal(i, 10, 'Did not immediately stop iteration: ' + i);
+                    });
+                });
+                
+                it('stops on row handler error', function() {
+                    var i = 0;
+                    return testCursor.eachAsync(
+                        function(row) {
+                            assert.deepEqual(row, {'id':i});
+                            if (row.id == 10) {
+                                throw Error('something random');
+                            }
+                            i++;
+                        }
+                    )
+                    .then(function() {
+                        assert.fail(undefined, undefined, 'Did not get an error');
+                    })
+                    .catch(Error, function(err) {
+                        assert.equal(err.message, 'something random')
+                        assert.equal(i, 10, 'Did not immediately stop iteration: ' + i);
+                    });
+                });
+                
+                it('stops on row Promise rejection', function() {
+                    var i = 0;
+                    return testCursor.eachAsync(
+                        function(row) {
+                            assert.deepEqual(row, {'id':i});
+                            if (row.id == 10) {
+                                return Promise.reject(Error('stop value'));
+                            }
+                            i++;
+                        }
+                    )
+                    .then(function() {
+                        assert.fail(undefined, undefined, 'No error on promise rejection');
+                    })
+                    .catch(function(err) {
+                        assert.equal(err.message, 'stop value');
+                        assert.equal(i, 10, 'Did not immediately stop iteration: ' + i);
+                        assert(err instanceof Error);
+                    });
+                });
+                
+                describe('with an async handler', function() {
                     it('processes values in the right order', function() {
-                        var i = 0;
-                        return testCursor.eachAsync(
-                            function(row) {
-                                assert.deepEqual(row, {'id':i});
-                                i++;
-                            }
-                        ).then(function() {
-                            assert.equal(i, numRows);
-                        });
-                    });
-                    
-                    it('resolves promises returned from row handler correctly', function() {
+                        this.slow((numRows * 10) + 400)
                         var i = 0;
                         var j = 0;
                         return testCursor.eachAsync(
-                            function(value) {
-                                assert.deepEqual(value, {'id':i});
+                            function(row, rowDone) {
+                                assert.deepEqual(row, {'id':i});
                                 i++;
-                                return Promise.delay(value, 10)
-                                .then(function(innerValue) {
-                                    assert.deepEqual(innerValue, {'id':j});
-                                    assert.equal(i, ++j);
-                                });
+                                setTimeout(
+                                    function() {
+                                        assert.equal(i, ++j);
+                                        rowDone();
+                                    },
+                                    10 // trying to make sure that we have the chance to fail
+                                );
                             }
                         ).then(function() {
                             assert.equal(i, numRows);
@@ -523,624 +1040,117 @@ for (var i = 0; i < numRows; i++) {
                         });
                     });
                     
-                    it('stops on an error thrown in Promise returned by a row handler', function() {
+                    it('errors when returning from row handler with `done` function', function() {
                         var i = 0;
-                        var j = 0;
                         assert(numRows > 10, 'This test does not work with less than 10 rows')
                         return testCursor.eachAsync(
-                            function(row) {
+                            function(row, rowDone) {
                                 assert.deepEqual(row, {'id':i});
                                 i++;
-                                return Promise.delay(row, 10)
-                                .then(function(rowInner) {
-                                    assert.deepEqual(row, {'id':j});
-                                    assert.equal(i, ++j);
-                                    assert(i < 11);
-                                    if (i >= 10) {
-                                        throw Error('something aync random');
-                                    }
-                                });
+                                return 1;
                             }
                         )
                         .then(function() {
                             assert.fail(undefined, undefined, 'Did not produce an error on async callback error')
                         })
                         .catch(function(err) {
-                            assert.equal(i, 10);
-                            assert.equal(j, 10);
+                            assert.equal(i, 1);
                             assert(err instanceof Error);
-                            assert.equal(err.message, 'something aync random');
+                            assert.equal(err.message, 'A two-argument row handler for eachAsync may only return undefined.');
                         });
                     });
                     
-                    it('errors on a non-Promise row handler return value', function() {
+                    it('stops on async return value', function() {
+                        this.slow((50 * 10) + 400)
                         var i = 0;
+                        var j = 0;
+                        assert(numRows > 10, 'This test does not work with less than 10 rows');
                         return testCursor.eachAsync(
-                            function(row) {
+                            function(row, rowDone) {
                                 assert.deepEqual(row, {'id':i});
-                                if (row.id == 10) {
-                                    return false; // pre #5474 this would bail out early, now it is an error
-                                }
                                 i++;
+                                setTimeout(
+                                    function() {
+                                        assert.deepEqual(row, {'id':j});
+                                        assert.equal(i, ++j);
+                                        if (i == 10) {
+                                            rowDone('some random value'); // bail out
+                                        } else {
+                                            assert(i < 11);
+                                            rowDone();
+                                        }
+                                    },
+                                    50 // trying to make sure that we have the chance to fail
+                                );
                             }
-                        )
-                        .then(function() {
-                            assert.fail(undefined, undefined, 'Did not get an error');
-                        })
-                        .catch(r.Error.ReqlDriverError, function(err) {
-                            assert.equal(err.message, 'Row handler for eachAsync may only return a Promise or undefined.')
-                            assert.equal(i, 10, 'Did not immediately stop iteration: ' + i);
-                        });
-                    });
-                    
-                    it('stops on row handler error', function() {
-                        var i = 0;
-                        return testCursor.eachAsync(
-                            function(row) {
-                                assert.deepEqual(row, {'id':i});
-                                if (row.id == 10) {
-                                    throw Error('something random');
-                                }
-                                i++;
-                            }
-                        )
-                        .then(function() {
-                            assert.fail(undefined, undefined, 'Did not get an error');
+                        ).then(function() {
+                            assert.fail(undefined, undefined, 'Error was not called');
                         })
                         .catch(Error, function(err) {
-                            assert.equal(err.message, 'something random')
-                            assert.equal(i, 10, 'Did not immediately stop iteration: ' + i);
+                            assert.equal(err.message, 'some random value');
+                            assert.equal(i, 10);
+                            assert.equal(j, 10);
                         });
                     });
                     
-                    it('stops on row Promise rejection', function() {
+                    it('stops on callback error', function() {
+                        this.slow((50 * 10) + 400)
+                        var i = 0;
+                        var j = 0;
+                        assert(numRows > 10, 'This test does not work with less than 10 rows');
+                        return testCursor.eachAsync(
+                            function(row, rowDone) {
+                                assert.deepEqual(row, {'id':i});
+                                i++;
+                                if (i == 10) {
+                                    throw Error('something random');
+                                }
+                                setTimeout(function() { j++; rowDone(); }, 50);
+                            }
+                        ).then(function() {
+                            assert.fail(undefined, undefined, 'Error was not called');
+                        })
+                        .catch(Error, function(err) {
+                            assert.equal(err.message, 'something random');
+                            assert.equal(i, 10);
+                            assert.equal(j, 9);
+                        });
+                    });
+                    
+                    it('errors when returning Promise from callback', function() {
+                        return testCursor.eachAsync(
+                            function(row, rowDone) {
+                                return Promise.resolve();
+                            }
+                        ).then(function() {
+                            assert.fail(undefined, undefined, 'Error was not called');
+                        })
+                        .catch(r.Error.ReqlDriverError, function(err) {
+                            assert.equal(err.message, 'A two-argument row handler for eachAsync may only return undefined.');
+                        });
+                    });
+                    
+                    it('errors when cursor is closed while processing rows', function() {
                         var i = 0;
                         return testCursor.eachAsync(
                             function(row) {
-                                assert.deepEqual(row, {'id':i});
-                                if (row.id == 10) {
-                                    return Promise.reject(Error('stop value'));
-                                }
+                                assert.equal(row.id, i);
                                 i++;
+                                if (row.id == 10) {
+                                    testCursor.close()
+                                } else {
+                                    assert(row.id <= 10, 'Row handler continued to be called for too long: ' + i)
+                                }
                             }
                         )
                         .then(function() {
-                            assert.fail(undefined, undefined, 'No error on promise rejection');
+                            assert.fail(undefined, undefined, 'Did not error when calling `eachAsync` on a closed cursor');
                         })
-                        .catch(function(err) {
-                            assert.equal(err.message, 'stop value');
-                            assert.equal(i, 10, 'Did not immediately stop iteration: ' + i);
-                            assert(err instanceof Error);
-                        });
-                    });
-                    
-                    describe('with an async handler', function() {
-                        it('processes values in the right order', function() {
-                            this.slow((numRows * 10) + 400)
-                            var i = 0;
-                            var j = 0;
-                            return testCursor.eachAsync(
-                                function(row, rowDone) {
-                                    assert.deepEqual(row, {'id':i});
-                                    i++;
-                                    setTimeout(
-                                        function() {
-                                            assert.equal(i, ++j);
-                                            rowDone();
-                                        },
-                                        10 // trying to make sure that we have the chance to fail
-                                    );
-                                }
-                            ).then(function() {
-                                assert.equal(i, numRows);
-                                assert.equal(j, numRows);
-                            });
-                        });
-                        
-                        it('errors when returning from row handler with `done` function', function() {
-                            var i = 0;
-                            assert(numRows > 10, 'This test does not work with less than 10 rows')
-                            return testCursor.eachAsync(
-                                function(row, rowDone) {
-                                    assert.deepEqual(row, {'id':i});
-                                    i++;
-                                    return 1;
-                                }
-                            )
-                            .then(function() {
-                                assert.fail(undefined, undefined, 'Did not produce an error on async callback error')
-                            })
-                            .catch(function(err) {
-                                assert.equal(i, 1);
-                                assert(err instanceof Error);
-                                assert.equal(err.message, 'A two-argument row handler for eachAsync may only return undefined.');
-                            });
-                        });
-                        
-                        it('stops on async return value', function() {
-                            this.slow((50 * 10) + 400)
-                            var i = 0;
-                            var j = 0;
-                            assert(numRows > 10, 'This test does not work with less than 10 rows');
-                            return testCursor.eachAsync(
-                                function(row, rowDone) {
-                                    assert.deepEqual(row, {'id':i});
-                                    i++;
-                                    setTimeout(
-                                        function() {
-                                            assert.deepEqual(row, {'id':j});
-                                            assert.equal(i, ++j);
-                                            if (i == 10) {
-                                                rowDone('some random value'); // bail out
-                                            } else {
-                                                assert(i < 11);
-                                                rowDone();
-                                            }
-                                        },
-                                        50 // trying to make sure that we have the chance to fail
-                                    );
-                                }
-                            ).then(function() {
-                                assert.fail(undefined, undefined, 'Error was not called');
-                            })
-                            .catch(Error, function(err) {
-                                assert.equal(err.message, 'some random value');
-                                assert.equal(i, 10);
-                                assert.equal(j, 10);
-                            });
-                        });
-                        
-                        it('stops on callback error', function() {
-                            this.slow((50 * 10) + 400)
-                            var i = 0;
-                            var j = 0;
-                            assert(numRows > 10, 'This test does not work with less than 10 rows');
-                            return testCursor.eachAsync(
-                                function(row, rowDone) {
-                                    assert.deepEqual(row, {'id':i});
-                                    i++;
-                                    if (i == 10) {
-                                        throw Error('something random');
-                                    }
-                                    setTimeout(function() { j++; rowDone(); }, 50);
-                                }
-                            ).then(function() {
-                                assert.fail(undefined, undefined, 'Error was not called');
-                            })
-                            .catch(Error, function(err) {
-                                assert.equal(err.message, 'something random');
-                                assert.equal(i, 10);
-                                assert.equal(j, 9);
-                            });
-                        });
-                        
-                        it('errors when returning Promise from callback', function() {
-                            return testCursor.eachAsync(
-                                function(row, rowDone) {
-                                    return Promise.resolve();
-                                }
-                            ).then(function() {
-                                assert.fail(undefined, undefined, 'Error was not called');
-                            })
-                            .catch(r.Error.ReqlDriverError, function(err) {
-                                assert.equal(err.message, 'A two-argument row handler for eachAsync may only return undefined.');
-                            });
-                        });
-                        
-                        it('errors when cursor is closed while processing rows', function() {
-                            var i = 0;
-                            return testCursor.eachAsync(
-                                function(row) {
-                                    assert.equal(row.id, i);
-                                    i++;
-                                    if (row.id == 10) {
-                                        testCursor.close()
-                                    } else {
-                                        assert(row.id <= 10, 'Row handler continued to be called for too long: ' + i)
-                                    }
-                                }
-                            )
-                            .then(function() {
-                                assert.fail(undefined, undefined, 'Did not error when calling `eachAsync` on a closed cursor');
-                            })
-                            .catch(r.Error.ReqlDriverError, function(err) {
-                                assert.equal(err.msg, 'Cursor is closed.');
-                            })
-                            .then(function() {
-                                assert.equal(i, 11);
-                            });
-                        });
-                    });
-                });
-                
-                describe('with both row and final functions', function() {
-                    it('does not return a Promise', function(done) {
-                        var promiseValue = testCursor.eachAsync(
-                            function(value) { },
-                            function(err) {
-                                if (!err) {
-                                    try {
-                                        assert.equal(promiseValue, undefined)
-                                    } catch(innerErr) { err = innerErr; }
-                                }
-                                done(err);
-                            }
-                        );
-                    });
-                    
-                    it('errors on an initially closed cursor', function(done) { // issue #5432 empty data buffer on JavaScript cursor when it is closed
-                        testCursor.close(function(err) {
-                            if (err) {
-                                done(err);
-                                return;
-                            }
-                            testCursor.eachAsync(
-                                function(value) {
-                                    assert.fail(undefined, undefined, 'Row handler called on a closed cursor');
-                                },
-                                function(err) {
-                                    try {
-                                        if (err instanceof r.Error.ReqlDriverError) {
-                                            assert.equal(err.msg, 'Cursor is closed.');
-                                            err = null;
-                                        } else if (err) {
-                                            // leave the error
-                                        } else {
-                                            assert.fail(undefined, undefined, 'The `final` function was called on a closed cursor without an error');
-                                        }
-                                    } catch(innerErr) { err = innerErr; }
-                                    done(err);
-                                }
-                            );
-                        });
-                    });
-                    
-                    it('errors when cursor is closed while processing rows', function(done) {
-                        var i = 0;
-                        assert(numRows > 10, 'This test does not work with less than 10 rows')
-                        testCursor.eachAsync(
-                            function(value) {
-                                i++;
-                                if (i == 10) {
-                                    return testCursor.close();
-                                }
-                            },
-                            function(err) {
-                                try {
-                                    if (err instanceof r.Error.ReqlDriverError) {
-                                        assert.equal(err.msg, 'Cursor is closed.');
-                                        assert.equal(i, 10, 'Did not end iteration in a timely manner: ' + i);
-                                        err = null;
-                                    } else if (err) {
-                                            // leave the error
-                                    } else {
-                                        assert.fail(undefined, undefined, 'The `final` function was called on a closed cursor without an error');
-                                    }
-                                } catch(innerErr) { err = innerErr; }
-                                done(err);
-                            }
-                        );
-                    });
-                    
-                    it('processes values in the right order', function(done) {
-                        var i = 0;
-                        testCursor.eachAsync(
-                            function(row) {
-                                assert.deepEqual(row, {'id':i});
-                                i++;
-                            },
-                            function(err) {
-                                try {
-                                    assert.ifError(err);
-                                    assert.equal(i, numRows);
-                                } catch(innerErr) { err = innerErr; }
-                                done(err);
-                            }
-                        );
-                    });
-                    
-                    it('resolves promises returned from row handler correctly', function(done) {
-                        var i = 0;
-                        var j = 0;
-                        testCursor.eachAsync(
-                            function(value) {
-                                assert.deepEqual(value, {'id':i});
-                                i++;
-                                return Promise.delay(value, 10)
-                                .then(function(innerValue) {
-                                    assert.deepEqual(innerValue, {'id':j});
-                                    j++;
-                                    assert.equal(i, j);
-                                });
-                            },
-                            function(err) {
-                                try {
-                                    assert.equal(i, numRows);
-                                    assert.equal(j, numRows);
-                                } catch(innerErr) { err = innerErr; }
-                                done(err);
-                            }
-                        );
-                    });
-                    
-                    it('stops on an error thrown in Promise returned by a row handler', function(done) {
-                        var i = 0;
-                        var j = 0;
-                        assert(numRows > 10, 'This test does not work with less than 10 rows')
-                        testCursor.eachAsync(
-                            function(row) {
-                                assert.deepEqual(row, {'id':i});
-                                i++;
-                                return Promise.delay(row, 10)
-                                .then(function(rowInner) {
-                                    assert.deepEqual(row, {'id':j});
-                                    assert.equal(i, ++j);
-                                    assert(i < 11);
-                                    if (i >= 10) {
-                                        throw Error('something aync random');
-                                    }
-                                });
-                            },
-                            function(err) {
-                                try {
-                                    assert.equal(i, 10);
-                                    assert.equal(j, 10);
-                                    assert(err instanceof Error);
-                                    assert.equal(err.message, 'something aync random');
-                                    err = null;
-                                } catch(innerErr) { err = innerErr; }
-                                done(err);
-                            }
-                        );
-                    });
-                    
-                    it('errors on a non-Promise row handler return value', function(done) {
-                        var i = 0;
-                        testCursor.eachAsync(
-                            function(row) {
-                                assert.deepEqual(row, {'id':i});
-                                if (row.id == 10) {
-                                    return false; // pre #5474 this would bail out early, now it is an error
-                                }
-                                i++;
-                            },
-                            function(err) {
-                                try {
-                                    assert.equal(i, 10, 'Did not immediately stop iteration: ' + i);
-                                    assert(err instanceof r.Error.ReqlDriverError, 'Expected ReqlDriverError, got: ' + err);
-                                    assert.equal(err.message, 'Row handler for eachAsync may only return a Promise or undefined.');
-                                    err = null;
-                                } catch(innerErr) { err = innerErr; }
-                                done(err);
-                            }
-                        );
-                    });
-                    
-                    it('stops on row handler error', function(done) {
-                        var i = 0;
-                        testCursor.eachAsync(
-                            function(row) {
-                                assert.deepEqual(row, {'id':i});
-                                if (row.id == 10) {
-                                    throw Error('something random');
-                                }
-                                i++;
-                            },
-                            function(err) {
-                                try {
-                                    if (err) {
-                                        assert(err instanceof Error);
-                                        assert.equal(err.message, 'something random');
-                                        assert.equal(i, 10, 'Did not immediately stop iteration: ' + i);
-                                        err = null;
-                                    } else {
-                                        assert.fail(undefined, undefined, 'The `final` function was called without an error');
-                                    }
-                                } catch(innerErr) { err = innerErr; }
-                                done(err);
-                            }
-                        );
-                    });
-                    
-                    it('stops on row Promise rejection', function(done) {
-                        var i = 0;
-                        testCursor.eachAsync(
-                            function(row) {
-                                assert.deepEqual(row, {'id':i});
-                                if (row.id == 10) {
-                                    return Promise.reject(Error('stop value'));
-                                }
-                                i++;
-                            },
-                            function(err) {
-                                try {
-                                    assert.equal(i, 10, 'Did not immediately stop iteration: ' + i);
-                                    assert(err instanceof Error);
-                                    assert.equal(err.message, 'stop value');
-                                    err = null;
-                                } catch(innerErr) { err = innerErr; }
-                                done(err);
-                            }
-                        );
-                    });
-                    
-                    describe('with an async handler', function() {
-                        it('processes values in the right order', function(done) {
-                            this.slow((numRows * 10) + 400)
-                            var i = 0;
-                            var j = 0;
-                            var ranFinal = false;
-                            testCursor.eachAsync(
-                                function(row, rowDone) {
-                                    assert.deepEqual(row, {'id':i});
-                                    i++;
-                                    setTimeout(
-                                        function() {
-                                            assert.equal(i, ++j);
-                                            rowDone();
-                                        },
-                                        10 // trying to make sure that we have the chance to fail
-                                    );
-                                },
-                                function(err) {
-                                    if (!err) {
-                                        try {
-                                            assert.equal(i, numRows);
-                                            assert.equal(j, numRows);
-                                        } catch(innerErr) { err = innerErr; }
-                                    }
-                                    done(err);
-                                }
-                            );
-                        });
-                        
-                        it('errors when returning from row handler with `done` function', function(done) {
-                            var i = 0;
-                            var ranFinal = false;
-                            assert(numRows > 10, 'This test does not work with less than 10 rows')
-                            testCursor.eachAsync(
-                                function(row, rowDone) {
-                                    assert.deepEqual(row, {'id':i});
-                                    i++;
-                                    return 1;
-                                },
-                                function(err) {
-                                    try {
-                                        if (err) {
-                                            assert.equal(i, 1);
-                                            assert(err instanceof r.Error.ReqlDriverError, 'Did not get the expected ReqlDriverError: ' + err);
-                                            assert.equal(err.message, 'A two-argument row handler for eachAsync may only return undefined.');
-                                            err = null;
-                                        } else {
-                                            assert.fail(undefined, undefined, 'Final hander did not get the expected error');
-                                        }
-                                    } catch(innerErr) { err = innerErr; }
-                                    done(err);
-                                }
-                            );
-                        });
-                        
-                        it('stops on async return value', function(done) {
-                            this.slow((50 * 10) + 400)
-                            var i = 0;
-                            var j = 0;
-                            var ranFinal = false;
-                            assert(numRows > 10, 'This test does not work with less than 10 rows');
-                            testCursor.eachAsync(
-                                function(row, rowDone) {
-                                    assert.deepEqual(row, {'id':i});
-                                    i++;
-                                    setTimeout(
-                                        function() {
-                                            assert.deepEqual(row, {'id':j});
-                                            assert.equal(i, ++j);
-                                            if (i == 10) {
-                                                rowDone('some random value'); // bail out
-                                            } else {
-                                                assert(i < 11);
-                                                rowDone();
-                                            }
-                                        },
-                                        50 // trying to make sure that we have the chance to fail
-                                    );
-                                },
-                                function(err) {
-                                    try {
-                                        if (err) {
-                                            assert.equal(err.message, 'some random value');
-                                            assert.equal(i, 10);
-                                            assert.equal(j, 10);
-                                            err = null;
-                                        } else {
-                                            assert.fail(undefined, undefined, 'The `final` function was called without an error');
-                                        }
-                                    } catch(innerErr) { err = innerErr; }
-                                    done(err);
-                                }
-                            );
-                        });
-                                                
-                        it('stops on callback error', function(done) {
-                            var i = 0;
-                            var j = 0;
-                            assert(numRows > 10, 'This test does not work with less than 10 rows');
-                            testCursor.eachAsync(
-                                function(row, rowDone) {
-                                    assert.deepEqual(row, {'id':i});
-                                    i++;
-                                    if (i == 10) {
-                                        throw Error('something random');
-                                    } else {
-                                        setTimeout(function() { j++; rowDone(); }, 50);
-                                    }
-                                },
-                                function(err) {
-                                    try {
-                                        if (err) {
-                                            assert.equal(err.message, 'something random');
-                                            assert.equal(i, 10);
-                                            assert.equal(j, 9);
-                                            err = null;
-                                        } else {
-                                            assert.fail(undefined, undefined, 'The `final` function was called without an error');
-                                        }
-                                    } catch(innerErr) { err = innerErr; }
-                                    done(err);
-                                }
-                            );
-                        });
-                        
-                        it('errors when returning Promise from callback', function(done) {
-                            testCursor.eachAsync(
-                                function(row, rowDone) {
-                                    return Promise.delay(5);
-                                },
-                                function(err) {
-                                    try {
-                                        if(err) {
-                                            assert(err instanceof r.Error.ReqlDriverError, 'Did not get the expected ReqlDriverError, but rather: ' + err);
-                                            assert.equal(err.message, 'A two-argument row handler for eachAsync may only return undefined.');
-                                            err = null;
-                                        } else {
-                                            assert.fail(undefined, undefined, 'The `final` function was called without an error');
-                                        }
-                                    } catch(innerErr) { err = innerErr; }
-                                    done(err);
-                                }
-                            );
-                        });
-                        
-                        it('errors when cursor is closed while processing rows', function(done) {
-                            var i = 0;
-                            var j = 0;
-                            testCursor.eachAsync(
-                                function(row, rowDone) {
-                                    assert.equal(row.id, i);
-                                    if (row.id == 10) {
-                                        testCursor.close().then(function() { rowDone(); });
-                                        return;
-                                    } else if (row.id > 10) {
-                                        assert.fail(undefined, undefined, 'Row handler continued to be called for too long: ' + i)
-                                    } else {
-                                        setTimeout(function() { j++; rowDone(); }, 50);
-                                    }
-                                    i++;
-                                },
-                                function(err) {
-                                    try {
-                                        assert.equal(i, 10);
-                                        assert.equal(j, 10);
-                                        if (err) {
-                                            assert(err instanceof r.Error.ReqlDriverError, 'Did not get the expected ReqlDriverError, but rather: ' + err);
-                                            assert.equal(err.message, 'Cursor is closed.');
-                                            err = null;
-                                        } else {
-                                            assert.fail(undefined, undefined, 'Did not error when calling `eachAsync` on a closed cursor');
-                                        }
-                                    } catch(innerErr) { err = innerErr; }
-                                    done(err);
-                                }
-                            );
+                        .catch(r.Error.ReqlDriverError, function(err) {
+                            assert.equal(err.msg, 'Cursor is closed.');
+                        })
+                        .then(function() {
+                            assert.equal(i, 11);
                         });
                     });
                 });
