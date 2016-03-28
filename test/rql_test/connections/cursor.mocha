@@ -202,11 +202,15 @@ for (var i = 0; i < numRows; i++) {
                     testCursor.close(function(err) {
                         assert.ifError(err);
                         testCursor.next(function(err, value) {
+                            console.log(err);
                             try {
                                 if (err instanceof r.Error.ReqlDriverError) {
                                     assert.equal(err.msg, 'Cursor is closed.');
+                                    console.log("Good");
+                                    console.log(err.msg);
                                     done();
                                 } else {
+                                    console.log(err);
                                     done(Error('Did not error when calling `next` on a closed cursor'));
                                 }
                             } catch(innerErr) { err = innerErr; }
@@ -793,13 +797,13 @@ for (var i = 0; i < numRows; i++) {
                     return testCursor.close()
                     .then(function() {
                         return testCursor.next()
+                        .then(function() {
+                             assert.fail(undefined, undefined, 'Did not error when calling `next` on a closed cursor');
+                         })
                         .catch(r.Error.ReqlDriverError, function(err) {
                             assert.equal(err.msg, 'Cursor is closed.');
                         })
                     })
-                    .then(function() {
-                        assert.fail(undefined, undefined, 'Did not error when calling `next` on a closed cursor');
-                    });
                 });
             });
             

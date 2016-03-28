@@ -99,6 +99,9 @@ class IterableResult
         @_responses.length is 0 or @_responses[0].r.length <= @_responseIndex
 
     _promptNext: ->
+        if @_closeCbPromise?
+            cb = @_getCallback()
+            cb new error.ReqlDriverError "Cursor is closed."
         # If there are no more waiting callbacks, just wait until the next event
         while @_cbQueue[0]?
             if @bufferEmpty() is true
@@ -449,6 +452,8 @@ class ArrayResult extends IterableResult
 
     _next: varar 0, 1, (cb) ->
         fn = (cb) =>
+            if @_closeCbPromise?
+                cb new error.ReqlDriverError "Cursor is closed."
             if @_hasNext() is true
                 self = @
                 if self.__index%@stackSize is @stackSize-1
