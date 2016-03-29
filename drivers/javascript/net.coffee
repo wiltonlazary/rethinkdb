@@ -54,7 +54,9 @@ protodef = require('./proto-def')
 # `./proto-def.coffee`. The most recent version is 4. Generally the
 # official driver will always be updated to the newest version of the
 # protocol, though RethinkDB supports older versions for some time.
-protoVersion = protodef.VersionDummy.Version.V0_4
+protoVersion = protodef.VersionDummy.Version.V1_0
+#protoVersion = protodef.VersionDummy.Version.V0_4
+
 
 # We are using the JSON protocol for RethinkDB, which is the most
 # recent version. The older protocol is based on Protocol Buffers, and
@@ -926,7 +928,7 @@ class TcpConnection extends Connection
     # This sets up all aspects of the connection that relate to
     # TCP. Everything else is done in the Connection superclass
     # constructor.
-    constructor: (host, callback) ->
+    constructor: (host, username, password, callback) ->
         # Bail out early if we happen to be in the browser
         unless TcpConnection.isAvailable()
             throw new err.ReqlDriverError "TCP sockets are not available in this environment"
@@ -976,7 +978,7 @@ class TcpConnection extends Connection
         # server. This is where we decide what protocol to use, and
         # send things like the authKey etc.
         @rawSocket.once 'connect', =>
-
+            console.log("Starting handshake")
             # The protocol specifies that the magic number for the
             # version should be given as a little endian 32 bit
             # unsigned integer. The value is given in the `proto-def`
@@ -986,12 +988,9 @@ class TcpConnection extends Connection
             version = new Buffer(4)
             version.writeUInt32LE(protoVersion, 0)
 
-            # Since the auth key has a variable length, we need to
-            # both encode its length in the wire format (little endian
-            # 32 bit), and the bytes themselves.
-            auth_buffer = new Buffer(@authKey, 'ascii')
-            auth_length = new Buffer(4)
-            auth_length.writeUInt32LE(auth_buffer.length, 0)
+            #auth_buffer = new Buffer(@authKey, 'ascii')
+            #auth_length = new Buffer(4)
+            #auth_length.writeUInt32LE(auth_buffer.length, 0)
 
             # Send the protocol type that we will be using to
             # communicate with the server. Json is the only currently
@@ -999,14 +998,25 @@ class TcpConnection extends Connection
             protocol = new Buffer(4)
             protocol.writeUInt32LE(protoProtocol, 0)
 
-            # Write the version, auth key length, auth key, and
-            # protocol number to the socket, in that order.
-            @rawSocket.write Buffer.concat([version, auth_length, auth_buffer, protocol])
+            r_string = new Buffer(require('crypto').randomBytes(18))
+
+            if username is undefined
+                username = "admin"
+                password = ""
+
+            client_first_message_bare = "n=" + username + ",r=" + r_string
+
+            message = JSON.stringify({"protocol_version": protocol.toString('base64'), "authentication_method": "SCRAM-SHA-256", "authentication": "n,," + client_first_message_bare})
+
+            @rawSocket.write version
+            @rawSocket.write message.toString()
 
             # Now we have to wait for a response from the server
             # acknowledging the new connection. The following callback
             # will be invoked when the server sends the first few
             # bytes over the socket.
+
+            state = 5
             handshake_callback = (buf) =>
                 # Once we receive a response, extend the current
                 # buffer with the data from the server. The reason we
@@ -1017,29 +1027,33 @@ class TcpConnection extends Connection
                 # response, and only disable this event listener at
                 # that time.
                 @buffer = Buffer.concat([@buffer, buf])
-
+                console.log(@buffer.toString('base64'))
                 # Next we read bytes until we get a null byte. This is
                 # the response string from the server and should just
                 # be "SUCCESS\0". Anything else is an error.
                 for b,i in @buffer
                     if b is 0
-                        # Once we get the null byte, the server
-                        # response has been received and we can turn
-                        # off the handshake callback
-                        @rawSocket.removeListener('data', handshake_callback)
-
                         # Here we pull the status string out of the
                         # buffer and convert it into a string.
                         status_buf = @buffer.slice(0, i)
                         @buffer = @buffer.slice(i + 1)
                         status_str = status_buf.toString()
 
+                        # Get the reply from the server, and parse it as JSON
+                        server_reply = JSON.parse(status_str)
+                        console.log (server_reply)
                         # We also want to cancel the timeout error
                         # callback that we set earlier. Even though we
                         # haven't checked `status_str` yet, we've
                         # gotten a response so it isn't a timeout.
                         clearTimeout(timeout)
 
+                        if (state == 5) {
+                            if (server_reply['success'] == false) {
+                                # TODO error
+                            }
+                            
+                        }
                         # Finally, check the status string.
                         if status_str == HANDSHAKE_SUCCESS
                             # Set up the `_data` method to receive all
@@ -1511,7 +1525,7 @@ module.exports.connect = varar 0, 2, (hostOrCallback, callback) ->
     new Promise( (resolve, reject) ->
         create_connection = (host, callback) =>
             if TcpConnection.isAvailable()
-                new TcpConnection host, callback
+                new TcpConnection host, "nighelles", "blah", callback
             else if HttpConnection.isAvailable()
                 new HttpConnection host, callback
             else
