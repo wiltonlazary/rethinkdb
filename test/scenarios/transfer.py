@@ -54,15 +54,14 @@ with driver.Cluster(initial_servers=['first'], output_folder='.', command_prefix
         ]})['errors'].run(conn1) == 0
     
     utils.print_with_time("Waiting for backfill")
-    
-    r.db(dbName).wait().run(conn1)
+    r.db(dbName).wait(wait_for="all_replicas_ready").run(conn1)
     
     utils.print_with_time("Removing the first server from the table")
     assert r.db(dbName).table(tableName).config() \
         .update({'shards':[
             {'primary_replica':server2.name, 'replicas':[server2.name]}
         ]})['errors'].run(conn1) == 0
-    r.db(dbName).table(tableName).wait().run(conn1)
+    r.db(dbName).table(tableName).wait(wait_for="all_replicas_ready").run(conn1)
     
     utils.print_with_time("Shutting down first server")
     

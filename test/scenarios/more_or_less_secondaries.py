@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright 2010-2014 RethinkDB, all rights reserved.
+# Copyright 2010-2016 RethinkDB, all rights reserved.
 
 from __future__ import print_function
 
@@ -60,12 +60,12 @@ with driver.Cluster(output_folder='.', initial_servers=numReplicas + 1, console_
     r.db(dbName).table_create(tableName).run(conn)
     
     utils.print_with_time('Setting inital table replication settings')
-    assert r.db(dbName).table(tableName).config() \
-        .update({'shards':[
-            {'primary_replica':primary.name, 'replicas':[primary.name, replicaPool[0].name]}
-        ]}).run(conn)['errors'] == 0
+    res = r.db(dbName).table(tableName).config()\
+        .update({'shards':[{'primary_replica':primary.name, 'replicas':[primary.name, replicaPool[0].name]}
+        ]}).run(conn)
+    assert res['errors'] == 0, res
     
-    r.db(dbName).wait().run(conn)
+    r.db(dbName).wait(wait_for="all_replicas_ready").run(conn)
     cluster.check()
     issues = list(r.db('rethinkdb').table('current_issues').run(conn))
     assert len(issues) == 0, 'There were issues on the server: %s' % str(issues)
@@ -93,7 +93,7 @@ with driver.Cluster(output_folder='.', initial_servers=numReplicas + 1, console_
                     {'primary_replica':primary.name,
                      'replicas':[primary.name] + [x.name for x in replicaPool[:current]]}
                 ]}).run(conn)['errors'] == 0
-            r.db(dbName).wait().run(conn) # ToDo: add timeout when avalible
+            r.db(dbName).wait(wait_for="all_replicas_ready").run(conn) # ToDo: add timeout when avalible
             
             cluster.check()
             assert list(r.db('rethinkdb').table('current_issues').run(conn)) == []
