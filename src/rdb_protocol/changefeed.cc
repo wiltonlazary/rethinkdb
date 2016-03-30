@@ -2804,14 +2804,81 @@ private:
                 while (sub->has_change_val() && !batcher.should_send_batch()) {
                     change_val_t cv = sub->pop_change_val();
                     // Note that `discard` updates the `stamped_ranges`.
+                    bool discard_old_val =
+                        cv.old_val
+                        && discard(
+                            cv.pkey,
+                            cv.source_stamp, *cv.old_val);
+                    bool discard_new_val =
+                        cv.new_val
+                        && discard(
+                            cv.pkey,
+                            cv.source_stamp, *cv.new_val);
+
+                    // We must handle the following cases when checking for whether
+                    // the change should be promoted to an initial value:
+                    if ((!cv.old_val || discard_old_val)
+                        && (!cv.new_val || discard_new_val)) {
+                        // If completely discarded:
+                        //    Do nothing
+                    } else if (cv.old_val && !cv.new_val) {
+                        // If Deletion:
+                        //    Check if the old key should be promoted.
+                        //    If yes, make change empty (discard_old_val = true)
+                        rassert(!discard_old_val);
+                        if (src->promote_change_to_initial(
+                                cv.old_val->btree_index_key)) {
+                            discard_old_val = true;
+                        }
+                    } else if (!cv.old_val && cv.new_val) {
+                        // If Insertion:
+                        //    Check if the new key should be promoted.
+                        //    If yes, set discard_old_val = true to turn into initial
+                        rassert(!discard_new_val);
+                        if (src->promote_change_to_initial(
+                                cv.new_val->btree_index_key)) {
+                            discard_old_val = true;
+                        }
+                    } else {
+                        // It's an update. Distinguish the following sub-cases:
+                        if (discard_new_val) {
+                            // Uninitial value (moved out of range):
+                            //    Check if the old key should be promoted.
+                            //    If yes, make the change empty.
+                            rassert(cv.old_val);
+                            if (src->promote_change_to_initial(
+                                    cv.old_val->btree_index_key)) {
+                                discard_old_val = true;
+                            }
+                        } else if (discard_old_val) {
+                            // Initial value (moved into range):
+                            //    Check if the new key should be promoted.
+                            //    If yes, do nothing.
+                            //    This is just to let the `src` know that we have
+                            //    handled this key and that it shouldn't emit it again.
+                            rassert(cv.new_val);
+                            src->promote_change_to_initial(cv.new_val->btree_index_key);
+                        } else {
+                            // Otherwise (stayed in range):
+                            //    Check if the old key or new key should be promoted.
+                            //    If yes, set discard_old_val = true to turn into initial
+                            rassert(cv.old_val);
+                            rassert(cv.new_val);
+                            // This is a bitwise `|` intentionally. We must *not*
+                            // short-circuit this.
+                            if (src->promote_change_to_initial(
+                                   cv.old_val->btree_index_key)
+                                | src->promote_change_to_initial(
+                                   cv.new_val->btree_index_key)) {
+                                discard_old_val = true;
+                            }
+                        }
+                    }
+
                     datum_t el = change_val_to_change(
                         cv,
-                        cv.old_val && discard(
-                            cv.pkey,
-                            cv.source_stamp, *cv.old_val),
-                        cv.new_val && discard(
-                            cv.pkey,
-                            cv.source_stamp, *cv.new_val));
+                        discard_old_val,
+                        discard_new_val);
                     if (el.has()) {
                         batcher.note_el(el);
                         ret.push_back(std::move(el));

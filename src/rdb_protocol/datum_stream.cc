@@ -862,6 +862,55 @@ std::vector<rget_item_t> intersecting_reader_t::do_intersecting_read(
     return unshard(sorting_t::UNORDERED, std::move(res));
 }
 
+bool intersecting_reader_t::promote_change_to_initial(
+        const boost::optional<std::string> &index_btree_key) {
+    // Intersecting reads interact with include_initial changefeeds and in a peculiar
+    // way.
+    // Usually, the `splice_stream_t` maintains key ranges such that it can decide
+    // for any given change whether the index value in the change has already been
+    // considered by the initial read stream or not.
+    // However this doesn't reliably work for changes on geospatial indexes, since any
+    // entry in a geo index might have multiple index keys.
+    // Even if the stored geometry intersects with the query geometry overall, not all
+    // of its index keys will necessarily intersect with the query geometry.
+    // Therefore the intersecting btree traversal might pass over some of the index
+    // keys before it gets to one that actually intersects.
+    //
+    // To avoid additional complexity, a change event is currently generated with the
+    // *smallest* btree key out of all the btree keys generated for a given geometry.
+    // This is fine for a streaming changefeed, since it will always be over the
+    // universe key range anyway. However it causes incorrect behavior for the
+    // `splice_stream_t` when using include_initial changefeeds, since `splice_stream_t`
+    // relies on range checks on the key value.
+    //
+    // Specifically, the `splice_stream_t` might receive a change for a btree key that
+    // the initial read stream has already traversed, but hasn't passed on to the
+    // `splice_stream_t` because the particular key didn't intersect with the query
+    // geometry (while the overall geometry that generated the key still intersects).
+    //
+    // We must detect this and tell the `splice_stream_t` to turn the value into an
+    // initial result, rather than a change.
+    // Luckily we know exactly which primary key + tag pairs we have already read.
+    // We also mark the given primary key + tag pair as processed, so that we don't
+    // generate a second initial value when we actually reach a key that intersects
+    // with the query geometry.
+
+    // Since `intersecting_reader_t` only operates on secondary indexes, there
+    // should always be an `index_btree_key`.
+    r_sanity_check(index_btree_key);
+
+    components_t key_components = datum_t::extract_all(*index_btree_key);
+    auto pkey_tag_pair = std::make_pair(key_components.primary, key_components.tag_num);
+    if (processed_pkey_tags.count(pkey_tag_pair) == 0) {
+        // We haven't processed this value before. Promote it to an initial value
+        // and don't process it again.
+        processed_pkey_tags.insert(pkey_tag_pair);
+        return true;
+    } else {
+        return false;
+    }
+}
+
 readgen_t::readgen_t(
     global_optargs_t _global_optargs,
     std::string _table_name,
@@ -1372,6 +1421,11 @@ datum_t datum_stream_t::next(env_t *env, const batchspec_t &batchspec) {
 
 bool datum_stream_t::batch_cache_exhausted() const {
     return batch_cache_index >= batch_cache.size();
+}
+
+bool datum_stream_t::promote_change_to_initial(
+        UNUSED const boost::optional<std::string> &index_btree_key) {
+    return false;
 }
 
 void eager_datum_stream_t::add_transformation(
