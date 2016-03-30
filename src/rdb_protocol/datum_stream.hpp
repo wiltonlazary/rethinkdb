@@ -845,11 +845,6 @@ protected:
     virtual bool load_items(env_t *env, const batchspec_t &batchspec) = 0;
     rget_read_response_t do_read(env_t *env, const read_t &read);
 
-    // Called before any item is added to an output batch.
-    virtual bool filter_and_note_item(env_t *, const rget_item_t &) {
-        return true;
-    }
-
     counted_t<real_table_t> table;
     std::vector<transform_variant_t> transforms;
     boost::optional<changefeed_stamp_t> stamp;
@@ -898,8 +893,6 @@ protected:
     // Loads new items into the `items` field of rget_response_reader_t.
     // Returns `true` if there's data in `items`.
     virtual bool load_items(env_t *env, const batchspec_t &batchspec);
-
-    virtual bool filter_and_note_item(env_t *env, const rget_item_t &item);
 
 private:
     std::vector<rget_item_t> do_intersecting_read(env_t *env, const read_t &read);
