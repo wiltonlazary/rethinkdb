@@ -930,7 +930,7 @@ class TcpConnection extends Connection
     # This sets up all aspects of the connection that relate to
     # TCP. Everything else is done in the Connection superclass
     # constructor.
-    constructor: (host, username, password, callback) ->
+    constructor: (host, callback) ->
         # Bail out early if we happen to be in the browser
         unless TcpConnection.isAvailable()
             throw new err.ReqlDriverError "TCP sockets are not available in this environment"
@@ -980,7 +980,6 @@ class TcpConnection extends Connection
         # server. This is where we decide what protocol to use, and
         # send things like the authKey etc.
         @rawSocket.once 'connect', =>
-            console.log("Starting handshake")
             # The protocol specifies that the magic number for the
             # version should be given as a little endian 32 bit
             # unsigned integer. The value is given in the `proto-def`
@@ -991,9 +990,6 @@ class TcpConnection extends Connection
             version.writeUInt32LE(protoVersion, 0)
 
             protoVersionNumber = 0
-            #auth_buffer = new Buffer(@authKey, 'ascii')
-            #auth_length = new Buffer(4)
-            #auth_length.writeUInt32LE(auth_buffer.length, 0)
 
             # Send the protocol type that we will be using to
             # communicate with the server. Json is the only currently
@@ -1002,14 +998,14 @@ class TcpConnection extends Connection
             protocol.writeUInt32LE(protoProtocol, 0)
 
             r_string = new Buffer(crypto.randomBytes(18)).toString('base64')
-            r_string = "rOprNGfwEbeRWgbNEkqO"
-            console.log "r", r_string
 
-            if username is undefined
-                username = "user"
-                password = "pencil"
+            @rawSocket.username = host["username"]
+            @rawSocket.password = host["password"]
+            if @rawSocket.username is undefined
+                @rawSocket.username = "admin"
+                @rawSocket.password = ""
 
-            client_first_message_bare = "n=" + username + ",r=" + r_string
+            client_first_message_bare = "n=" + @rawSocket.username + ",r=" + r_string
 
             message = JSON.stringify({
                 "protocol_version": protoVersionNumber,
@@ -1019,7 +1015,6 @@ class TcpConnection extends Connection
             nullbyte = new Buffer('\0', "binary")
 
             @rawSocket.write Buffer.concat([version, Buffer(message.toString()), nullbyte])
-            console.log "Sent: " + Buffer.concat([version, Buffer(message.toString()), nullbyte])
 
             # Now we have to wait for a response from the server
             # acknowledging the new connection. The following callback
@@ -1034,6 +1029,31 @@ class TcpConnection extends Connection
             auth_r = ""
             auth_salt = ""
             auth_i = 0
+
+            xor_bytes = (a, b) ->
+                res = []
+                len = Math.min(a.length, b.length)
+                for i in [0...len]
+                    res.push(a[i] ^ b[i])
+                return new Buffer(res)
+
+            compare_digest = (a, b) ->
+                left = undefined
+                right = b
+                result = undefined
+                if a.length is b.length
+                    left = a
+                    result = 0
+                else
+                    left = b
+                    result = 1
+
+                len = Math.min(a.length, b.length)
+                for i in [0...len]
+                    result |= xor_bytes(a[i],b[i])
+
+                return result is 0
+
             handshake_callback = (buf) =>
                 # Once we receive a response, extend the current
                 # buffer with the data from the server. The reason we
@@ -1044,9 +1064,9 @@ class TcpConnection extends Connection
                 # response, and only disable this event listener at
                 # that time.
                 @buffer = Buffer.concat([@buffer, buf])
-                # Next we read bytes until we get a null byte. This is
-                # the response string from the server and should just
-                # be "SUCCESS\0". Anything else is an error.
+                # Next we read bytes until we get a null byte. This follows
+                # the new handshake logic to authenticate the user with the
+                # server.
 
                 j = 0
                 for b,i in @buffer
@@ -1058,35 +1078,29 @@ class TcpConnection extends Connection
                         status_str = status_buf.toString()
                         # Get the reply from the server, and parse it as JSON
                         server_reply = JSON.parse(status_str)
-                        console.log "Reply: " + JSON.stringify(server_reply)
                         # We also want to cancel the timeout error
                         # callback that we set earlier. Even though we
                         # haven't checked `status_str` yet, we've
                         # gotten a response so it isn't a timeout.
                         clearTimeout(timeout)
 
-                        console.log state
                         if state is 1
                             if server_reply['success'] is false
-                                throw new ReqlDriverError(server_reply["error"])
+                                throw new err.ReqlDriverError(server_reply["error"])
                             min = server_reply['min_protocol_version']
                             max = server_reply['max_protocol_version']
                             if !(min <= protoVersionNumber <= max)
-                                console.log "Bad proto"
-                                throw new ReqlDriverError(
-                                    """Unsupported protocol version #{protoProtocol}, \
+                                throw new err.ReqlDriverError(
+                                    """Unsupported protocol version #{protoVersionNumber}, \
                                     expected between #{min} and #{max}.""")
-                            else
-                                state = 2
-                                console.log "success"
+                            state = 2
                         else if state is 2
                             if server_reply['success'] is false
-                                throw new ReqlDriverError(server_reply["error"])
+                                throw new err.ReqlDriverError(server_reply["error"])
                             authentication = []
                             server_first_message = server_reply['authentication']
                             for item in server_first_message.split(",")
                                 authentication.push(item.split("=")[1])
-                            console.log(authentication)
                             auth_r = authentication[0]
                             authentication[1] = authentication[1]+"=="
                             auth_salt = new Buffer(authentication[1], 'base64') # MAYBE
@@ -1094,11 +1108,9 @@ class TcpConnection extends Connection
                             if not auth_r.startsWith(r_string)
                                 throw new err.ReqlAuthError("Invalid nonce from server")
 
-                            console.log auth_r + " " + auth_salt + " " + auth_i
                             client_final_message_without_proof = "c=biws,r=" + auth_r
 
-                            console.log "final " + auth_salt
-                            salted_password = crypto.pbkdf2Sync(password, auth_salt, auth_i, 32, "sha256")
+                            salted_password = crypto.pbkdf2Sync(@rawSocket.password, auth_salt, auth_i, 32, "sha256")
 
                             client_key = crypto.createHmac("sha256", salted_password).update("Client Key").digest()
                             stored_key = crypto.createHash("sha256").update(client_key).digest()
@@ -1110,17 +1122,7 @@ class TcpConnection extends Connection
 
                             client_signature = crypto.createHmac("sha256", stored_key).update(auth_message).digest()
 
-                            console.log(auth_r)
-                            console.log(authentication[1])
-                            console.log(auth_salt)
-                            console.log(auth_i)
-                            console.log(salted_password)
-                            console.log(client_key)
-                            console.log(client_signature)
-                            res = []
-                            for i in [0...client_key.length]
-                                res.push(client_key[i] ^ client_signature[i])
-                            client_proof = new Buffer(res)
+                            client_proof = xor_bytes(client_key, client_signature)
 
                             server_key = crypto.createHmac("sha256", salted_password).update("Server Key").digest()
 
@@ -1133,14 +1135,29 @@ class TcpConnection extends Connection
                             nullbyte = new Buffer('\0', "binary")
 
                             @rawSocket.write Buffer.concat([Buffer(message.toString()), nullbyte])
-                            console.log "Sent: " + Buffer.concat([Buffer(message.toString()), nullbyte])
                         else if state is 3
                             if server_reply['success'] is false
                                 throw new err.ReqlDriverError(server_reply["error"])
-                            console.log "Reply: " + server_reply
-                            for item in server_first_message.split(",")
-                                authentication.push(item.split("=")[1])
-                            console.log authentication
+
+                            v = server_reply["authentication"].split("=")[1] + "="
+                            if not compare_digest(v, server_signature.toString("base64"))
+                                throw new err.ReqlAuthError("Invalid server signature")
+
+                            state = 4
+                            @rawSocket.removeListener('data', handshake_callback)
+                            @rawSocket.on 'data', (buf) => @_data(buf)
+
+                            # Notify listeners we've connected
+                            # successfully. Notably, the Connection
+                            # constructor registers a listener for the
+                            # `"connect"` event that sets the `@open`
+                            # flag on the connection and invokes the
+                            # callback passed to the `r.connect`
+                            # function.
+                            @emit 'connect'
+                        else
+                            throw new err.ReqlDriverError("Unexpected handshake state")
+
 
 
                 @buffer = @buffer.slice(j + 1)
@@ -1576,7 +1593,7 @@ module.exports.connect = varar 0, 2, (hostOrCallback, callback) ->
     new Promise( (resolve, reject) ->
         create_connection = (host, callback) =>
             if TcpConnection.isAvailable()
-                new TcpConnection host, undefined, undefined, callback
+                new TcpConnection host, callback
             else if HttpConnection.isAvailable()
                 new HttpConnection host, callback
             else
