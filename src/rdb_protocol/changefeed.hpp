@@ -14,6 +14,7 @@
 #include <boost/variant.hpp>
 
 #include "btree/keys.hpp"
+#include "concurrency/new_mutex.hpp"
 #include "concurrency/promise.hpp"
 #include "concurrency/rwlock.hpp"
 #include "containers/counted.hpp"
@@ -175,9 +176,18 @@ struct streamspec_t {
     std::string table_name;
     bool include_offsets;
     bool include_states;
+    bool include_types;
     configured_limits_t limits;
     datum_t squash;
     keyspec_t::spec_t spec;
+    streamspec_t(counted_t<datum_stream_t> _maybe_src,
+                 std::string _table_name,
+                 bool _include_offsets,
+                 bool _include_states,
+                 bool _include_types,
+                 configured_limits_t _limits,
+                 datum_t _squash,
+                 keyspec_t::spec_t _spec);
 };
 
 RDB_DECLARE_SERIALIZABLE_FOR_CLUSTER(keyspec_t::range_t);
@@ -584,6 +594,7 @@ public:
     virtual void maybe_remove() = 0;
 
 private:
+    new_mutex_t stamp_mutex;
     uint64_t stamp;
     const uuid_u uuid;
     const scoped_ptr_t<artificial_feed_t> feed;

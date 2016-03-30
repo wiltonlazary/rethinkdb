@@ -248,9 +248,10 @@ batched_replace_response_t rdb_replace_and_return_superblock(
         }
         guarantee(old_val.has());
 
+        ql::datum_t new_val;
         try {
             /* Compute the replacement value for the row */
-            ql::datum_t new_val = replacer->replace(old_val);
+            new_val = replacer->replace(old_val);
 
             /* Validate the replacement value and generate a stats object to return to
             the user, but don't return it yet if we need to make changes. The reason for
@@ -302,7 +303,10 @@ batched_replace_response_t rdb_replace_and_return_superblock(
             return resp;
 
         } catch (const ql::base_exc_t &e) {
-            return make_row_replacement_error_stats(old_val, return_changes, e.what());
+            return make_row_replacement_error_stats(old_val,
+                                                    new_val,
+                                                    return_changes,
+                                                    e.what());
         }
     } catch (const interrupted_exc_t &e) {
         ql::datum_object_builder_t object_builder;
@@ -393,7 +397,10 @@ batched_replace_response_t rdb_batched_replace(
         // the sequence of events in the profiler trace.
         // Instead we add a single event for the whole batched replace.
         sampler->new_sample();
-        profile::starter_t profile_starter("Perform parallel replaces.", trace);
+        PROFILE_STARTER_IF_ENABLED(
+            trace != nullptr,
+            "Perform parallel replaces.",
+            trace);
         profile::disabler_t trace_disabler(trace);
         unlimited_fifo_queue_t<std::function<void()> > coro_queue;
         struct callback_t : public coro_pool_callback_t<std::function<void()> > {
@@ -580,7 +587,8 @@ public:
                const boost::optional<terminal_variant_t> &_terminal,
                region_t region,
                store_key_t last_key,
-               sorting_t _sorting)
+               sorting_t _sorting,
+               require_sindexes_t require_sindex_val)
         : env(_env),
           batcher(make_scoped<ql::batcher_t>(batchspec.to_batcher())),
           sorting(_sorting),
@@ -589,7 +597,8 @@ public:
                       : ql::make_append(std::move(region),
                                         std::move(last_key),
                                         sorting,
-                                        batcher.get())) {
+                                        batcher.get(),
+                                        require_sindex_val)) {
         for (size_t i = 0; i < _transforms.size(); ++i) {
             transformers.push_back(ql::make_op(_transforms[i]));
         }
@@ -962,7 +971,10 @@ void rdb_rget_slice(
         rget_read_response_t *response,
         release_superblock_t release_superblock) {
     r_sanity_check(boost::get<ql::exc_t>(&response->result) == NULL);
-    profile::starter_t starter("Do range scan on primary index.", ql_env->trace);
+    PROFILE_STARTER_IF_ENABLED(
+        ql_env->profile() == profile_bool_t::PROFILE,
+        "Do range scan on primary index.",
+        ql_env->trace);
 
     rget_cb_t callback(
         rget_io_data_t(response, slice),
@@ -974,7 +986,8 @@ void rdb_rget_slice(
                    !reversed(sorting)
                        ? range.left
                        : range.right.key_or_max(),
-                   sorting),
+                   sorting,
+                   require_sindexes_t::NO),
         boost::none);
 
     direction_t direction = reversed(sorting) ? BACKWARD : FORWARD;
@@ -1028,12 +1041,16 @@ void rdb_rget_secondary_slice(
         const boost::optional<terminal_variant_t> &terminal,
         const key_range_t &pk_range,
         sorting_t sorting,
+        require_sindexes_t require_sindex_val,
         const sindex_disk_info_t &sindex_info,
         rget_read_response_t *response,
         release_superblock_t release_superblock) {
     r_sanity_check(boost::get<ql::exc_t>(&response->result) == NULL);
     guarantee(sindex_info.geo == sindex_geo_bool_t::REGULAR);
-    profile::starter_t starter("Do range scan on secondary index.", ql_env->trace);
+    PROFILE_STARTER_IF_ENABLED(
+        ql_env->profile() == profile_bool_t::PROFILE,
+        "Do range scan on secondary index.",
+        ql_env->trace);
 
     const reql_version_t sindex_func_reql_version =
         sindex_info.mapping_version_info.latest_compatible_reql_version;
@@ -1049,7 +1066,8 @@ void rdb_rget_secondary_slice(
                    !reversed(sorting)
                        ? sindex_region_range.left
                        : sindex_region_range.right.key_or_max(),
-                   sorting),
+                   sorting,
+                   require_sindex_val),
         rget_sindex_data_t(
             pk_range,
             datumspec,
@@ -1097,8 +1115,10 @@ void rdb_get_intersecting_slice(
     guarantee(query_geometry.has());
 
     guarantee(sindex_info.geo == sindex_geo_bool_t::GEO);
-    profile::starter_t starter("Do intersection scan on geospatial index.",
-                               ql_env->trace);
+    PROFILE_STARTER_IF_ENABLED(
+        ql_env->profile() == profile_bool_t::PROFILE,
+        "Do intersection scan on geospatial index.",
+        ql_env->trace);
 
     const reql_version_t sindex_func_reql_version =
         sindex_info.mapping_version_info.latest_compatible_reql_version;
@@ -1136,8 +1156,10 @@ void rdb_get_nearest_slice(
     nearest_geo_read_response_t *response) {
 
     guarantee(sindex_info.geo == sindex_geo_bool_t::GEO);
-    profile::starter_t starter("Do nearest traversal on geospatial index.",
-                               ql_env->trace);
+    PROFILE_STARTER_IF_ENABLED(
+        ql_env->profile() == profile_bool_t::PROFILE,
+        "Do nearest traversal on geospatial index.",
+        ql_env->trace);
 
     const reql_version_t sindex_func_reql_version =
         sindex_info.mapping_version_info.latest_compatible_reql_version;
@@ -1565,10 +1587,19 @@ void deserialize_sindex_info(
                   "Instead of passing a constant obsolete_reql_version_t::v1_13 into "
                   "`obsolete_cb` below, there should be a separate `obsolete_cb` to "
                   "handle the different obsolete cluster versions.");
-    archive_result_t success = deserialize_cluster_version(
-        &read_stream,
-        &cluster_version,
-        std::bind(obsolete_cb, obsolete_reql_version_t::v1_13));
+    archive_result_t success;
+
+    try {
+        success = deserialize_cluster_version(
+            &read_stream,
+            &cluster_version,
+            std::bind(obsolete_cb, obsolete_reql_version_t::v1_13));
+
+    } catch (const archive_exc_t &e) {
+        rfail_toplevel(ql::base_exc_t::INTERNAL,
+                       "Unrecognized secondary index version,"
+                       " secondary index not created.");
+    }
     throw_if_bad_deserialization(success, "sindex description");
 
     switch (cluster_version) {
