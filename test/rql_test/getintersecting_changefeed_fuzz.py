@@ -99,13 +99,13 @@ class DatasetTracker(object):
     get_intersecting query for the same query geometry.
     """
 
-    def __init__(self, conn, table, query_geo, index):
+    def __init__(self, conn, table, query_geo, id):
         self.known_objects = dict()
         self.last_timestamp = time.time()
         self.state = 'initializing'
         self.deliberately_closed = False
         self.query_geo = query_geo
-        self.index = index
+        self.id = id
         self.table = table
         self.conn = conn
 
@@ -127,26 +127,24 @@ class DatasetTracker(object):
             value = yield cur.next()
             self.last_timestamp = time.time()
 
-            print(self.index + " Value: " + str(value))
-
             if 'error' in value:
-                raise Exception(self.index + " Got error in cursor: "+value['error'])
+                raise Exception(self.id + " Got error in cursor: "+value['error'])
             elif 'state' in value:
-                print(self.index + " State change: " + value['state'])
+                print(self.id + " State change: " + value['state'])
                 self.state = value['state']
 
             if value.get('old_val') is not None:
-                print(self.index + " Change: Removing " + value['old_val']['id'])
+                print(self.id + " Change: Removing " + value['old_val']['id'])
                 del self.known_objects[value['old_val']['id']]
 
             if value.get('new_val') is not None:
-                print(self.index + " Change: Adding " + value['new_val']['id'])
+                print(self.id + " Change: Adding " + value['new_val']['id'])
                 if value['new_val']['id'] in self.known_objects:
-                    raise Exception(self.index + " Duplicate value for ID "+value['new_val']['id'])
+                    raise Exception(self.id + " Duplicate value for ID "+value['new_val']['id'])
                 self.known_objects[value['new_val']['id']] = value['new_val']
 
         if not self.deliberately_closed:
-            raise Exception(self.index + " Fell off end of supposedly infinite cursor")
+            raise Exception(self.id + " Fell off end of supposedly infinite cursor")
 
     @gen.coroutine
     def wait_quiescence(self):
@@ -242,7 +240,7 @@ def main():
         query_geo = yield random_geo(conn)
         validators.append(DatasetTracker(conn, "test", query_geo, "inititial-" + str(i)))
 
-    for i in range(50):
+    for i in range(20):
         print "Making changes"
         yield make_changes(conn, "test", random.randint(5,100))
         print "Validating"

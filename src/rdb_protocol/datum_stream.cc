@@ -1263,12 +1263,18 @@ intersecting_geo_read_t intersecting_readgen_t::next_read_impl(
     region_t region = active_ranges
         ? region_t(active_ranges_to_range(*active_ranges))
         : region_t(safe_universe());
+    // For stamped reads, we disable batching. This is a temporary work-around for the
+    // problem that the keys associated with geospatial change events don't match
+    // up with the traversal ranges of an initial intersecting read (which in turn
+    // confuses the splice_stream_t).
+    // By reading everything in a single batch, we avoid this issue.
+    batchspec_t actual_batchspec = stamp ? batchspec.all() : batchspec;
     return intersecting_geo_read_t(
         std::move(stamp),
         region_t::universe(),
         global_optargs,
         table_name,
-        batchspec,
+        actual_batchspec,
         std::move(transforms),
         boost::optional<terminal_variant_t>(),
         sindex_rangespec_t(
