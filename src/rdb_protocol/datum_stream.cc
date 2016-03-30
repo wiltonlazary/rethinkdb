@@ -571,86 +571,103 @@ std::vector<rget_item_t> rget_response_reader_t::raw_next_batch(
     const batchspec_t &batchspec) {
     r_sanity_check(batchspec.get_batch_type() != batch_type_t::SINDEX_CONSTANT);
     started = true;
-    bool loaded = load_items(env, batchspec);
-    r_sanity_check(items_index == 0 && (items.size() != 0) == loaded);
+    bool loaded;
     std::vector<rget_item_t> res;
-    res.swap(items);
+    do {
+        loaded = load_items(env, batchspec);
+        r_sanity_check(items_index == 0 && (items.size() != 0) == loaded);
+        res.reserve(items.size());
+        for (auto && it : items) {
+            if (filter_and_note_item(env, it)) {
+                res.push_back(std::move(it));
+            }
+        }
+        items.clear();
+        // Read again if loading was successful but we filtered everything out.
+    } while (loaded && res.empty());
     return res;
 }
 
 std::vector<datum_t> rget_response_reader_t::next_batch(
     env_t *env, const batchspec_t &batchspec) {
     started = true;
-    if (!load_items(env, batchspec)) {
-        return std::vector<datum_t>();
-    }
-    r_sanity_check(items_index < items.size());
 
-    std::vector<datum_t> res;
-    switch (batchspec.get_batch_type()) {
-    case batch_type_t::NORMAL: // fallthru
-    case batch_type_t::NORMAL_FIRST: // fallthru
-    case batch_type_t::TERMINAL: {
-        res.reserve(items.size() - items_index);
-        for (; items_index < items.size(); ++items_index) {
-            res.push_back(std::move(items[items_index].data));
+    std::vector<datum_t> res;    
+    do {
+        if (!load_items(env, batchspec)) {
+            return res;
         }
-    } break;
-    case batch_type_t::SINDEX_CONSTANT: {
-        ql::datum_t sindex = std::move(items[items_index].sindex_key);
-        store_key_t key = std::move(items[items_index].key);
-        res.push_back(std::move(items[items_index].data));
-        items_index += 1;
+        r_sanity_check(items_index < items.size());
 
-        bool maybe_more_with_sindex = true;
-        while (maybe_more_with_sindex) {
+        switch (batchspec.get_batch_type()) {
+        case batch_type_t::NORMAL: // fallthru
+        case batch_type_t::NORMAL_FIRST: // fallthru
+        case batch_type_t::TERMINAL: {
+            res.reserve(items.size() - items_index);
             for (; items_index < items.size(); ++items_index) {
-                if (sindex.has()) {
-                    r_sanity_check(items[items_index].sindex_key.has());
-                    if (items[items_index].sindex_key != sindex) {
-                        break; // batch is done
-                    }
-                } else {
-                    r_sanity_check(!items[items_index].sindex_key.has());
-                    if (items[items_index].key != key) {
-                        break;
-                    }
+                if (filter_and_note_item(env, items[items_index])) {
+                    res.push_back(std::move(items[items_index].data));
                 }
+            }
+        } break;
+        case batch_type_t::SINDEX_CONSTANT: {
+            ql::datum_t sindex = std::move(items[items_index].sindex_key);
+            store_key_t key = std::move(items[items_index].key);
+            if (filter_and_note_item(env, items[items_index])) {
                 res.push_back(std::move(items[items_index].data));
+            }
+            items_index += 1;
 
-                rcheck_datum(
-                    res.size() <= env->limits().array_size_limit(), base_exc_t::RESOURCE,
-                    strprintf("Too many rows (> %zu) with the same value "
-                              "for index `%s`:\n%s",
-                              env->limits().array_size_limit(),
-                              opt_or(readgen->sindex_name(), "").c_str(),
-                              // This is safe because you can't have duplicate
-                              // primary keys, so they will never exceed the
-                              // array limit.
-                              sindex.trunc_print().c_str()));
+            bool maybe_more_with_sindex = true;
+            while (maybe_more_with_sindex) {
+                for (; items_index < items.size(); ++items_index) {
+                    if (sindex.has()) {
+                        r_sanity_check(items[items_index].sindex_key.has());
+                        if (items[items_index].sindex_key != sindex) {
+                            break; // batch is done
+                        }
+                    } else {
+                        r_sanity_check(!items[items_index].sindex_key.has());
+                        if (items[items_index].key != key) {
+                            break;
+                        }
+                    }
+                    if (filter_and_note_item(env, items[items_index])) {
+                        res.push_back(std::move(items[items_index].data));
+                    }
+
+                    rcheck_datum(
+                        res.size() <= env->limits().array_size_limit(), base_exc_t::RESOURCE,
+                        strprintf("Too many rows (> %zu) with the same value "
+                                  "for index `%s`:\n%s",
+                                  env->limits().array_size_limit(),
+                                  opt_or(readgen->sindex_name(), "").c_str(),
+                                  // This is safe because you can't have duplicate
+                                  // primary keys, so they will never exceed the
+                                  // array limit.
+                                  sindex.trunc_print().c_str()));
+                }
+                if (items_index >= items.size()) {
+                    // If we consumed the whole batch without finding a new sindex,
+                    // we might have more rows with the same sindex in the nextpy
+                    // batch, which we promptly load.
+                    maybe_more_with_sindex = load_items(env, batchspec);
+                } else {
+                    maybe_more_with_sindex = false;
+                }
             }
-            if (items_index >= items.size()) {
-                // If we consumed the whole batch without finding a new sindex,
-                // we might have more rows with the same sindex in the next
-                // batch, which we promptly load.
-                maybe_more_with_sindex = load_items(env, batchspec);
-            } else {
-                maybe_more_with_sindex = false;
-            }
+        } break;
+        default: unreachable();
         }
-    } break;
-    default: unreachable();
-    }
 
-    if (items_index >= items.size()) { // free memory immediately
-        items_index = 0;
-        std::vector<rget_item_t> tmp;
-        tmp.swap(items);
-    }
+        if (items_index >= items.size()) { // free memory immediately
+            items_index = 0;
+            std::vector<rget_item_t> tmp;
+            tmp.swap(items);
+        }
 
-    if (res.size() == 0) {
-        r_sanity_check(shards_exhausted());
-    }
+        // We might have filtered out all items and need to read again.
+    } while (res.size() == 0 && !shards_exhausted());
 
     return res;
 }
@@ -823,41 +840,38 @@ bool intersecting_reader_t::load_items(env_t *env, const batchspec_t &batchspec)
             }
         }
 
-        std::vector<rget_item_t> unfiltered_items = do_intersecting_read(
-            env, std::move(read));
-        if (unfiltered_items.empty()) {
+        std::vector<rget_item_t> new_items = do_intersecting_read(env, std::move(read));
+        if (new_items.empty()) {
             r_sanity_check(shards_exhausted());
-        } else {
-            items_index = 0;
-            items.clear();
-            items.reserve(unfiltered_items.size());
-            for (size_t i = 0; i < unfiltered_items.size(); ++i) {
-                r_sanity_check(unfiltered_items[i].key.size() > 0);
-
-                if (old_query_geometry) {
-                    if (!geo_does_intersect(unfiltered_items[i].sindex_key,
-                                            *old_query_geometry)) {
-                        continue;
-                    }
-                }
-
-                const std::string key_str =
-                    key_to_unescaped_str(unfiltered_items[i].key);
-                boost::optional<uint64_t> tag(ql::datum_t::extract_tag(key_str));
-                std::pair<std::string, boost::optional<uint64_t> > pkey_tag(
-                    ql::datum_t::extract_primary(key_str), tag);
-                if (processed_pkey_tags.count(pkey_tag) == 0) {
-                    rcheck_toplevel(
-                        processed_pkey_tags.size() < env->limits().array_size_limit(),
-                        ql::base_exc_t::RESOURCE,
-                        "Array size limit exceeded during geospatial index traversal.");
-                    processed_pkey_tags.insert(pkey_tag);
-                    items.push_back(std::move(unfiltered_items[i]));
-                }
+        }
+        items.reserve(items.size() + new_items.size());
+        for (auto &&it : new_items) {
+            if (old_query_geometry
+                && !geo_does_intersect(it.sindex_key, *old_query_geometry)) {
+                continue;
             }
+            items.push_back(std::move(it));
         }
     }
     return items_index < items.size();
+}
+
+bool intersecting_reader_t::filter_and_note_item(env_t *env, const rget_item_t &item) {
+    r_sanity_check(item.key.size() > 0);
+    const std::string key_str = key_to_unescaped_str(item.key);
+    boost::optional<uint64_t> tag(ql::datum_t::extract_tag(key_str));
+    std::pair<std::string, boost::optional<uint64_t> > pkey_tag(
+        ql::datum_t::extract_primary(key_str), tag);
+    if (processed_pkey_tags.count(pkey_tag) == 0) {
+        rcheck_toplevel(
+            processed_pkey_tags.size() < env->limits().array_size_limit(),
+            ql::base_exc_t::RESOURCE,
+            "Array size limit exceeded during geospatial index traversal.");
+        processed_pkey_tags.insert(pkey_tag);
+        return true;
+    }
+
+    return false;
 }
 
 std::vector<rget_item_t> intersecting_reader_t::do_intersecting_read(
@@ -916,6 +930,7 @@ bool intersecting_reader_t::promote_change_to_initial(
     if (processed_pkey_tags.count(pkey_tag_pair) == 0) {
         // We haven't processed this value before. Promote it to an initial value
         // and don't process it again.
+        fprintf(stderr, "Promoting\n");
         processed_pkey_tags.insert(pkey_tag_pair);
         return true;
     } else {
