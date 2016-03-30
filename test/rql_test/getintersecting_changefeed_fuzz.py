@@ -118,8 +118,7 @@ class DatasetTracker(object):
 
     @gen.coroutine
     def _process_query_results(self):
-        # Small batch size to get more interesting interactions in the splice_stream_t.
-        cur = yield r.table(self.table).get_intersecting(self.query_geo, index='g').changes(include_initial=True, include_states=True).run(self.conn, max_batch_rows=1)
+        cur = yield r.table(self.table).get_intersecting(self.query_geo, index='g').changes(include_initial=True, include_states=True).run(self.conn)
         self.changefeed_cursor = cur
 
         print repr(cur)
@@ -139,8 +138,6 @@ class DatasetTracker(object):
 
             if value.get('new_val') is not None:
                 print("Change: Adding " + value['new_val']['id'])
-                if value['new_val']['id'] in self.known_objects:
-                    raise Exception("Duplicate value for ID "+value['new_val']['id'])
                 self.known_objects[value['new_val']['id']] = value['new_val']
 
         if not self.deliberately_closed:
@@ -236,7 +233,7 @@ def main():
     print "Starting validators"
 
     validators = []
-    for i in xrange(50):
+    for i in xrange(20):
         query_geo = yield random_geo(conn)
         validators.append(DatasetTracker(conn, "test", query_geo))
 

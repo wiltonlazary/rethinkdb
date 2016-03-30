@@ -111,14 +111,6 @@ public:
         env_t *env, eager_acc_t *acc, const terminal_variant_t &tv) = 0;
     virtual void accumulate_all(env_t *env, eager_acc_t *acc) = 0;
 
-    // If a change for the given `index_btree_key` arrives on a `splice_stream_t`,
-    // should it be turned into an initial value instead of a change?
-    // The `datum_stream_t` implementation must guarantee that if this returns
-    // `true`, no future batch from the stream is going to contain a result for this
-    // key.
-    virtual bool promote_change_to_initial(
-        const boost::optional<std::string> &index_btree_key);
-
 protected:
     bool batch_cache_exhausted() const;
     void check_not_grouped(const char *msg);
@@ -767,12 +759,6 @@ public:
     virtual bool is_finished() const = 0;
 
     virtual changefeed::keyspec_t get_changespec() const = 0;
-
-    // See the description in `datum_stream_t`.
-    virtual bool promote_change_to_initial(
-            UNUSED const boost::optional<std::string> &index_btree_key) {
-        return false;
-    }
 };
 
 // To handle empty range on getAll
@@ -886,9 +872,6 @@ public:
         scoped_ptr_t<readgen_t> &&readgen);
     virtual void accumulate_all(env_t *env, eager_acc_t *acc);
 
-    virtual bool promote_change_to_initial(
-        const boost::optional<std::string> &index_btree_key);
-
 protected:
     // Loads new items into the `items` field of rget_response_reader_t.
     // Returns `true` if there's data in `items`.
@@ -969,11 +952,6 @@ public:
     }
     virtual boost::optional<active_state_t> get_active_state() {
         return reader->get_active_state();
-    }
-
-    virtual bool promote_change_to_initial(
-        const boost::optional<std::string> &index_btree_key) {
-        return reader->promote_change_to_initial(index_btree_key);
     }
 
 private:
