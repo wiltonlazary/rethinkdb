@@ -1140,6 +1140,7 @@ class TcpConnection extends Connection
                                 throw new err.ReqlDriverError(server_reply["error"])
 
                             v = server_reply["authentication"].split("=")[1] + "="
+                            # TODO: Why do we compare_digest rather than just comparing?
                             if not compare_digest(v, server_signature.toString("base64"))
                                 throw new err.ReqlAuthError("Invalid server signature")
 
