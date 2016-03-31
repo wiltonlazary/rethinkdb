@@ -82,7 +82,7 @@ with driver.Cluster(initial_servers=['a', 'b'], output_folder='.', command_prefi
         res = r.db(db).table_create("simple").run(conn)
         assert res["tables_created"] == 1
         r.db(db).table("simple").reconfigure(shards=12, replicas=1).run(conn)
-        r.db(db).table("simple").wait(waif_for="all_replicas_ready").run(conn)
+        r.db(db).table("simple").wait(wait_for="all_replicas_ready").run(conn)
         count = r.db(db).table("simple").count().run(conn)
         assert count == 0
         res = r.db(db).table_drop("simple").run(conn)
