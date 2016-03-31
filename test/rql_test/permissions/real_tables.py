@@ -49,7 +49,19 @@ class TestPermissionsBase(unittest.TestCase):
         query.run(self.userConn)
 
     def setPermissions(self, scope, permissions):
+        # Reset the permissions on this scope first:
+        scope.grant("user", {"read": None, "write": None, "config": None}).run(self.adminConn)
+        try:
+            scope.grant("user", {"connect": None}).run(self.adminConn)
+        except r.ReqlOpFailedError:
+            pass
+
+        # Grant the new permissions:
         scope.grant("user", permissions).run(self.adminConn)
+
+        # Wait for the change to be visible on the `user` connection:
+        # TODO: Is there a better way to do this?
+        time.sleep(0.1)
 
     def setUp(self):
         self.adminConn = r.connect(host=sharedServerHost, port=sharedServerDriverPort, username="admin", password="")
@@ -108,6 +120,28 @@ class TestBasicPermissions(TestPermissionsBase):
         self.setPermissions(r, {"read": None})
         self.assertNoPermissions(self.tbl)
 
+    def test_read_special(self):
+        # These work even without permissions:
+        self.assertPermissions(self.tbl.status())
+        self.assertPermissions(self.tbl.index_list())
+        self.assertPermissions(self.tbl.index_wait())
+        self.assertPermissions(self.tbl.wait())
+        # These should only work with permissions:
+        self.assertNoPermissions(self.tbl.info())
+        self.assertNoPermissions(self.tbl.is_empty())
+        self.assertNoPermissions(self.tbl.count())
+
+        self.setPermissions(self.tbl, {"read": True})
+        self.assertPermissions(self.tbl.info())
+        self.assertPermissions(self.tbl.status())
+        self.assertPermissions(self.tbl.index_list())
+        self.assertPermissions(self.tbl.index_wait())
+        self.assertPermissions(self.tbl.wait())
+        self.assertPermissions(self.tbl.is_empty())
+        self.assertPermissions(self.tbl.count())
+        self.assertPermissions(self.tbl)
+        self.setPermissions(self.tbl, {"read": None})
+
     def test_write(self):
         self.assertNoPermissions(self.tbl.insert({"id": "a"}))
         self.assertNoPermissions(self.tbl.update({"f": "v"}))
@@ -135,6 +169,18 @@ class TestBasicPermissions(TestPermissionsBase):
         self.assertPermissions(self.tbl.replace({"id": "a", "f": "v"}))
         self.assertPermissions(self.tbl.delete())
         self.setPermissions(self.tbl, {"read": None, "write": None})
+
+    def test_write_special(self):
+        self.assertNoPermissions(self.tbl.sync())
+
+        self.setPermissions(self.tbl, {"write": True})
+        self.assertPermissions(self.tbl.sync())
+        self.setPermissions(self.tbl, {"write": None})
+
+    def test_config(self):
+        pass
+        #self.assertNoPermissions(self.tbl.config())
+        # TODO!
 
     def test_connect(self):
         self.assertNoPermissions(r.http("http://localhost:12345").default(None))
