@@ -215,7 +215,6 @@ connectivity_cluster_t::run_t::run_t(
         const server_id_t &_server_id,
         const std::set<ip_address_t> &local_addresses,
         const peer_address_t &canonical_addresses,
-        const int max_backoff_secs,
         const int join_delay_secs,
         int port,
         int client_port,
@@ -262,7 +261,7 @@ connectivity_cluster_t::run_t::run_t(
     listener(new tcp_listener_t(
         cluster_listener_socket.get(),
         std::bind(&connectivity_cluster_t::run_t::on_new_connection,
-                 this, ph::_1, max_backoff_secs, join_delay_secs, auto_drainer_t::lock_t(&drainer))))
+                 this, ph::_1, join_delay_secs, auto_drainer_t::lock_t(&drainer))))
 {
     parent->assert_thread();
 }
@@ -283,7 +282,6 @@ int connectivity_cluster_t::run_t::get_port() {
 
 void connectivity_cluster_t::run_t::join(
         const peer_address_t &address,
-        const int max_backoff_secs,
         const int join_delay_secs) THROWS_NOTHING {
     parent->assert_thread();
     coro_t::spawn_now_dangerously(std::bind(
@@ -292,14 +290,12 @@ void connectivity_cluster_t::run_t::join(
         address,
         /* We don't know what `peer_id_t` the peer has until we connect to it */
         boost::none,
-        max_backoff_secs,
         join_delay_secs,
         auto_drainer_t::lock_t(&drainer)));
 }
 
 void connectivity_cluster_t::run_t::on_new_connection(
         const scoped_ptr_t<tcp_conn_descriptor_t> &nconn,
-        const int max_backoff_secs,
         const int join_delay_secs,
         auto_drainer_t::lock_t lock) THROWS_NOTHING {
     parent->assert_thread();
@@ -309,7 +305,7 @@ void connectivity_cluster_t::run_t::on_new_connection(
     nconn->make_overcomplicated(&conn);
     keepalive_tcp_conn_stream_t conn_stream(conn);
 
-    handle(&conn_stream, boost::none, boost::none, lock, NULL, max_backoff_secs, join_delay_secs);
+    handle(&conn_stream, boost::none, boost::none, lock, NULL, join_delay_secs);
 }
 
 void connectivity_cluster_t::run_t::connect_to_peer(
@@ -318,7 +314,6 @@ void connectivity_cluster_t::run_t::connect_to_peer(
         boost::optional<peer_id_t> expected_id,
         auto_drainer_t::lock_t drainer_lock,
         bool *successful_join,
-        const int max_backoff_secs,
         const int join_delay_secs,
         co_semaphore_t *rate_control) THROWS_NOTHING {
     // Wait to start the connection attempt, max time is one second per address
@@ -349,7 +344,8 @@ void connectivity_cluster_t::run_t::connect_to_peer(
             keepalive_tcp_conn_stream_t conn(selected_addr->ip(), selected_addr->port().value(),
                                              drainer_lock.get_drain_signal(), cluster_client_port);
             if (!*successful_join) {
-                handle(&conn, expected_id, boost::optional<peer_address_t>(*address), drainer_lock, successful_join, max_backoff_secs, join_delay_secs);
+                handle(&conn, expected_id, boost::optional<peer_address_t>(*address),
+                       drainer_lock, successful_join, join_delay_secs);
             }
         } catch (const tcp_conn_t::connect_failed_exc_t &) {
             /* Ignore */
@@ -365,7 +361,6 @@ void connectivity_cluster_t::run_t::connect_to_peer(
 void connectivity_cluster_t::run_t::join_blocking(
         const peer_address_t peer,
         boost::optional<peer_id_t> expected_id,
-        const int max_backoff_secs,
         const int join_delay_secs,
         auto_drainer_t::lock_t drainer_lock) THROWS_NOTHING {
     drainer_lock.assert_is_holding(&parent->current_run->drainer);
@@ -394,7 +389,6 @@ void connectivity_cluster_t::run_t::join_blocking(
                    expected_id,
                    drainer_lock,
                    &successful_join,
-                   max_backoff_secs,
                    join_delay_secs,
                    &rate_control));
 
@@ -833,7 +827,6 @@ void connectivity_cluster_t::run_t::handle(
         boost::optional<peer_address_t> expected_address,
         auto_drainer_t::lock_t drainer_lock,
         bool *successful_join,
-        const int max_backoff_secs,
         const int join_delay_secs) THROWS_NOTHING
 {
     parent->assert_thread();
@@ -979,42 +972,6 @@ void connectivity_cluster_t::run_t::handle(
             logWRN("Connecting nodes with different build modes, local: %s, remote: %s",
                    cluster_build_mode.c_str(),
                    remote_build_mode.c_str());
-        }
-    }
-
-    // Use ticks as they are monotonically increasing
-    ticks_t current_ticks = get_ticks();
-    std::pair<ticks_t, double> new_rate_limit = std::make_pair(current_ticks, 1);
-    if (max_backoff_secs > 0) {
-        // Mapping of server to a pair of last successful connection time and rate
-        std::map<server_id_t, std::pair<ticks_t, double>>::iterator rate_limit =
-            server_rate_limit.find(server_id);
-        if (rate_limit != server_rate_limit.end()) {
-            // The rate is incremented every time we successfully accept a connection, and
-            // decremented once every `seconds_per_rate_reduction`. We then calculate a
-            // delay by taking 1.5 to the power of said rate, and reject connections that
-            // reconnect before the delay is expired.
-            double seconds_per_rate_reduction = max_backoff_secs;
-            double new_rate = std::max(
-                0.0,
-                rate_limit->second.second -
-                    (ticks_to_secs(current_ticks - rate_limit->second.first) /
-                        seconds_per_rate_reduction));
-
-            double delay_seconds = std::pow(1.5, new_rate) - 1;
-            if (rate_limit->second.first + secs_to_ticks(delay_seconds) <= current_ticks) {
-                new_rate_limit.second = new_rate + 1;
-            } else {
-                auto reason = handshake_result_t::error(
-                    handshake_result_code_t::RATE_LIMIT,
-                    strprintf(
-                        "%s blocked for another %.2f seconds",
-                        uuid_to_str(remote_server_id).c_str(),
-                        delay_seconds -
-                            ticks_to_secs(current_ticks - rate_limit->second.first)));
-                fail_handshake(conn, peername, reason);
-                return;
-            }
         }
     }
 
@@ -1188,11 +1145,6 @@ void connectivity_cluster_t::run_t::handle(
         *successful_join = true;
     }
 
-    if (max_backoff_secs > 0) {
-        // Update the rate limit now that we've successfully connected
-        server_rate_limit[server_id] = std::move(new_rate_limit);
-    }
-
     /* For each peer that our new friend told us about that we don't already
     know about, start a new connection. If the cluster is shutting down, skip
     this step. */
@@ -1205,7 +1157,6 @@ void connectivity_cluster_t::run_t::handle(
                     &connectivity_cluster_t::run_t::join_blocking, this,
                     peer_address_t(it->second), // This is where we resolve the peer's ip addresses
                     boost::optional<peer_id_t>(it->first),
-                    max_backoff_secs,
                     join_delay_secs,
                     drainer_lock));
             }
@@ -1244,7 +1195,8 @@ void connectivity_cluster_t::run_t::handle(
                uuid_to_str(remote_server_id).c_str(),
                join_delay_secs);
         try {
-            nap(static_cast<int64_t>(join_delay_secs) * 1000, &connection_thread_drain_signal);
+            nap(static_cast<int64_t>(join_delay_secs) * 1000,
+                &connection_thread_drain_signal);
         } catch (const interrupted_exc_t &) {
             // Ignore this here. We will bail out below.
         }

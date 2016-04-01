@@ -207,7 +207,6 @@ bool do_serve(io_backender_t *io_backender,
                 server_id,
                 serve_info.ports.local_addresses,
                 serve_info.ports.canonical_addresses,
-                serve_info.max_backoff_secs,
                 serve_info.join_delay_secs,
                 serve_info.ports.port,
                 serve_info.ports.client_port,
@@ -229,7 +228,6 @@ bool do_serve(io_backender_t *io_backender,
             &connectivity_cluster,
             connectivity_cluster_run.get(),
             &server_config_client,
-            serve_info.max_backoff_secs,
             serve_info.join_delay_secs);
 
         /* `initial_joiner` sets up the initial connections to the peers that were
@@ -239,7 +237,6 @@ bool do_serve(io_backender_t *io_backender,
             initial_joiner.init(new initial_joiner_t(&connectivity_cluster,
                                                      connectivity_cluster_run.get(),
                                                      serve_info.peers,
-                                                     serve_info.max_backoff_secs,
                                                      serve_info.join_delay_secs));
             try {
                 wait_interruptible(initial_joiner->get_ready_signal(), stop_cond);

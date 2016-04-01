@@ -183,7 +183,6 @@ public:
               const server_id_t &server_id,
               const std::set<ip_address_t> &local_addresses,
               const peer_address_t &canonical_addresses,
-              const int max_backoff_secs,
               const int join_delay_secs,
               int port,
               int client_port,
@@ -196,7 +195,7 @@ public:
         /* Attaches the cluster this node is part of to another existing
         cluster. May only be called on home thread. Returns immediately (it does
         its work in the background). */
-        void join(const peer_address_t &address, const int max_backoff_secs, const int join_delay_secs) THROWS_NOTHING;
+        void join(const peer_address_t &address, const int join_delay_secs) THROWS_NOTHING;
 
         std::set<host_and_port_t> get_canonical_addresses();
         int get_port();
@@ -226,7 +225,6 @@ public:
         };
 
         void on_new_connection(const scoped_ptr_t<tcp_conn_descriptor_t> &nconn,
-                const int max_backoff_secs,
                 const int join_delay_secs,
                 auto_drainer_t::lock_t lock) THROWS_NOTHING;
 
@@ -237,7 +235,6 @@ public:
                              boost::optional<peer_id_t> expected_id,
                              auto_drainer_t::lock_t drainer_lock,
                              bool *successful_join,
-                             const int max_backoff_secs,
                              const int join_delay_secs,
                              co_semaphore_t *rate_control) THROWS_NOTHING;
 
@@ -245,7 +242,6 @@ public:
         `handle()` when we hear about a new peer from a peer we are connected to. */
         void join_blocking(const peer_address_t hosts,
                            boost::optional<peer_id_t>,
-                           const int max_backoff_secs,
                            const int join_delay_secs,
                            auto_drainer_t::lock_t) THROWS_NOTHING;
 
@@ -267,7 +263,6 @@ public:
             boost::optional<peer_address_t> expected_address,
             auto_drainer_t::lock_t,
             bool *successful_join,
-            const int max_backoff_secs,
             const int join_delay_secs) THROWS_NOTHING;
 
         connectivity_cluster_t *parent;
@@ -276,8 +271,6 @@ public:
         a single connection per server. */
         server_id_t server_id;
         std::set<server_id_t> servers;
-        /* The last successful connection and rate of connections per server. */
-        std::map<server_id_t, std::pair<ticks_t, double>> server_rate_limit;
 
         /* `attempt_table` is a table of all the host:port pairs we're currently
         trying to connect to or have connected to. If we are told to connect to

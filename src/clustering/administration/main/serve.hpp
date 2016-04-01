@@ -96,7 +96,6 @@ public:
                  service_address_ports_t _ports,
                  boost::optional<std::string> _config_file,
                  std::vector<std::string> &&_argv,
-                 const int _max_backoff_secs,
                  const int _join_delay_secs) :
         joins(std::move(_joins)),
         reql_http_proxy(std::move(_reql_http_proxy)),
@@ -105,7 +104,6 @@ public:
         ports(_ports),
         config_file(_config_file),
         argv(std::move(_argv)),
-        max_backoff_secs(_max_backoff_secs),
         join_delay_secs(_join_delay_secs)
     { }
 
@@ -123,7 +121,6 @@ public:
     /* The original arguments, so we can display them in `server_status`. All the
     argument parsing has already been completed at this point. */
     std::vector<std::string> argv;
-    int max_backoff_secs;
     int join_delay_secs;
 };
 

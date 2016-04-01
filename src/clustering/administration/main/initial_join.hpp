@@ -21,7 +21,6 @@ public:
             connectivity_cluster_t *cluster,
             connectivity_cluster_t::run_t *cluster_run,
             const peer_address_set_t &peers,
-            const int max_backoff_secs,
             const int join_delay,
             int timeout = -1);
 
@@ -44,7 +43,6 @@ private:
     peer_address_set_t peers_not_heard_from;
     cond_t done_signal;
     signal_timer_t grace_period_timer;
-    int max_backoff_secs;
     int join_delay_secs;
     auto_drainer_t drainer;
     watchable_map_t<peer_id_t, connectivity_cluster_t::connection_pair_t>
