@@ -119,8 +119,8 @@ public:
                  service_address_ports_t _ports,
                  boost::optional<std::string> _config_file,
                  std::vector<std::string> &&_argv,
-                 tls_configs_t _tls_configs,
-                 const int _join_delay_secs) :
+                 const int _join_delay_secs,
+                 tls_configs_t _tls_configs) :
         joins(std::move(_joins)),
         reql_http_proxy(std::move(_reql_http_proxy)),
         web_assets(std::move(_web_assets)),

@@ -22,7 +22,6 @@ public:
         connectivity_cluster_t *connectivity_cluster,
         connectivity_cluster_t::run_t *connectivity_cluster_run,
         server_config_client_t *server_config_client,
-        const int max_backoff_secs,
         const int join_delay_secs);
 
 private:
@@ -48,7 +47,6 @@ private:
     It's used to interrupt the coroutines if the server reconnects. */
     std::multimap<server_id_t, cond_t *> stop_conds;
 
-    int max_backoff_secs;
     int join_delay_secs;
 
     auto_drainer_t drainer;

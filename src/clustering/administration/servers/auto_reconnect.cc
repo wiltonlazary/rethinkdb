@@ -13,12 +13,10 @@ auto_reconnector_t::auto_reconnector_t(
         connectivity_cluster_t *connectivity_cluster_,
         connectivity_cluster_t::run_t *connectivity_cluster_run_,
         server_config_client_t *server_config_client_,
-        const int max_backoff_secs_,
         const int join_delay_secs_) :
     connectivity_cluster(connectivity_cluster_),
     connectivity_cluster_run(connectivity_cluster_run_),
     server_config_client(server_config_client_),
-    max_backoff_secs(max_backoff_secs_),
     join_delay_secs(join_delay_secs_),
     server_id_subs(
         server_config_client->get_peer_to_server_map(),
@@ -88,7 +86,7 @@ void auto_reconnector_t::try_reconnect(const server_id_t &server,
     exponential_backoff_t backoff(50, 15 * 1000);
     try {
         while (!interruptor.is_pulsed()) {
-            connectivity_cluster_run->join(last_known_address, max_backoff_secs, join_delay_secs);
+            connectivity_cluster_run->join(last_known_address, join_delay_secs);
             backoff.failure(&interruptor);
         }
     } catch (const interrupted_exc_t &) {
