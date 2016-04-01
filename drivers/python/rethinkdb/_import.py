@@ -6,7 +6,7 @@ import signal
 import sys, os, datetime, time, json, traceback, csv
 import multiprocessing, multiprocessing.queues, subprocess, re, ctypes, codecs
 from optparse import OptionParser
-from _backup import *
+from ._backup import *
 import rethinkdb as r
 
 # Used because of API differences in the csv module, taken from
