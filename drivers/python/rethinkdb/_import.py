@@ -6,7 +6,7 @@ import signal
 import sys, os, datetime, time, json, traceback, csv
 import multiprocessing, multiprocessing.queues, subprocess, re, ctypes, codecs
 from optparse import OptionParser
-from ._backup import *
+from _backup import *
 import rethinkdb as r
 
 # Used because of API differences in the csv module, taken from
@@ -110,7 +110,6 @@ def print_import_help():
 def parse_options():
     parser = OptionParser(add_help_option=False, usage=usage)
     parser.add_option("-c", "--connect", dest="host", metavar="HOST:PORT", default="localhost:28015", type="string")
-    parser.add_option("-a", "--auth", dest="auth_key", metavar="AUTHKEY", default="", type="string")
     parser.add_option("--fields", dest="fields", metavar="FIELD,FIELD...", default=None, type="string")
     parser.add_option("--clients", dest="clients", metavar="NUM_CLIENTS", default=8, type="int")
     parser.add_option("--hard-durability", dest="hard", action="store_true", default=False)
@@ -137,6 +136,8 @@ def parse_options():
     parser.add_option("--no-header", dest="no_header", action="store_true", default=False)
     parser.add_option("--custom-header", dest="custom_header", metavar="FIELD,FIELD...", default=None, type="string")
     parser.add_option("-h", "--help", dest="help", default=False, action="store_true")
+    parser.add_option("-p", "--password", dest="password", default=False, action="store_true")
+    parser.add_option("--password-file", dest="password_file", default=None, type="string")
     (options, args) = parser.parse_args()
 
     # Check validity of arguments
@@ -155,7 +156,6 @@ def parse_options():
     if options.clients < 1:
         raise RuntimeError("Error: --client option too low, must have at least one client connection")
 
-    res["auth_key"] = options.auth_key
     res["clients"] = options.clients
     res["durability"] = "hard" if options.hard else "soft"
     res["force"] = options.force
@@ -284,6 +284,7 @@ def parse_options():
     else:
         raise RuntimeError("Error: Must specify one of --directory or --file to import")
 
+    res["password"] = get_password(options.password, options.password_file)
     return res
 
 # This is called through rdb_call_wrapper so reattempts can be tried as long as progress
@@ -326,9 +327,12 @@ def import_from_queue(progress, conn, task_queue, error_queue, replace_conflicts
         task = task_queue.get()
 
 # This is run for each client requested, and accepts tasks from the reader processes
-def client_process(host, port, auth_key, task_queue, error_queue, rows_written, replace_conflicts, durability):
+def client_process(host, port, task_queue, error_queue, rows_written, replace_conflicts, durability, admin_password):
     try:
-        conn_fn = lambda: r.connect(host, port, auth_key=auth_key)
+        conn_fn = lambda: r.connect(host,
+                                    port,
+                                    user="admin",
+                                    password=admin_password)
         write_count = [0]
         rdb_call_wrapper(conn_fn, "import", import_from_queue, task_queue, error_queue, replace_conflicts, durability, write_count)
     except:
@@ -565,7 +569,10 @@ def table_reader(options, file_info, task_queue, error_queue, warning_queue, pro
         create_args = dict(options["create_args"])
         create_args["primary_key"] = file_info["info"]["primary_key"]
 
-        conn_fn = lambda: r.connect(options["host"], options["port"], auth_key=options["auth_key"])
+        conn_fn = lambda: r.connect(options["host"],
+                                    options["port"],
+                                    user="admin",
+                                    password=options["password"])
         try:
             rdb_call_wrapper(conn_fn, "create table", create_table, db, table, create_args,
                          file_info["info"]["indexes"] if options["create_sindexes"] else [])
@@ -647,12 +654,12 @@ def spawn_import_clients(options, files_info):
             client_procs.append(multiprocessing.Process(target=client_process,
                                                         args=(options["host"],
                                                               options["port"],
-                                                              options["auth_key"],
                                                               task_queue,
                                                               error_queue,
                                                               rows_written,
                                                               options["force"],
-                                                              options["durability"])))
+                                                              options["durability"],
+                                                              options["password"])))
             client_procs[-1].start()
 
         for file_info in files_info:
@@ -814,7 +821,10 @@ def import_directory(options):
 
         db_tables.add((file_info["db"], file_info["table"]))
 
-    conn_fn = lambda: r.connect(options["host"], options["port"], auth_key=options["auth_key"])
+    conn_fn = lambda: r.connect(options["host"],
+                                options["port"],
+                                user="admin",
+                                password=options["password"])
     # Make sure this isn't a pre-`reql_admin` cluster - which could result in data loss
     # if the user has a database named 'rethinkdb'
     rdb_call_wrapper(conn_fn, "version check", check_minimum_version, (1, 16, 0))
@@ -868,7 +878,10 @@ def import_file(options):
     table = options["import_db_table"][1]
 
     # Ensure that the database and table exist with the right primary key
-    conn_fn = lambda: r.connect(options["host"], options["port"], auth_key=options["auth_key"])
+    conn_fn = lambda: r.connect(options["host"],
+                                options["port"],
+                                user="admin",
+                                password=options["password"])
     # Make sure this isn't a pre-`reql_admin` cluster - which could result in data loss
     # if the user has a database named 'rethinkdb'
     rdb_call_wrapper(conn_fn, "version check", check_minimum_version, (1, 16, 0))

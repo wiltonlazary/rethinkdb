@@ -3,7 +3,8 @@ from __future__ import print_function
 
 import sys, os, datetime, time, shutil, tarfile, tempfile, subprocess, os.path
 from optparse import OptionParser
-from ._backup import *
+from _backup import *
+# TODO fix me
 
 info = "'rethinkdb dump' creates an archive of data from a RethinkDB cluster"
 usage = "rethinkdb dump [-c HOST:PORT] [-a AUTH_KEY] [-f FILE] [--clients NUM] [-e (DB | DB.TABLE)]..."
@@ -38,7 +39,6 @@ def print_dump_help():
 def parse_options():
     parser = OptionParser(add_help_option=False, usage=usage)
     parser.add_option("-c", "--connect", dest="host", metavar="host:port", default="localhost:28015", type="string")
-    parser.add_option("-a", "--auth", dest="auth_key", metavar="key", default="", type="string")
     parser.add_option("-f", "--file", dest="out_file", metavar="file", default=None, type="string")
     parser.add_option("-e", "--export", dest="tables", metavar="(db | db.table)", default=[], action="append", type="string")
 
@@ -47,6 +47,8 @@ def parse_options():
     parser.add_option("--clients", dest="clients", metavar="NUM", default=3, type="int")
     parser.add_option("--debug", dest="debug", default=False, action="store_true")
     parser.add_option("-h", "--help", dest="help", default=False, action="store_true")
+    parser.add_option("-p", "--password", dest="password", default=False, action="store_true")
+    parser.add_option("--password-file", dest="password_file", default=None, type="string")
     (options, args) = parser.parse_args()
 
     # Check validity of arguments
@@ -91,8 +93,9 @@ def parse_options():
             raise RuntimeError("Error: Temporary directory inaccessible: %s" % res["temp_dir"])
 
     res["tables"] = options.tables
-    res["auth_key"] = options.auth_key
     res["debug"] = options.debug
+    res["password"] = options.password
+    res["password-file"] = options.password_file
     return res
 
 def do_export(temp_dir, options):
@@ -100,7 +103,10 @@ def do_export(temp_dir, options):
     export_args = ["rethinkdb-export"]
     export_args.extend(["--connect", "%s:%s" % (options["host"], options["port"])])
     export_args.extend(["--directory", os.path.join(temp_dir, options["temp_filename"])])
-    export_args.extend(["--auth", options["auth_key"]])
+    if (options["password"] is not False):
+        export_args.extend(["--password", ""])
+    if (options["password-file"] is not None):
+        export_args.extend(["--password-file", options["password-file"]])
     export_args.extend(["--clients", str(options["clients"])])
 
     for table in options["tables"]:

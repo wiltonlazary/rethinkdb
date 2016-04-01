@@ -3,7 +3,8 @@ from __future__ import print_function
 
 import sys, os, datetime, time, shutil, tempfile, subprocess, random
 from optparse import OptionParser
-from ._backup import *
+from _backup import *
+#TODO fix
 
 info = "'rethinkdb index-rebuild' recreates outdated secondary indexes in a cluster.\n" + \
        "  This should be used after upgrading to a newer version of rethinkdb.  There\n" + \
@@ -39,11 +40,13 @@ def print_restore_help():
 def parse_options():
     parser = OptionParser(add_help_option=False, usage=usage)
     parser.add_option("-c", "--connect", dest="host", metavar="HOST:PORT", default="localhost:28015", type="string")
-    parser.add_option("-a", "--auth", dest="auth_key", metavar="KEY", default="", type="string")
     parser.add_option("-r", "--rebuild", dest="tables", metavar="DB | DB.TABLE", default=[], action="append", type="string")
     parser.add_option("-n", dest="concurrent", metavar="NUM", default=1, type="int")
     parser.add_option("--debug", dest="debug", default=False, action="store_true")
     parser.add_option("-h", "--help", dest="help", default=False, action="store_true")
+    parser.add_option("-p", "--password", dest="password", default=False, action="store_true")
+    parser.add_option("--password-file", dest="password_file", default=None, type="string")
+
     (options, args) = parser.parse_args()
 
     if options.help:
@@ -62,9 +65,10 @@ def parse_options():
     # Verify valid --import options
     res["tables"] = parse_db_table_options(options.tables)
 
-    res["auth_key"] = options.auth_key
     res["concurrent"] = options.concurrent
     res["debug"] = options.debug
+
+    res["password"] = get_password(options.password, options.password_file)
     return res
 
 def print_progress(ratio):
@@ -78,7 +82,10 @@ def print_progress(ratio):
 
 def do_connect(options):
     try:
-        return r.connect(options['host'], options['port'], auth_key=options['auth_key'])
+        return r.connect(options['host'],
+                         options['port'],
+                         user="admin",
+                         password=options["password"])
     except (r.ReqlError, r.ReqlDriverError) as ex:
         raise RuntimeError("Error when connecting: %s" % ex.message)
 

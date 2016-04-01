@@ -3,7 +3,8 @@ from __future__ import print_function
 
 import sys, os, datetime, time, shutil, tarfile, tempfile, subprocess, os.path
 from optparse import OptionParser
-from ._backup import *
+from _backup import *
+#TODO fix me
 
 info = "'rethinkdb restore' loads data into a RethinkDB cluster from an archive"
 usage = "rethinkdb restore FILE [-c HOST:PORT] [-a AUTH_KEY] [--clients NUM] [--shards NUM_SHARDS] [--replicas NUM_REPLICAS] [--force] [-i (DB | DB.TABLE)]..."
@@ -47,7 +48,6 @@ def print_restore_help():
 def parse_options():
     parser = OptionParser(add_help_option=False, usage=usage)
     parser.add_option("-c", "--connect", dest="host", metavar="HOST:PORT", default="localhost:28015", type="string")
-    parser.add_option("-a", "--auth", dest="auth_key", metavar="KEY", default="", type="string")
     parser.add_option("-i", "--import", dest="tables", metavar="DB | DB.TABLE", default=[], action="append", type="string")
 
     parser.add_option("--shards", dest="shards", metavar="NUM_SHARDS", default=0, type="int")
@@ -60,6 +60,8 @@ def parse_options():
     parser.add_option("--no-secondary-indexes", dest="create_sindexes", action="store_false", default=True)
     parser.add_option("--debug", dest="debug", default=False, action="store_true")
     parser.add_option("-h", "--help", dest="help", default=False, action="store_true")
+    parser.add_option("-p", "--password", dest="password", default=False, action="store_true")
+    parser.add_option("--password-file", dest="password_file", default=None, type="string")
     (options, args) = parser.parse_args()
 
     if options.help:
@@ -95,7 +97,6 @@ def parse_options():
         if not os.access(res["temp_dir"], os.W_OK):
             raise RuntimeError("Error: Temporary directory inaccessible: %s" % res["temp_dir"])
 
-    res["auth_key"] = options.auth_key
     res["clients"] = options.clients
     res["shards"] = options.shards
     res["replicas"] = options.replicas
@@ -103,6 +104,9 @@ def parse_options():
     res["force"] = options.force
     res["create_sindexes"] = options.create_sindexes
     res["debug"] = options.debug
+
+    res["password"] = options.password
+    res["password-file"] = options.password_file
     return res
 
 def do_unzip(temp_dir, options):
@@ -161,7 +165,10 @@ def do_import(temp_dir, options):
     import_args = ["rethinkdb-import"]
     import_args.extend(["--connect", "%s:%s" % (options["host"], options["port"])])
     import_args.extend(["--directory", temp_dir])
-    import_args.extend(["--auth", options["auth_key"]])
+    if (options["password"] is not False):
+        import_args.extend(["--password", ""])
+    if (options["password-file"] is not None):
+        import_args.extend(["--password-file", options["password-file"]])
     import_args.extend(["--clients", str(options["clients"])])
     import_args.extend(["--shards", str(options["shards"])])
     import_args.extend(["--replicas", str(options["replicas"])])
