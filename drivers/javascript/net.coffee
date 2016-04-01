@@ -57,6 +57,7 @@ crypto = require("crypto")
 # official driver will always be updated to the newest version of the
 # protocol, though RethinkDB supports older versions for some time.
 protoVersion = protodef.VersionDummy.Version.V1_0
+protoVersionNumber = 0
 #protoVersion = protodef.VersionDummy.Version.V0_4
 
 
@@ -977,8 +978,7 @@ class TcpConnection extends Connection
 
         # Once the TCP socket successfully connects, we can begin the
         # handshake with the server to establish the connection on the
-        # server. This is where we decide what protocol to use, and
-        # send things like the authKey etc.
+        # server.
         @rawSocket.once 'connect', =>
             # The protocol specifies that the magic number for the
             # version should be given as a little endian 32 bit
@@ -988,8 +988,6 @@ class TcpConnection extends Connection
             # connection on the socket.
             version = new Buffer(4)
             version.writeUInt32LE(protoVersion, 0)
-
-            protoVersionNumber = 0
 
             # Send the protocol type that we will be using to
             # communicate with the server. Json is the only currently
@@ -1001,6 +999,8 @@ class TcpConnection extends Connection
 
             @rawSocket.username = host["username"]
             @rawSocket.password = host["password"]
+
+            # Default to admin user with no password if none is given.
             if @rawSocket.username is undefined
                 @rawSocket.username = "admin"
                 @rawSocket.password = ""
@@ -1064,7 +1064,7 @@ class TcpConnection extends Connection
                 # response, and only disable this event listener at
                 # that time.
                 @buffer = Buffer.concat([@buffer, buf])
-                # Next we read bytes until we get a null byte. This follows
+                # Next we read bytes until we get a null byte. Then we follow
                 # the new handshake logic to authenticate the user with the
                 # server.
 
@@ -1078,11 +1078,6 @@ class TcpConnection extends Connection
                         status_str = status_buf.toString()
                         # Get the reply from the server, and parse it as JSON
                         server_reply = JSON.parse(status_str)
-                        # We also want to cancel the timeout error
-                        # callback that we set earlier. Even though we
-                        # haven't checked `status_str` yet, we've
-                        # gotten a response so it isn't a timeout.
-                        clearTimeout(timeout)
 
                         if state is 1
                             if server_reply['success'] is false
@@ -1140,13 +1135,18 @@ class TcpConnection extends Connection
                                 throw new err.ReqlDriverError(server_reply["error"])
 
                             v = server_reply["authentication"].split("=")[1] + "="
-                            # TODO: Why do we compare_digest rather than just comparing?
                             if not compare_digest(v, server_signature.toString("base64"))
                                 throw new err.ReqlAuthError("Invalid server signature")
 
                             state = 4
                             @rawSocket.removeListener('data', handshake_callback)
                             @rawSocket.on 'data', (buf) => @_data(buf)
+
+                            # We also want to cancel the timeout error
+                            # callback that we set earlier. Even though we
+                            # haven't checked `status_str` yet, we've
+                            # gotten a response so it isn't a timeout.
+                            clearTimeout(timeout)
 
                             # Notify listeners we've connected
                             # successfully. Notably, the Connection
@@ -1159,9 +1159,11 @@ class TcpConnection extends Connection
                         else
                             throw new err.ReqlDriverError("Unexpected handshake state")
 
-
-
+                # We may have more messages if we're in the middle of the handshake,
+                # so we have to update the buffer.
                 @buffer = @buffer.slice(j + 1)
+                # This is the end of the handshake callback.
+
             # Register the handshake callback on the socket. Once the
             # handshake completes, it will unregister itself and
             # register `_data` on the socket for `"data"` events.
