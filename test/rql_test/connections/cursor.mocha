@@ -202,15 +202,11 @@ for (var i = 0; i < numRows; i++) {
                     testCursor.close(function(err) {
                         assert.ifError(err);
                         testCursor.next(function(err, value) {
-                            console.log(err);
                             try {
                                 if (err instanceof r.Error.ReqlDriverError) {
                                     assert.equal(err.msg, 'Cursor is closed.');
-                                    console.log("Good");
-                                    console.log(err.msg);
-                                    done();
+                                    err = null;
                                 } else {
-                                    console.log(err);
                                     done(Error('Did not error when calling `next` on a closed cursor'));
                                 }
                             } catch(innerErr) { err = innerErr; }
