@@ -1,7 +1,7 @@
 from __future__ import print_function
 
 from copy import deepcopy
-import socket, sys, string, re
+import socket, sys, string, re, getpass
 
 try:
     import rethinkdb as r
@@ -42,6 +42,17 @@ def parse_db_table_options(db_table_options):
     for item in db_table_options:
         res.append(parse_db_table(item))
     return res
+
+def get_password(interactive, filename):
+    password = ""
+    if filename is not None:
+        password_file = open(filename)
+        password = password_file.read().rstrip('\n')
+        password_file.close()
+    elif interactive:
+        password = getpass.getpass("Password for `admin`: ")
+        # TODO: input is scary
+    return password
 
 # This function is used to wrap rethinkdb calls to recover from connection errors
 # The first argument to the function is an output parameter indicating if progress
