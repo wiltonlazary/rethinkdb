@@ -11,4 +11,3 @@
 *.sh                text eol=lf
 ./configure         text eol=lf
 ./mk/support/pkg/*  text eol=lf
-
