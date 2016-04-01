@@ -58,8 +58,6 @@ crypto = require("crypto")
 # protocol, though RethinkDB supports older versions for some time.
 protoVersion = protodef.VersionDummy.Version.V1_0
 protoVersionNumber = 0
-#protoVersion = protodef.VersionDummy.Version.V0_4
-
 
 # We are using the JSON protocol for RethinkDB, which is the most
 # recent version. The older protocol is based on Protocol Buffers, and
@@ -1084,7 +1082,9 @@ class TcpConnection extends Connection
                                 throw new err.ReqlDriverError(server_reply["error"])
                             min = server_reply['min_protocol_version']
                             max = server_reply['max_protocol_version']
+
                             if !(min <= protoVersionNumber <= max)
+                                # We don't actually support changing the protocol yet, so just error.
                                 throw new err.ReqlDriverError(
                                     """Unsupported protocol version #{protoVersionNumber}, \
                                     expected between #{min} and #{max}.""")
@@ -1092,21 +1092,24 @@ class TcpConnection extends Connection
                         else if state is 2
                             if server_reply['success'] is false
                                 throw new err.ReqlDriverError(server_reply["error"])
+
                             authentication = []
                             server_first_message = server_reply['authentication']
+
                             for item in server_first_message.split(",")
                                 authentication.push(item.split("=")[1])
+
                             auth_r = authentication[0]
                             authentication[1] = authentication[1]+"=="
                             auth_salt = new Buffer(authentication[1], 'base64') # MAYBE
                             auth_i = parseInt(authentication[2])
+
                             if not auth_r.startsWith(r_string)
                                 throw new err.ReqlAuthError("Invalid nonce from server")
 
                             client_final_message_without_proof = "c=biws,r=" + auth_r
 
                             salted_password = crypto.pbkdf2Sync(@rawSocket.password, auth_salt, auth_i, 32, "sha256")
-
                             client_key = crypto.createHmac("sha256", salted_password).update("Client Key").digest()
                             stored_key = crypto.createHash("sha256").update(client_key).digest()
 
@@ -1116,11 +1119,9 @@ class TcpConnection extends Connection
                                 client_final_message_without_proof
 
                             client_signature = crypto.createHmac("sha256", stored_key).update(auth_message).digest()
-
                             client_proof = xor_bytes(client_key, client_signature)
 
                             server_key = crypto.createHmac("sha256", salted_password).update("Server Key").digest()
-
                             server_signature = crypto.createHmac("sha256", server_key).update(auth_message).digest()
 
                             state = 3

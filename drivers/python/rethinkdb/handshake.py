@@ -66,8 +66,6 @@ class HandshakeV1_0(object):
     PROTOCOL = ql2_pb2.VersionDummy.Protocol.JSON
 
     def __init__(self, json_decoder, json_encoder, host, port, username, password):
-        username = "user"
-        password = "pencil"
         self._json_decoder = json_decoder
         self._json_encoder = json_encoder
         self._host = host
@@ -107,13 +105,12 @@ class HandshakeV1_0(object):
             # Using base64 encoding for printable characters
             self._r = base64.standard_b64encode(
                 bytes(bytearray(self._random.getrandbits(8) for i in xrange(18))))
-            self._r = "rOprNGfwEbeRWgbNEkqO"
 
             self._client_first_message_bare = b"n=" + self._username + b",r=" + self._r
 
             # Here we send the version as well as the initial JSON as an optimization
             self._state = 1
-            blah = struct.pack("<L", self.VERSION) + \
+            return struct.pack("<L", self.VERSION) + \
                 self._json_encoder.encode({
                     "protocol_version": self._protocol_version,
                     "authentication_method": "SCRAM-SHA-256",
@@ -121,8 +118,6 @@ class HandshakeV1_0(object):
                         (b"n,," + self._client_first_message_bare).decode("ascii")
                 }).encode("utf-8") + \
                 b'\0'
-            print(blah)
-            return blah
         elif self._state == 1:
             json = self._json_decoder.decode(response.decode("utf-8"))
             try:
@@ -150,11 +145,8 @@ class HandshakeV1_0(object):
                     raise ReqlDriverError(json["error"])
 
                 server_first_message = json["authentication"].encode("ascii")
-                server_first_message = "r=rOprNGfwEbeRWgbNEkqOk4P4ZClTPiQf/9u4hdkr,s=viiR32C4aeVhVsVn/u4cvA==,i=4096"
-
                 authentication = dict(
                     x.split(b"=", 1) for x in server_first_message.split(b","))
-                print authentication
 
                 r = authentication[b"r"]
                 if not r.startswith(self._r):
@@ -168,6 +160,7 @@ class HandshakeV1_0(object):
 
             # SaltedPassword := Hi(Normalize(password), salt, i)
             salted_password = self._pbkdf2_hmac("sha256", self._password, salt, i)
+
             # ClientKey := HMAC(SaltedPassword, "Client Key")
             client_key = hmac.new(
                 salted_password, b"Client Key", hashlib.sha256).digest()
@@ -187,22 +180,12 @@ class HandshakeV1_0(object):
             client_signature = hmac.new(
                 stored_key, auth_message, hashlib.sha256).digest()
 
-            print "-----"
-            print r
-            print authentication["s"]
-            print binascii.hexlify(salt)
-            print i
-            print binascii.hexlify(salted_password)
-            print binascii.hexlify(client_key)
-            print binascii.hexlify(client_signature)
-            print "------"
             # ClientProof := ClientKey XOR ClientSignature
             client_proof = struct.pack(
                 "32B",
                 *(l ^ r for l, r in zip(
                     struct.unpack("32B", client_key),
                     struct.unpack("32B", client_signature))))
-
 
             # ServerKey := HMAC(SaltedPassword, "Server Key")
             server_key = hmac.new(
@@ -213,15 +196,13 @@ class HandshakeV1_0(object):
                 server_key, auth_message, hashlib.sha256).digest()
 
             self._state = 3
-            res =  self._json_encoder.encode({
+            return self._json_encoder.encode({
                 "authentication": (
                         client_final_message_without_proof +
                         b",p=" + base64.standard_b64encode(client_proof)
                     ).decode("ascii")
             }).encode("utf-8") + \
             b'\0'
-
-            return res
         elif self._state == 3:
             json = self._json_decoder.decode(response.decode("utf-8"))
             v = None
