@@ -301,7 +301,7 @@ void connectivity_cluster_t::run_t::on_new_connection(
 
     // conn gets owned by the keepalive_tcp_conn_stream_t.
     tcp_conn_t *conn;
-    
+
     try {
         nconn->make_server_connection(tls_ctx, &conn, lock.get_drain_signal());
     } catch (const interrupted_exc_t &) {
@@ -702,7 +702,8 @@ enum class handshake_result_code_t {
     UNRECOGNIZED_VERSION = 1,
     INCOMPATIBLE_ARCH = 2,
     INCOMPATIBLE_BUILD = 3,
-    UNKNOWN_ERROR = 4
+    PASSWORD_MISMATCH = 4,
+    UNKNOWN_ERROR = 5
 };
 
 class handshake_result_t {
@@ -739,6 +740,8 @@ private:
                 return "incompatible architecture";
             case handshake_result_code_t::INCOMPATIBLE_BUILD:
                 return "incompatible build mode";
+            case handshake_result_code_t::PASSWORD_MISMATCH:
+                return "no admin password";
             case handshake_result_code_t::UNKNOWN_ERROR:
                 unreachable();
             default:
@@ -872,6 +875,7 @@ void connectivity_cluster_t::run_t::handle(
         wm.append(cluster_arch_bitsize.data(), cluster_arch_bitsize.length());
         serialize_universal(&wm, static_cast<uint64_t>(cluster_build_mode.length()));
         wm.append(cluster_build_mode.data(), cluster_build_mode.length());
+        serialize_universal(&wm, has_admin_password);
         serialize_universal(&wm, parent->me);
         serialize_universal(&wm, routing_table[parent->me].hosts());
         if (send_write_message(conn, &wm)) {
@@ -978,6 +982,28 @@ void connectivity_cluster_t::run_t::handle(
             logWRN("Connecting nodes with different build modes, local: %s, remote: %s",
                    cluster_build_mode.c_str(),
                    remote_build_mode.c_str());
+        }
+    }
+
+    // Check whether the other server has an admin password
+    {
+        bool remote_has_admin_password;
+
+        if (deserialize_universal_and_check(conn, &remote_has_admin_password, peername)) {
+            return;
+        }
+
+        // It's enough to do this check on one side. The handshake failure we send
+        // will cause a corresponding message to be printed on the other end.
+        if (!has_admin_password && remote_has_admin_password) {
+            auto reason = handshake_result_t::error(
+                handshake_result_code_t::PASSWORD_MISMATCH,
+                "The remote peer has an admin password configured, but we don't. "
+                "Connecting to it could make the cluster insecure. You can run this "
+                "server with the `--initial-password auto` option to allow joining "
+                "the password-protected cluster.";
+            fail_handshake(conn, peername, reason);
+            return;
         }
     }
 

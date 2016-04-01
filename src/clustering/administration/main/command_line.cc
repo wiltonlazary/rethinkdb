@@ -1144,8 +1144,8 @@ void run_rethinkdb_serve(const base_path_t &base_path,
 
                     txn.write(mdkey_auth_semilattices(), auth_data, &non_interruptor);
                 } else {
-                    logNTC("Ignoring --initial-password option because the admin password "
-                           "is already configured.");
+                    logNTC("Ignoring --initial-password option because the admin "
+                           "password is already configured.");
                 }
             }
         }
