@@ -1140,11 +1140,11 @@ void run_rethinkdb_serve(const base_path_t &base_path,
                     if we connect to another node, the configured (non-initial) password
                     is going to win again. This is consistent with how
                     `--initial-password` behaves in general. */
-                    auth_data.m_users[auth::username_t("admin")] = new_admin_pair;
+                    auth_data.m_users[new_admin_pair.first] = new_admin_pair.second;
 
                     txn.write(mdkey_auth_semilattices(), auth_data, &non_interruptor);
                 } else {
-                    logINF("Ignoring --initial-password option because the admin password "
+                    logNTC("Ignoring --initial-password option because the admin password "
                            "is already configured.");
                 }
             }

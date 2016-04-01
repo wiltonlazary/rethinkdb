@@ -45,7 +45,7 @@ public:
         : m_users({create_initial_admin_pair(initial_password)}) { }
 
     static std::pair<auth::username_t, versioned_t<boost::optional<auth::user_t>>>
-        create_initial_admin_pair(const std::string &intial_password) {
+        create_initial_admin_pair(const std::string &initial_password) {
         // Generate a timestamp that's minus our current time, so that the oldest
         // initial password wins. Unless the initial password is empty, which
         // should always lose.
