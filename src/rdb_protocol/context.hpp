@@ -419,7 +419,9 @@ public:
     rdb_context_t();
     // Also used by unit tests.
     rdb_context_t(extproc_pool_t *_extproc_pool,
-                  reql_cluster_interface_t *_cluster_interface);
+                  reql_cluster_interface_t *_cluster_interface,
+                  boost::shared_ptr<semilattice_read_view_t<auth_semilattice_metadata_t>>
+                      auth_semilattice_view);
 
     // The "real" constructor used outside of unit tests.
     rdb_context_t(
