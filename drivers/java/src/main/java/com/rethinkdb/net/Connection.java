@@ -53,7 +53,6 @@ public class Connection implements Closeable {
     public Connection(Builder builder) {
         dbname = builder.dbname;
         handshake = new Handshake(builder.username, builder.password);
-        // TODO: use Handshake class here
         hostname = builder.hostname.orElse("localhost");
         port = builder.port.orElse(28015);
         // is certFile provided? if so, it has precedence over SSLContext
