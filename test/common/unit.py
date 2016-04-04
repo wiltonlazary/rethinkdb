@@ -30,7 +30,9 @@ class AllUnitTests(test_framework.Test):
             else:
                 dict[key].append(line.strip())
         tests = test_framework.TestTree(
-            (group, UnitTest(unit_executable, group, tests))
+            (group, test_framework.TestTree({
+                test: UnitTest(unit_executable, group + '.' + test)
+                for test in tests}))
             for group, tests in dict.items())
         for filter in self.filters:
             tests = tests.filter(filter)
@@ -54,7 +56,7 @@ class UnitTest(test_framework.Test):
             raise Exception("command failed (" + str(exit_code) + "): " + command)
 
     def filter(self, filter):
-        if filter.all_same() or not self.child_tests:
+        if not self.child_tests:
             return self if filter.match() else None
         tests = test_framework.TestTree((
             (child, UnitTest(self.unit_executable, self.test + "." + child))
