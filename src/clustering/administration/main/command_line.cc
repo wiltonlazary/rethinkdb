@@ -1163,7 +1163,7 @@ void run_rethinkdb_serve(const base_path_t &base_path,
                 we still create a new admin user so that people can recover from
                 corrupted user metadata. */
                 if (admin_pair == auth_data.m_users.end()
-                    || !admin_pair->second.get_ref()
+                    || !static_cast<bool>(admin_pair->second.get_ref())
                     || admin_pair->second.get_ref()->get_password().is_empty()) {
                     auto new_admin_pair =
                         auth_semilattice_metadata_t::create_initial_admin_pair(
@@ -1277,7 +1277,7 @@ void run_rethinkdb_proxy(serve_info_t *serve_info, bool *const result_out) {
 }
 
 options::help_section_t get_server_options(std::vector<options::option_t> *options_out) {
-    options::help_section_t help("Server name options");
+    options::help_section_t help("Server options");
     options_out->push_back(options::option_t(options::names_t("--server-name", "-n"),
                                              options::OPTIONAL));
     help.add("-n [ --server-name ] arg",
@@ -1292,7 +1292,7 @@ options::help_section_t get_server_options(std::vector<options::option_t> *optio
 
     options_out->push_back(options::option_t(options::names_t("--initial-password"),
                                              options::OPTIONAL));
-    help.add("--initial-password (auto|password)",
+    help.add("--initial-password {auto | password}",
              "sets an initial password for the \"admin\" user on a new server.  If set "
              "to auto, a random password will be generated.");
 
