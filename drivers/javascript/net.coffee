@@ -1001,14 +1001,15 @@ class TcpConnection extends Connection
             # Default to admin user with no password if none is given.
             if @rawSocket.username is undefined
                 @rawSocket.username = "admin"
+            if @rawSocket.password is undefined
                 @rawSocket.password = ""
 
             client_first_message_bare = "n=" + @rawSocket.username + ",r=" + r_string
 
             message = JSON.stringify({
-                "protocol_version": protoVersionNumber,
-                "authentication_method": "SCRAM-SHA-256",
-                "authentication": "n,," + client_first_message_bare})
+                protocol_version: protoVersionNumber,
+                authentication_method: "SCRAM-SHA-256",
+                authentication: "n,," + client_first_message_bare})
 
             nullbyte = new Buffer('\0', "binary")
 
@@ -1052,6 +1053,12 @@ class TcpConnection extends Connection
 
                 return result is 0
 
+            handshake_error = (code, message) =>
+                if 10 <= code <= 20
+                    throw new err.ReqlAuthError(message)
+                else
+                    throw new err.ReqlDriverError(message)
+
             handshake_callback = (buf) =>
                 # Once we receive a response, extend the current
                 # buffer with the data from the server. The reason we
@@ -1078,37 +1085,44 @@ class TcpConnection extends Connection
                         server_reply = JSON.parse(status_str)
 
                         if state is 1
-                            if server_reply['success'] is false
-                                throw new err.ReqlDriverError(server_reply["error"])
+
                             min = server_reply['min_protocol_version']
                             max = server_reply['max_protocol_version']
 
-                            if !(min <= protoVersionNumber <= max)
+                            if min > protoVersionNumber or max < protoVersionNumber
                                 # We don't actually support changing the protocol yet, so just error.
                                 throw new err.ReqlDriverError(
                                     """Unsupported protocol version #{protoVersionNumber}, \
                                     expected between #{min} and #{max}.""")
                             state = 2
                         else if state is 2
-                            if server_reply['success'] is false
-                                throw new err.ReqlDriverError(server_reply["error"])
+                            if not server_reply['success']
+                                handshake_error(server_reply['error_code'], server_reply['error'])
 
-                            authentication = []
+                            authentication = {}
                             server_first_message = server_reply['authentication']
 
                             for item in server_first_message.split(",")
-                                authentication.push(item.split("=")[1])
+                                i = item.indexOf("=")
+                                authentication[item.slice(0, i)] = item.slice(i+1)
+                            console.log("#####")
+                            console.log server_first_message
 
-                            auth_r = authentication[0]
-                            authentication[1] = authentication[1]+"=="
-                            auth_salt = new Buffer(authentication[1], 'base64') # MAYBE
-                            auth_i = parseInt(authentication[2])
+                            auth_r = authentication['r']
+                            auth_salt = new Buffer(authentication['s'], 'base64')
+                            auth_i = parseInt(authentication['i'])
+                            console.log auth_r
+                            console.log auth_salt.toString("base64")
+                            console.log auth_i
 
-                            if not auth_r.startsWith(r_string)
+                            if not auth_r.substr(0, r_string) == r_string
                                 throw new err.ReqlAuthError("Invalid nonce from server")
 
                             client_final_message_without_proof = "c=biws,r=" + auth_r
 
+                            console.log @rawSocket.password
+                            console.log auth_salt
+                            console.log auth_i
                             salted_password = crypto.pbkdf2Sync(@rawSocket.password, auth_salt, auth_i, 32, "sha256")
                             client_key = crypto.createHmac("sha256", salted_password).update("Client Key").digest()
                             stored_key = crypto.createHash("sha256").update(client_key).digest()
@@ -1126,16 +1140,18 @@ class TcpConnection extends Connection
 
                             state = 3
 
-                            message = JSON.stringify({"authentication": client_final_message_without_proof + ",p=" + client_proof.toString("base64")})
+                            message = JSON.stringify({authentication: client_final_message_without_proof + ",p=" + client_proof.toString("base64")})
 
                             nullbyte = new Buffer('\0', "binary")
 
                             @rawSocket.write Buffer.concat([Buffer(message.toString()), nullbyte])
                         else if state is 3
-                            if server_reply['success'] is false
-                                throw new err.ReqlDriverError(server_reply["error"])
+                            if not server_reply['success']
+                                handshake_error(server_reply['error_code'], server_reply['error'])
 
-                            v = server_reply["authentication"].split("=")[1] + "="
+                            first_equals = server_reply["authentication"].indexOf('=')
+                            v = [server_reply["authentication"].slice(0, first_equals), server_reply["authentication".slice(first_equals+1)]]
+
                             if not compare_digest(v, server_signature.toString("base64"))
                                 throw new err.ReqlAuthError("Invalid server signature")
 
