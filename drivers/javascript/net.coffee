@@ -1150,7 +1150,7 @@ class TcpConnection extends Connection
                                 handshake_error(server_reply['error_code'], server_reply['error'])
 
                             first_equals = server_reply["authentication"].indexOf('=')
-                            v = [server_reply["authentication"].slice(0, first_equals), server_reply["authentication".slice(first_equals+1)]]
+                            v = server_reply["authentication".slice(first_equals+1)]
 
                             if not compare_digest(v, server_signature.toString("base64"))
                                 throw new err.ReqlAuthError("Invalid server signature")
