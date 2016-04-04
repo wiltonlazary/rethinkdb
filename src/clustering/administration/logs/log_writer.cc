@@ -390,30 +390,21 @@ log_message_t fallback_log_writer_t::assemble_log_message(
 bool fallback_log_writer_t::write(const log_message_t &msg, std::string *error_out) {
     std::string formatted = format_log_message(msg) + "\n";
 
-#ifdef _MSC_VER
-    static int STDOUT_FILENO = -1;
-    static int STDERR_FILENO = -1;
-    if (STDOUT_FILENO == -1) {
-        STDOUT_FILENO = _open("conout$", _O_RDONLY, 0);
-        STDERR_FILENO = STDOUT_FILENO;
-    }
-#endif
-
     FILE* write_stream = nullptr;
-    int fileno = -1;
+    fd_t filefd = INVALID_FD;
     switch (msg.level) {
         case log_level_info:
             // no message on stdout/stderr
             break;
         case log_level_notice:
             write_stream = stdout;
-            fileno = STDOUT_FILENO;
+            filefd = STDOUT_FD;
             break;
         case log_level_debug:
         case log_level_warn:
         case log_level_error:
             write_stream = stderr;
-            fileno = STDERR_FILENO;
+            filefd = STDERR_FD;
             break;
         default:
             unreachable();
@@ -430,20 +421,24 @@ bool fallback_log_writer_t::write(const log_message_t &msg, std::string *error_o
 #endif
 
 #ifdef _WIN32
-        size_t write_res = fwrite(console_formatted.data(), 1, console_formatted.length(), stderr);
+        DWORD bytes_written = 0;
+        BOOL res = WriteFile(filefd, console_formatted.data(), console_formatted.length(), &bytes_written, nullptr);
+        if (!res || bytes_written != console_formatted.length()) {
+            error_out->assign("cannot write to stdout/stderr: " + winerr_string(GetLastError()));
+            return false;
+        }
 #else
-        ssize_t write_res = ::write(fileno, console_formatted.data(), console_formatted.length());
-#endif
-        if (write_res != static_cast<decltype(write_res)>(console_formatted.length())) {
+        ssize_t write_res = ::write(filefd, console_formatted.data(), console_formatted.length());
+        if (write_res != static_cast<ssize_t>(console_formatted.length())) {
             error_out->assign("cannot write to stdout/stderr: " + errno_string(get_errno()));
             return false;
         }
-
+#endif
 
 #ifdef _WIN32
         // WINDOWS TODO
 #else
-        int fsync_res = fsync(fileno);
+        int fsync_res = fsync(filefd);
         if (fsync_res != 0 && !(get_errno() == EROFS || get_errno() == EINVAL ||
                 get_errno() == ENOTSUP)) {
             error_out->assign("cannot flush stdout/stderr: " + errno_string(get_errno()));
@@ -468,7 +463,7 @@ bool fallback_log_writer_t::write(const log_message_t &msg, std::string *error_o
 
 #ifdef _WIN32
     DWORD bytes_written;
-    BOOL res = WriteFile(fd.get(), formatted.data(), formatted.length(), &bytes_written, NULL);
+    BOOL res = WriteFile(fd.get(), formatted.data(), formatted.length(), &bytes_written, nullptr);
     if (!res) {
         error_out->assign("cannot write to log file: " + winerr_string(GetLastError()));
         return false;
@@ -568,7 +563,7 @@ std::vector<log_message_t> thread_pool_log_writer_t::tail(
 
 void thread_pool_log_writer_t::install_on_thread(int i) {
     on_thread_t thread_switcher((threadnum_t(i)));
-    guarantee(TLS_get_global_log_writer() == NULL);
+    guarantee(TLS_get_global_log_writer() == nullptr);
     TLS_set_global_log_drainer(new auto_drainer_t);
     TLS_set_global_log_writer(this);
 }

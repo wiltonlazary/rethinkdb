@@ -30,8 +30,8 @@ extproc_worker_t::extproc_worker_t(extproc_spawner_t *_spawner) :
 extproc_worker_t::~extproc_worker_t() {
     if (worker_pid != INVALID_PROCESS_ID) {
 #ifdef _WIN32
-        windows_event_watcher->rethread(get_thread_id());
-        socket_stream.create(socket.get(), windows_event_watcher.get());
+        socket_event_watcher->rethread(get_thread_id());
+        socket_stream.create(socket.get(), socket_event_watcher.get());
 #else
         socket_stream.create(socket.get());
 #endif
@@ -72,21 +72,21 @@ void extproc_worker_t::acquired(signal_t *_interruptor) {
 
 #ifdef _WIN32
         new_worker = true;
-        windows_event_watcher.create(socket.get(), nullptr);
+        socket_event_watcher.create(socket.get(), nullptr);
 #endif
     }
 
 #ifdef _WIN32
-    windows_event_watcher->rethread(get_thread_id());
-    socket_stream.create(socket.get(), windows_event_watcher.get());
+    socket_event_watcher->rethread(get_thread_id());
+    socket_stream.create(socket.get(), socket_event_watcher.get());
 #else
     socket_stream.create(socket.get());
 #endif
 
     // Apply the user interruptor to our stream along with the extproc pool's interruptor
-    guarantee(interruptor == NULL);
+    guarantee(interruptor == nullptr);
     interruptor = _interruptor;
-    guarantee(interruptor != NULL);
+    guarantee(interruptor != nullptr);
     socket_stream.get()->set_interruptor(interruptor);
 
 #ifdef _WIN32
@@ -98,11 +98,11 @@ void extproc_worker_t::acquired(signal_t *_interruptor) {
 }
 
 void extproc_worker_t::released(bool user_error, signal_t *user_interruptor) {
-    guarantee(interruptor != NULL);
+    guarantee(interruptor != nullptr);
     bool errored = user_error;
 
     // If we were interrupted by the user, we can't count on the worker being valid
-    if (user_interruptor != NULL && user_interruptor->is_pulsed()) {
+    if (user_interruptor != nullptr && user_interruptor->is_pulsed()) {
         errored = true;
     } else if (!errored) {
         // Set up a timeout interruptor for the final write/read
@@ -140,7 +140,7 @@ void extproc_worker_t::released(bool user_error, signal_t *user_interruptor) {
     }
 
     socket_stream.reset();
-    interruptor = NULL;
+    interruptor = nullptr;
 
     // If anything went wrong, we just kill the worker and recreate it later
     if (errored) {
@@ -163,8 +163,8 @@ void extproc_worker_t::kill_process() {
     if (!res) {
         logWRN("failed to kill worker process: %s", winerr_string(GetLastError()).c_str());
     }
-    windows_event_watcher->rethread(get_thread_id());
-    windows_event_watcher.reset();
+    socket_event_watcher->rethread(get_thread_id());
+    socket_event_watcher.reset();
 #else
     ::kill(worker_pid, SIGKILL);
 #endif

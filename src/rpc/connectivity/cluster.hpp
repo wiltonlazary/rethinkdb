@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "arch/types.hpp"
+#include "arch/io/openssl.hpp"
 #include "concurrency/auto_drainer.hpp"
 #include "concurrency/mutex.hpp"
 #include "concurrency/one_per_thread.hpp"
@@ -18,6 +19,7 @@
 #include "concurrency/pump_coro.hpp"
 #include "perfmon/perfmon.hpp"
 #include "rpc/connectivity/peer_id.hpp"
+#include "rpc/connectivity/server_id.hpp"
 #include "utils.hpp"
 
 namespace boost {
@@ -125,7 +127,7 @@ public:
 
         /* Returns `true` if this is the loopback connection */
         bool is_loopback() const {
-            return conn == NULL;
+            return conn == nullptr;
         }
 
         /* Drops the connection. */
@@ -186,7 +188,8 @@ public:
               int port,
               int client_port,
               boost::shared_ptr<semilattice_read_view_t<
-                  heartbeat_semilattice_metadata_t> > heartbeat_sl_view)
+                  heartbeat_semilattice_metadata_t> > heartbeat_sl_view,
+              tls_ctx_t *tls_ctx)
             THROWS_ONLY(address_in_use_exc_t, tcp_socket_exc_t);
 
         ~run_t();
@@ -209,13 +212,13 @@ public:
         class variable_setter_t {
         public:
             variable_setter_t(run_t **var, run_t *val) : variable(var) , value(val) {
-                guarantee(*variable == NULL);
+                guarantee(*variable == nullptr);
                 *variable = value;
             }
 
             ~variable_setter_t() THROWS_NOTHING {
                 guarantee(*variable == value);
-                *variable = NULL;
+                *variable = nullptr;
             }
         private:
             run_t **variable;
@@ -266,6 +269,8 @@ public:
         a single connection per server. */
         server_id_t server_id;
         std::set<server_id_t> servers;
+
+        tls_ctx_t *tls_ctx;
 
         /* `attempt_table` is a table of all the host:port pairs we're currently
         trying to connect to or have connected to. If we are told to connect to

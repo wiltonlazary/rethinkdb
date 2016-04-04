@@ -317,12 +317,12 @@ git_clone_tag () {
     )
 }
 
-# Download a file to stdout
+# Download a file
 geturl () {
     if [[ -n "${CURL:-}" ]]; then
-        $CURL --silent --fail --location "$@"
+        $CURL --silent -S --fail --location "$1" -o "$2"
     else
-        ${WGET:-wget} --quiet --output-document=- "$@"
+        ${WGET:-wget} --quiet --output-document="$2" "$1" 
     fi
 }
 

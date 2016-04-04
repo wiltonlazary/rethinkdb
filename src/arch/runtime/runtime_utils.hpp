@@ -4,6 +4,7 @@
 
 #include <signal.h>
 #include <stdint.h>
+#include <unistd.h>
 
 #include "config/args.hpp"
 #include "containers/intrusive_list.hpp"
@@ -12,6 +13,8 @@
 
 typedef HANDLE fd_t;
 const fd_t INVALID_FD = INVALID_HANDLE_VALUE;
+const fd_t STDOUT_FD = GetStdHandle(STD_OUTPUT_HANDLE);
+const fd_t STDERR_FD = GetStdHandle(STD_ERROR_HANDLE);
 
 inline SOCKET fd_to_socket(fd_t handle) {
     CT_ASSERT(sizeof(SOCKET) == sizeof(HANDLE));
@@ -26,6 +29,8 @@ inline fd_t socket_to_fd(SOCKET s) {
 
 typedef int fd_t;
 const fd_t INVALID_FD = -1;
+const fd_t STDOUT_FD = STDOUT_FILENO;
+const fd_t STDERR_FD = STDERR_FILENO;
 
 inline int fd_to_socket(fd_t fd) {
     return fd;

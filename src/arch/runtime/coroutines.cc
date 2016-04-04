@@ -11,10 +11,6 @@
 #include <stack>
 #endif
 
-#ifdef _WIN32
-#include <Ntsecapi.h>
-#endif
-
 #include "arch/runtime/context_switching.hpp"
 #include "arch/runtime/coro_profiler.hpp"
 #include "arch/runtime/runtime.hpp"
@@ -75,8 +71,8 @@ struct coro_globals_t {
 #endif  // NDEBUG
 
     coro_globals_t()
-        : current_coro(NULL)
-        , prev_coro(NULL)
+        : current_coro(nullptr)
+        , prev_coro(nullptr)
 #ifndef NDEBUG
         , coro_count(0)
         , printed_high_coro_count_warning(false)
@@ -307,7 +303,7 @@ void coro_t::notify_now_deprecated() {
     TLS_get_cglobals()->assert_finite_coro_waiting_counter = 0;
 #endif
 
-    if (coro_t::self() != NULL) {
+    if (coro_t::self() != nullptr) {
         PROFILER_CORO_YIELD(1);
     }
     coro_t *prev_prev_coro = TLS_get_cglobals()->prev_coro;
@@ -323,7 +319,7 @@ void coro_t::notify_now_deprecated() {
     rassert(TLS_get_cglobals()->current_coro == this);
     TLS_get_cglobals()->current_coro = TLS_get_cglobals()->prev_coro;
     TLS_get_cglobals()->prev_coro = prev_prev_coro;
-    if (coro_t::self() != NULL) {
+    if (coro_t::self() != nullptr) {
         PROFILER_CORO_RESUME;
     }
 
@@ -389,88 +385,7 @@ bool is_coroutine_stack_overflow(void *addr) {
     return TLS_get_cglobals()->current_coro && TLS_get_cglobals()->current_coro->stack.address_is_stack_overflow(addr);
 }
 
-
-#ifdef _WIN32
-// These definitions used by has_n_bytes_free_stack_space are
-// from http://undocumented.ntinternals.net/
-
-typedef struct {
-    PVOID UniqueProcess;
-    PVOID UniqueThread;
-} CLIENT_ID;
-
-typedef LONG KPRIORITY;
-
-typedef struct {
-    NTSTATUS ExitStatus;
-    PVOID TebBaseAddress;
-    CLIENT_ID ClientId;
-    KAFFINITY AffinityMask;
-    KPRIORITY Priority;
-    KPRIORITY BasePriority;
-} THREAD_BASIC_INFORMATION;
-
-typedef NTSYSAPI NTSTATUS
-(NTAPI *NtReadVirtualMemory_t)(IN HANDLE               ProcessHandle,
-                               IN PVOID                BaseAddress,
-                               OUT PVOID               Buffer,
-                               IN ULONG                NumberOfBytesToRead,
-                               OUT PULONG              NumberOfBytesReaded);
-
-enum THREADINFOCLASS { ThreadBasicInformation = 0 };
-
-typedef NTSTATUS
-(WINAPI *NtQueryInformationThread_t)(HANDLE          ThreadHandle,
-                                     THREADINFOCLASS ThreadInformationClass,
-                                     PVOID           ThreadInformation,
-                                     ULONG           ThreadInformationLength,
-                                     PULONG          ReturnLength);
-#endif
-
 bool has_n_bytes_free_stack_space(size_t n) {
-#ifdef _WIN32
-    static HMODULE ntdll = LoadLibrary("ntdll.dll");
-    static NtQueryInformationThread_t NtQueryInformationThread =
-        reinterpret_cast<NtQueryInformationThread_t>(
-            GetProcAddress(ntdll, "NtQueryInformationThread"));
-    static NtReadVirtualMemory_t NtReadVirtualMemory =
-        reinterpret_cast<NtReadVirtualMemory_t>(
-            GetProcAddress(ntdll, "NtReadVirtualMemory"));
-    static bool warned = false;
-    if (NtQueryInformationThread == nullptr ||
-        NtReadVirtualMemory == nullptr) {
-        if (!warned) {
-            logWRN("GetProcAddress failed");
-            warned = true;
-        }
-        return true;
-    }
-    THREAD_BASIC_INFORMATION info;
-    NTSTATUS res = NtQueryInformationThread(GetCurrentThread(),
-                                            ThreadBasicInformation,
-                                            &info,
-                                            sizeof(info),
-                                            nullptr);
-    if (res != 0) {
-        logWRN("NtQueryInformationThread failed: %s",
-               winerr_string(LsaNtStatusToWinError(res)).c_str());
-        return true;
-    }
-    NT_TIB tib;
-    res = NtReadVirtualMemory(GetCurrentProcess(),
-                              info.TebBaseAddress,
-                              &tib,
-                              sizeof(tib),
-                              nullptr);
-    if (res != 0) {
-        logWRN("NtReadVirtualMemory failed: %s",
-               winerr_string(LsaNtStatusToWinError(res)).c_str());
-        return true;
-    }
-    char dummy;
-    rassert(&dummy <= tib.StackBase && &dummy > tib.StackLimit);
-    return &dummy - reinterpret_cast<char*>(tib.StackLimit) > n;
-#else
     // We assume that `tester` is going to be allocated on the stack.
     // Theoretically this is not guaranteed by the C++ standard, but in practice
     // it should work.
@@ -478,11 +393,10 @@ bool has_n_bytes_free_stack_space(size_t n) {
     const coro_t *current_coro = coro_t::self();
     guarantee(current_coro != nullptr);
     return current_coro->stack.free_space_below(&tester) >= n;
-#endif
 }
 
 bool coroutines_have_been_initialized() {
-    return TLS_get_cglobals() != NULL;
+    return TLS_get_cglobals() != nullptr;
 }
 
 coro_t * coro_t::get_coro() {
@@ -555,7 +469,7 @@ void coro_t::grab_spawn_backtrace() {
     // If we have space left and were called from inside a coroutine,
     // we also append the parent's spawn_backtrace.
     int space_remaining = CROSS_CORO_BACKTRACES_MAX_SIZE - spawn_backtrace_size;
-    if (space_remaining > 0 && self() != NULL) {
+    if (space_remaining > 0 && self() != nullptr) {
         spawn_backtrace_size += self()->copy_spawn_backtrace(spawn_backtrace + spawn_backtrace_size,
                                                              space_remaining);
     }
@@ -568,7 +482,7 @@ int coro_t::copy_spawn_backtrace(void **buffer_out, int size) const {
 int coro_t::copy_spawn_backtrace(void **, int) const {
 #endif
 #ifdef CROSS_CORO_BACKTRACES
-    guarantee(buffer_out != NULL);
+    guarantee(buffer_out != nullptr);
     guarantee(size >= 0);
     int num_frames_to_store = std::min(size, spawn_backtrace_size);
     memcpy(buffer_out,
