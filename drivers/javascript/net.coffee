@@ -994,7 +994,6 @@ class TcpConnection extends Connection
             protocol.writeUInt32LE(protoProtocol, 0)
 
             r_string = new Buffer(crypto.randomBytes(18)).toString('base64')
-            r_string = "rOprNGfwEbeRWgbNEkqO" #TODO
 
             @rawSocket.username = host["username"]
             @rawSocket.password = host["password"]
@@ -1004,9 +1003,6 @@ class TcpConnection extends Connection
                 @rawSocket.username = "admin"
             if @rawSocket.password is undefined
                 @rawSocket.password = ""
-
-            @rawSocket.username = "user"
-            @rawSocket.password = "pencil"
 
             client_first_message_bare = "n=" + @rawSocket.username + ",r=" + r_string
 
@@ -1105,19 +1101,14 @@ class TcpConnection extends Connection
 
                             authentication = {}
                             server_first_message = server_reply['authentication']
-                            server_first_message = "r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,s=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096" #todo
 
                             for item in server_first_message.split(",")
-                                console.log "item " + item.toString()
                                 i = item.indexOf("=")
                                 authentication[item.slice(0, i)] = item.slice(i+1)
                             auth_r = authentication['r']
                             auth_salt = new Buffer(authentication['s'], 'base64')
                             auth_i = parseInt(authentication['i'])
 
-                            console.log "auth_r " + auth_r
-                            console.log "auth_salt " + auth_salt.toString('base64')
-                            console.log "auth_i " + auth_i
                             if not auth_r.substr(0, r_string) == r_string
                                 throw new err.ReqlAuthError("Invalid nonce from server")
 
@@ -1132,16 +1123,12 @@ class TcpConnection extends Connection
                                 server_first_message + "," +
                                 client_final_message_without_proof
 
-                            client_signature = crypto.createHmac("sha256", stored_key).update(auth_message).digest()
+                            client_signature = crypto.createHmac("sha256", stored_key).update(auth_message, 'ascii').digest()
                             client_proof = xor_bytes(client_key, client_signature)
 
                             server_key = crypto.createHmac("sha256", salted_password).update("Server Key").digest()
                             server_signature = crypto.createHmac("sha256", server_key).update(auth_message).digest()
 
-                            console.log "client_signature " + client_signature.toString("base64")
-                            console.log "client_proof " + client_proof.toString("base64")
-                            console.log "server_key " + server_key.toString("base64")
-                            console.log "server_signature " + server_signature.toString("base64")
                             state = 3
 
                             message = JSON.stringify({authentication: client_final_message_without_proof + ",p=" + client_proof.toString("base64")})
