@@ -71,16 +71,7 @@ rdb_context_t::rdb_context_t(
       manager(nullptr),
       reql_http_proxy(),
       stats(&get_global_perfmon_collection()) {
-    if (auth_semilattice_view) {
-        for (int thread = 0; thread < get_num_threads(); ++thread) {
-            m_cross_thread_auth_watchables.emplace_back(
-                new cross_thread_watchable_variable_t<auth_semilattice_metadata_t>(
-                    clone_ptr_t<semilattice_watchable_t<auth_semilattice_metadata_t>>(
-                        new semilattice_watchable_t<auth_semilattice_metadata_t>(
-                            auth_semilattice_view)),
-                    threadnum_t(thread)));
-        }
-    }
+    init_auth_watchables(auth_semilattice_view);
 }
 
 rdb_context_t::rdb_context_t(
@@ -96,6 +87,12 @@ rdb_context_t::rdb_context_t(
       manager(_mailbox_manager),
       reql_http_proxy(_reql_http_proxy),
       stats(global_stats) {
+    init_auth_watchables(auth_semilattice_view);
+}
+
+void rdb_context_t::init_auth_watchables(
+    boost::shared_ptr<semilattice_read_view_t<auth_semilattice_metadata_t>>
+        auth_semilattice_view) {
     for (int thread = 0; thread < get_num_threads(); ++thread) {
         m_cross_thread_auth_watchables.emplace_back(
             new cross_thread_watchable_variable_t<auth_semilattice_metadata_t>(

@@ -465,6 +465,10 @@ public:
     clone_ptr_t<watchable_t<auth_semilattice_metadata_t>> get_auth_watchable() const;
 
 private:
+    void init_auth_watchables(
+        boost::shared_ptr<semilattice_read_view_t<auth_semilattice_metadata_t>>
+            auth_semilattice_view);
+
     std::vector<std::unique_ptr<cross_thread_watchable_variable_t<
         auth_semilattice_metadata_t>>> m_cross_thread_auth_watchables;
 
