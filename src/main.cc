@@ -7,6 +7,7 @@
 #include <set>
 
 #include "clustering/administration/main/command_line.hpp"
+#include "crypto/initialization_guard.hpp"
 #include "utils.hpp"
 #include "config/args.hpp"
 #include "extproc/extproc_spawner.hpp"
@@ -21,6 +22,7 @@ int main(int argc, char *argv[]) {
 #endif
 
     startup_shutdown_t startup_shutdown;
+    crypto::initialization_guard_t crypto_initialization_guard;
 
 #ifdef _WIN32
     extproc_maybe_run_worker(argc, argv);
