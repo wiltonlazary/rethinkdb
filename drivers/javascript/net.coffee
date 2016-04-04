@@ -1085,7 +1085,6 @@ class TcpConnection extends Connection
                         server_reply = JSON.parse(status_str)
 
                         if state is 1
-
                             min = server_reply['min_protocol_version']
                             max = server_reply['max_protocol_version']
 
@@ -1123,7 +1122,7 @@ class TcpConnection extends Connection
                                 server_first_message + "," +
                                 client_final_message_without_proof
 
-                            client_signature = crypto.createHmac("sha256", stored_key).update(auth_message, 'ascii').digest()
+                            client_signature = crypto.createHmac("sha256", stored_key).update(auth_message).digest()
                             client_proof = xor_bytes(client_key, client_signature)
 
                             server_key = crypto.createHmac("sha256", salted_password).update("Server Key").digest()
