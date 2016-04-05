@@ -905,6 +905,11 @@ class Connection extends events.EventEmitter
         # string.
         @_writeQuery(query.token, JSON.stringify(data))
 
+
+# Global cache variable for storing the results of pbkdf2_hmac
+
+pbkdf2_cache = {}
+
 # ### TcpConnection
 #
 # This class implements all of the TCP specific behavior for normal
@@ -1039,7 +1044,10 @@ class TcpConnection extends Connection
             # We implement this ourselves because early versions of node will ignore the "sha256" option
             # and just return the hash for sha1.
             pbkdf2_hmac = (password, salt, iterations) =>
-                return @rawSocket.salted_password if @rawSocket.salted_password?
+                cache_string = password.toString("base64") + "," + salt.toString("base64") + "," + iterations.toString()
+                if pbkdf2_cache[cache_string]
+                    return pbkdf2_cache[cache_string]
+
                 mac = crypto.createHmac("sha256", password)
 
                 mac.update(salt)
@@ -1052,8 +1060,8 @@ class TcpConnection extends Connection
                     t = mac.digest()
                     u = xor_bytes(u, t)
 
-                @rawSocket.salted_password = u
-                return @rawSocket.salted_password
+                pbkdf2_cache[cache_string] = u
+                return u
 
             compare_digest = (a, b) ->
                 left = undefined
