@@ -1102,7 +1102,6 @@ EOF
     if [! $CXX ${CXXFLAGS:-} ${LDFLAGS:-} ${LIB_SEARCH_PATHS:-} "$tmpfile.cc" \
           -std=c++11 -o "$tmpfile.out" 1>"$tmpfile.log" 2>&1;
         $tmpfile.out ]
-       -std=c++11 -o "$tmpfile.out" 1>"$tmpfile.log" 2>&1; $tmpfile.out
     then
         :
     else
