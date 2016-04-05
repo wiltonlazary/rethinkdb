@@ -52,12 +52,12 @@ public class Connection implements Closeable {
 
     public Connection(Builder builder) {
         dbname = builder.dbname;
-        if (builder.authKey.isPresent() && builder.username.isPresent()) {
+        if (builder.authKey.isPresent() && builder.user.isPresent()) {
             throw new ReqlDriverError("Either `authKey` or `user` can be used, but not both.");
         }
-        String username = builder.username.orElse("admin");
+        String user = builder.user.orElse("admin");
         String password = builder.password.orElse(builder.authKey.orElse(""));
-        handshake = new Handshake(username, password);
+        handshake = new Handshake(user, password);
         hostname = builder.hostname.orElse("localhost");
         port = builder.port.orElse(28015);
         // is certFile provided? if so, it has precedence over SSLContext
@@ -330,7 +330,7 @@ public class Connection implements Closeable {
         private Optional<SSLContext> sslContext = Optional.empty();
         private Optional<Long> timeout = Optional.empty();
         private Optional<String> authKey = Optional.empty();
-        private Optional<String> username = Optional.empty();
+        private Optional<String> user = Optional.empty();
         private Optional<String> password = Optional.empty();
 
         public Builder clone() throws CloneNotSupportedException {
@@ -342,7 +342,7 @@ public class Connection implements Closeable {
             c.sslContext = sslContext;
             c.timeout = timeout;
             c.authKey = authKey;
-            c.username = username;
+            c.user = user;
             c.password = password;
             return c;
         }
@@ -367,8 +367,8 @@ public class Connection implements Closeable {
             return this;
         }
 
-        public Builder user(String username, String password) {
-            this.username = Optional.of(username);
+        public Builder user(String user, String password) {
+            this.user = Optional.of(user);
             this.password = Optional.of(password);
             return this;
         }
