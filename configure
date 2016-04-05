@@ -321,7 +321,6 @@ set_custom_allocator () {
 # Description of some of the dependencies
 dep_descrs=':
 cxx:C++ Compiler
-clang_bug:Clang bug
 protoc:Protobuf compiler
 npm:Node.js package manager
 unwind:libunwind
@@ -1108,7 +1107,7 @@ EOF
 	boolvar clang_bug false
     else
 	boolvar clang_bug true
-        die "You seem to be using a version of Clang with a bug that may affect Rethink DB. Please upgrade Clang or specify a different compiler."
+        error "You seem to be using a version of Clang with a bug that may affect Rethink DB. Please upgrade Clang or specify a different compiler."
     fi
 }
 
