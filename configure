@@ -100,7 +100,7 @@ configure () {
         esac
 
         check_clang_bug
-        if
+
     fi
     check_cxx11
     require "Precompiled web assets"
