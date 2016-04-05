@@ -39,7 +39,7 @@ usage = "\
   rethinkdb import -d DIR [-c HOST:PORT] [-a AUTH_KEY] [--force]\n\
       [-i (DB | DB.TABLE)] [--clients NUM]\n\
       [--shards NUM_SHARDS] [--replicas NUM_REPLICAS]\n\
-  rethinkdb import -f FILE --table DB.TABLE [-c HOST:PORT] [--tls-cert FILENAME\n\
+  rethinkdb import -f FILE --table DB.TABLE [-c HOST:PORT] [--tls-cert FILENAME] [-p] [--password-file FILENAME] \n\
       [--force] [--clients NUM] [--format (csv | json)] [--pkey PRIMARY_KEY]\n\
       [--shards NUM_SHARDS] [--replicas NUM_REPLICAS]\n\
       [--delimiter CHARACTER] [--custom-header FIELD,FIELD... [--no-header]]"
@@ -52,6 +52,8 @@ def print_import_help():
     print("  -c [ --connect ] HOST:PORT       host and client port of a rethinkdb node to connect")
     print("                                   to (defaults to localhost:28015)")
     print("  --tls-cert FILENAME              certificate file to use for TLS encryption.")
+    print("  -p [ --password ]                interactively prompt for a password required to connect.")
+    print("  --password-file FILENAME         read password required to connect from file.")
     print("  --clients NUM_CLIENTS            the number of client connections to use (defaults")
     print("                                   to 8)")
     print("  --hard-durability                use hard durability writes (slower, but less memory")

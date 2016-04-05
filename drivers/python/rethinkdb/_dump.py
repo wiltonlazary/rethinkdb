@@ -6,7 +6,7 @@ from optparse import OptionParser
 from ._backup import *
 
 info = "'rethinkdb dump' creates an archive of data from a RethinkDB cluster"
-usage = "rethinkdb dump [-c HOST:PORT] [--tls-cert FILENAME] [-f FILE] [--clients NUM] [-e (DB | DB.TABLE)]..."
+usage = "rethinkdb dump [-c HOST:PORT] [-p] [--password-file FILENAME] [--tls-cert FILENAME] [-f FILE] [--clients NUM] [-e (DB | DB.TABLE)]..."
 
 def print_dump_help():
     print(info)
@@ -16,6 +16,8 @@ def print_dump_help():
     print("  -c [ --connect ] HOST:PORT       host and client port of a rethinkdb node to connect")
     print("                                   to (defaults to localhost:28015)")
     print("  --tls-cert FILENAME              certificate file to use for TLS encryption.")
+    print("  -p [ --password ]                interactively prompt for a password required to connect.")
+    print("  --password-file FILENAME         read password required to connect from file.")
     print("  -f [ --file ] FILE               file to write archive to (defaults to")
     print("                                   rethinkdb_dump_DATE_TIME.tar.gz)")
     print("  -e [ --export ] (DB | DB.TABLE)  limit dump to the given database or table (may")
@@ -102,9 +104,9 @@ def do_export(temp_dir, options):
     export_args = ["rethinkdb-export"]
     export_args.extend(["--connect", "%s:%s" % (options["host"], options["port"])])
     export_args.extend(["--directory", os.path.join(temp_dir, options["temp_filename"])])
-    if (options["password"] is not False):
+    if options["password"]:
         export_args.extend(["--password", ""])
-    if (options["password-file"] is not None):
+    if options["password-file"]:
         export_args.extend(["--password-file", options["password-file"]])
     export_args.extend(["--clients", str(options["clients"])])
 

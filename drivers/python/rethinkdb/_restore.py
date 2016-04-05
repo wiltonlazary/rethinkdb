@@ -6,7 +6,7 @@ from optparse import OptionParser
 from ._backup import *
 
 info = "'rethinkdb restore' loads data into a RethinkDB cluster from an archive"
-usage = "rethinkdb restore FILE [-c HOST:PORT] [--tls-cert FILENAME] [--clients NUM] [--shards NUM_SHARDS] [--replicas NUM_REPLICAS] [--force] [-i (DB | DB.TABLE)]..."
+usage = "rethinkdb restore FILE [-c HOST:PORT] [--tls-cert FILENAME] [-p] [--password-file FILENAME] [--clients NUM] [--shards NUM_SHARDS] [--replicas NUM_REPLICAS] [--force] [-i (DB | DB.TABLE)]..."
 
 def print_restore_help():
     print(info)
@@ -17,6 +17,8 @@ def print_restore_help():
     print("  -c [ --connect ] HOST:PORT       host and client port of a rethinkdb node to connect")
     print("                                   to (defaults to localhost:28015)")
     print("  --tls-cert FILENAME              certificate file to use for TLS encryption.")
+    print("  -p [ --password ]                interactively prompt for a password required to connect.")
+    print("  --password-file FILENAME         read password required to connect from file.")
     print("  -i [ --import ] (DB | DB.TABLE)  limit restore to the given database or table (may")
     print("                                   be specified multiple times)")
     print("  --clients NUM_CLIENTS            the number of client connections to use (defaults")
@@ -164,9 +166,9 @@ def do_import(temp_dir, options):
     import_args = ["rethinkdb-import"]
     import_args.extend(["--connect", "%s:%s" % (options["host"], options["port"])])
     import_args.extend(["--directory", temp_dir])
-    if (options["password"] is not False):
+    if options["password"]:
         import_args.extend(["--password", ""])
-    if (options["password-file"] is not None):
+    if options["password-file"]:
         import_args.extend(["--password-file", options["password-file"]])
     import_args.extend(["--clients", str(options["clients"])])
     import_args.extend(["--shards", str(options["shards"])])
