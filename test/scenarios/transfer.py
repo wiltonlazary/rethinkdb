@@ -44,7 +44,7 @@ with driver.Cluster(initial_servers=['first'], output_folder='.', command_prefix
     
     server2 = driver.Process(cluster=cluster, name='second', command_prefix=command_prefix, extra_options=serve_options, wait_until_ready=True)
     
-    issues = list(r.db('rethinkdb').table('current_issues').filter(r.row["type"] != "memory_error").run(conn1)) # filter for issue 5578
+    issues = list(r.db('rethinkdb').table('current_issues').filter(r.row["type"] != "memory_error").run(conn1))
     assert [] == issues, 'The issues list was not empty: %s' % repr(issues)
     
     utils.print_with_time("Explicitly adding server to the table")

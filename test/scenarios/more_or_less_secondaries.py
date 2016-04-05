@@ -67,7 +67,7 @@ with driver.Cluster(output_folder='.', initial_servers=numReplicas + 1, console_
     
     r.db(dbName).wait(wait_for="all_replicas_ready").run(conn)
     cluster.check()
-    issues = list(r.db('rethinkdb').table('current_issues').filter(r.row["type"] != "memory_error").run(conn)) # filter for issue 5578
+    issues = list(r.db('rethinkdb').table('current_issues').filter(r.row["type"] != "memory_error").run(conn))
     assert len(issues) == 0, 'There were issues on the server: %s' % str(issues)
     
     utils.print_with_time('Starting workload')
@@ -78,7 +78,7 @@ with driver.Cluster(output_folder='.', initial_servers=numReplicas + 1, console_
         workload.run_before()
         
         cluster.check()
-        res = list(r.db('rethinkdb').table('current_issues').filter(r.row["type"] != "memory_error").run(conn)) # filter for issue 5578
+        res = list(r.db('rethinkdb').table('current_issues').filter(r.row["type"] != "memory_error").run(conn))
         assert res == [], 'There were unexpected issues: \n%s' % utils.RePrint.pformat(res)
         workload.check()
         
@@ -97,11 +97,11 @@ with driver.Cluster(output_folder='.', initial_servers=numReplicas + 1, console_
             r.db(dbName).wait(wait_for="all_replicas_ready").run(conn) # ToDo: add timeout when avalible
             
             cluster.check()
-            res = list(r.db('rethinkdb').table('current_issues').filter(r.row["type"] != "memory_error").run(conn)) # filter for issue 5578
+            res = list(r.db('rethinkdb').table('current_issues').filter(r.row["type"] != "memory_error").run(conn))
             assert res == [], 'There were unexpected issues after step %d: \n%s' % (i, utils.RePrint.pformat(res))
         workload.run_after()
     
-    res = list(r.db('rethinkdb').table('current_issues').filter(r.row["type"] != "memory_error").run(conn)) # filter for issue 5578
+    res = list(r.db('rethinkdb').table('current_issues').filter(r.row["type"] != "memory_error").run(conn))
     assert res == [], 'There were unexpected issues after all steps: \n%s' % utils.RePrint.pformat(res)
     
     utils.print_with_time('Cleaning up')

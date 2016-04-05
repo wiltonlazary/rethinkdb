@@ -30,7 +30,7 @@ class NameCollision(rdb_unittest.RdbTestCase):
         alpha.start()
         
         # -- check for the server name collision
-        issues = list(self.r.db("rethinkdb").table("current_issues").filter(self.r.row["type"] != "memory_error").run(self.conn)) # filter for issue 5578
+        issues = list(self.r.db("rethinkdb").table("current_issues").filter(self.r.row["type"] != "memory_error").run(self.conn))
         assert len(issues) == 1, pprint.pformat(issues)
         server_issue = issues[0]
         
@@ -83,7 +83,7 @@ class NameCollision(rdb_unittest.RdbTestCase):
         
         # -- bring up both servers and observe the error
         alpha.start()
-        issues = list(self.r.db("rethinkdb").table("current_issues").filter(self.r.row["type"] != "memory_error").run(self.conn)) # filter for issue 5578
+        issues = list(self.r.db("rethinkdb").table("current_issues").filter(self.r.row["type"] != "memory_error").run(self.conn))
         assert len(issues) == 1, pprint.pformat(issues)
         db_issue = issues[0]
         
@@ -125,7 +125,7 @@ class NameCollision(rdb_unittest.RdbTestCase):
         
         # -- bring up both servers and observe the error
         alpha.start()
-        issues = list(self.r.db("rethinkdb").table("current_issues").filter(self.r.row["type"] != "memory_error").run(self.conn)) # filter for issue 5578
+        issues = list(self.r.db("rethinkdb").table("current_issues").filter(self.r.row["type"] != "memory_error").run(self.conn))
         assert len(issues) == 1, pprint.pformat(issues)
         table_issue = issues[0]
 

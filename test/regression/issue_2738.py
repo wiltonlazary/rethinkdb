@@ -45,7 +45,7 @@ with driver.Cluster(initial_servers=numNodes, output_folder='.', wait_until_read
     for i in xrange(1, 501):
         r.db_create("db2").run(conn2)
         r.db_drop("db2").run(conn2)
-        issues = list(r.db('rethinkdb').table('current_issues').filter(r.row["type"] != "memory_error").run(conn2)) # filter for issue 5578
+        issues = list(r.db('rethinkdb').table('current_issues').filter(r.row["type"] != "memory_error").run(conn2))
         assert len(issues) == 0, 'Issues detected during testing: %s' % issues
         if i % 50 == 0 or i == 1:
             print(str(i), end='.. ')

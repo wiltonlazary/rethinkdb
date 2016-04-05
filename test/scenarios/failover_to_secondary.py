@@ -45,7 +45,7 @@ class FailoverToSecondary(rdb_unittest.RdbTestCase):
             print_with_time("Starting workload before")
             workload.run_before()
             self.cluster.check()
-            issues = list(self.r.db('rethinkdb').table('current_issues').filter(self.r.row["type"] != "memory_error").run(stableConn)) # filter for issue 5578
+            issues = list(self.r.db('rethinkdb').table('current_issues').filter(self.r.row["type"] != "memory_error").run(stableConn))
             self.assertEqual(issues, [], 'The server recorded the following issues after the run_before:\n%s' % pformat(issues))
             
             print_with_time("Shutting down the primary")

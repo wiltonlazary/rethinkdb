@@ -58,7 +58,7 @@ with driver.Process(name='.', command_prefix=command_prefix, extra_options=serve
     utils.print_with_time("Checking server up")
     
     server.check()
-    issues = list(r.db('rethinkdb').table('current_issues').filter(r.row["type"] != "memory_error").run(conn)) # filter for issue 5578
+    issues = list(r.db('rethinkdb').table('current_issues').filter(r.row["type"] != "memory_error").run(conn))
     assert [] == issues, 'The issues list was not empty: %s' % repr(issues)
     
     utils.print_with_time("Cleaning up")

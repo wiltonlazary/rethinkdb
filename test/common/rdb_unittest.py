@@ -134,7 +134,7 @@ class RdbTestCase(unittest.TestCase):
         
         assert self.cluster is not None, 'The cluster was None'
         self.cluster.check()
-        res = list(self.r.db('rethinkdb').table('current_issues').filter(self.r.row["type"] != "memory_error").run(self.conn)) # filter for issue 5578
+        res = list(self.r.db('rethinkdb').table('current_issues').filter(self.r.row["type"] != "memory_error").run(self.conn))
         assert res == [], 'There were unexpected issues: \n%s' % utils.RePrint.pformat(res)
     
     def setUp(self):

@@ -66,7 +66,7 @@ with driver.Cluster(initial_servers=numNodes, output_folder='.', wait_until_read
     r.db(dbName).wait(wait_for="all_replicas_ready").run(conn)
     cluster.check()
     
-    res = list(r.db('rethinkdb').table('current_issues').filter(r.row["type"] != "memory_error").run(conn)) # filter for issue 5578
+    res = list(r.db('rethinkdb').table('current_issues').filter(r.row["type"] != "memory_error").run(conn))
     assert len(res) == 0, 'There were unexpected issues: \n%s' % utils.RePrint.pformat(res)
     
     utils.print_with_time("Cleaning up")

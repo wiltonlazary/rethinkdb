@@ -133,9 +133,9 @@ class SingleServerFailure(rdb_unittest.RdbTestCase):
         
         deadline = time.time() + 20
         while time.time() < deadline:
-            roundActualIssues = list(self.r.db('rethinkdb').table('current_issues').filter(self.r.row["type"] != "memory_error").run(self.conn)) # filter for issue 5578
+            roundActualIssues = list(self.r.db('rethinkdb').table('current_issues').filter(self.r.row["type"] != "memory_error").run(self.conn))
             roundExpectedIssues = copy.copy(expectedIssues)
-            roundExtraIssues = [] # there are other transition messages, quick enogh that we might not see them
+            roundExtraIssues = [] # there are other transition messages, quick enough that we might not see them
             
             for actualIssue in roundActualIssues:
                 if actualIssue['description'] not in roundExpectedIssues:
@@ -203,7 +203,7 @@ class SingleServerFailure(rdb_unittest.RdbTestCase):
         
         # - check that all issues are resolved
         
-        issues = list(self.r.db('rethinkdb').table('current_issues').filter(self.r.row["type"] != "memory_error").run(self.conn)) # filter for issue 5578
+        issues = list(self.r.db('rethinkdb').table('current_issues').filter(self.r.row["type"] != "memory_error").run(self.conn))
         self.assertEqual(issues, [])
         
         # - check that all tables are fully available
