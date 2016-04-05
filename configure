@@ -1099,10 +1099,8 @@ int main() {
     return output;
 }
 EOF
-    if !
-        $CXX ${CXXFLAGS:-} ${LDFLAGS:-} ${LIB_SEARCH_PATHS:-} "$tmpfile.cc" \
-            -std=c++11 -o "$tmpfile.out" 1>"$tmpfile.log" 2>&1;
-	$tmpfile.out
+    if ! $CXX ${CXXFLAGS:-} ${LDFLAGS:-} ${LIB_SEARCH_PATHS:-} "$tmpfile.cc" \
+             -std=c++11 -o "$tmpfile.out" 1>"$tmpfile.log" 2>&1; $tmpfile.out
     then
        error "You seem to be using a version of Clang with a bug that may affect Rethink DB. Please upgrade Clang or specify a different compiler."
     fi
