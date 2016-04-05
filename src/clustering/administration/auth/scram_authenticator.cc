@@ -14,26 +14,28 @@ namespace auth {
 
 scram_authenticator_t::scram_authenticator_t(
         clone_ptr_t<watchable_t<auth_semilattice_metadata_t>> auth_watchable)
-    : base_authenticator_t(auth_watchable) {
+    : base_authenticator_t(auth_watchable),
+      m_state(state_t::FIRST_MESSAGE) {
 }
 
-std::string scram_authenticator_t::next_message(std::string const &message) {
-    switch (m_state) {
-        case 0:
-            {
+std::string scram_authenticator_t::next_message(std::string const &message)
+        THROWS_ONLY(authentication_error_t) {
+    try {
+        switch (m_state) {
+            case state_t::FIRST_MESSAGE: {
                 if (message.find("n,") != 0) {
-                    throw authentication_error_t("server-does-support-channel-binding");
+                    throw authentication_error_t(15, "Channel binding is not supported");
                 }
                 size_t client_first_message_bare_offset = message.find(',', 2);
                 if (client_first_message_bare_offset == std::string::npos) {
-                    throw authentication_error_t("invalid-encoding");
+                    throw authentication_error_t(10, "Invalid encoding");
                 }
                 m_client_first_message_bare =
                     message.substr(client_first_message_bare_offset + 1);
 
                 std::string client_nonce;
                 std::map<char, std::string> attributes =
-                    scram_authenticator_t::split_attributes(m_client_first_message_bare);
+                    split_attributes(m_client_first_message_bare);
                 for (auto const &attribute : attributes) {
                     switch (attribute.first) {
                         case 'n':
@@ -43,14 +45,13 @@ std::string scram_authenticator_t::next_message(std::string const &message) {
                             client_nonce = attribute.second;
                             break;
                         case 'm':
-                            throw authentication_error_t("extensions-not-supported");
-                            break;
+                            throw authentication_error_t(11, "Extensions not supported");
                         default:
-                            throw authentication_error_t("invalid-encoding");
+                            throw authentication_error_t(10, "Invalid encoding");
                     }
                 }
-                if (attributes.size() != 2) {
-                    throw authentication_error_t("invalid-encoding");
+                if (attributes.count('n') == 0 || attributes.count('r') == 0) {
+                    throw authentication_error_t(10, "Invalid encoding");
                 }
 
                 m_auth_watchable->apply_read(
@@ -75,14 +76,13 @@ std::string scram_authenticator_t::next_message(std::string const &message) {
                     ",s=" + crypto::base64_encode(m_password.get_salt()) +
                     ",i=" + std::to_string(m_password.get_iteration_count());
 
-                m_state++;
+                m_state = state_t::FINAL_MESSAGE;
 
                 return m_server_first_message;
             }
-        case 1:
-            {
+            case state_t::FINAL_MESSAGE: {
                 if (!m_is_user_known) {
-                    throw authentication_error_t("unknown-user");
+                    throw authentication_error_t(17, "Unknown user");
                 }
 
                 // ClientKey := HMAC(SaltedPassword, "Client Key")
@@ -111,36 +111,37 @@ std::string scram_authenticator_t::next_message(std::string const &message) {
                     client_proof[i] = (client_key[i] ^ client_signature[i]);
                 }
 
-                std::map<char, std::string> attributes =
-                    scram_authenticator_t::split_attributes(message);
+                std::map<char, std::string> attributes = split_attributes(message);
                 for (auto const &attribute : attributes) {
                     switch (attribute.first) {
                         case 'c':
                             if (attribute.second != "biws") {
-                                throw authentication_error_t("invalid-encoding");
+                                throw authentication_error_t(10, "Invalid encoding");
                             }
                             break;
                         case 'r':
                             if (attribute.second != m_nonce) {
                                 // There's no specific error for invalid nonce
-                                throw authentication_error_t("other-error");
+                                throw authentication_error_t(20, "Other error");
                             }
                             break;
                         case 'p':
                             if (attribute.second !=
                                     crypto::base64_encode(client_proof)) {
-                                throw authentication_error_t("invalid-proof");
+                                throw authentication_error_t(12, "Wrong password");
                             }
+                            m_state = state_t::AUTHENTICATED;
                             break;
                         case 'm':
-                            throw authentication_error_t("extensions-not-supported");
-                            break;
+                            throw authentication_error_t(11, "Extensions not supported");
                         default:
-                            throw authentication_error_t("invalid-encoding");
+                            throw authentication_error_t(10, "Invalid encoding");
                     }
                 }
-                if (attributes.size() != 3) {
-                    throw authentication_error_t("invalid-encoding");
+                if (attributes.count('c') == 0 ||
+                        attributes.count('r') == 0 ||
+                        attributes.count('p') == 0) {
+                    throw authentication_error_t(10, "Invalid encoding");
                 }
 
                 // ServerKey := HMAC(SaltedPassword, "Server Key")
@@ -151,19 +152,30 @@ std::string scram_authenticator_t::next_message(std::string const &message) {
                 std::array<unsigned char, SHA256_DIGEST_LENGTH> server_signature =
                     crypto::hmac_sha256(server_key, auth_message);
 
-                m_state++;
-
                 return "v=" + crypto::base64_encode(server_signature);
             }
-        default:
-            unreachable();
+            case state_t::ERROR:
+                throw authentication_error_t(
+                    20, "A previous error occured, no more messages expected.");
+            case state_t::AUTHENTICATED:
+                throw authentication_error_t(
+                    20, "Already authenticated, no more messages expected.");
+            default:
+                unreachable();
+        }
+    } catch (...) {
+        m_state = state_t::ERROR;
+        throw;
     }
 }
 
-/* virtual */ username_t scram_authenticator_t::get_authenticated_username() const {
-    guarantee(m_state == 2);
-
-    return m_username;
+/* virtual */ username_t scram_authenticator_t::get_authenticated_username() const
+        THROWS_ONLY(authentication_error_t) {
+    if (m_state == state_t::AUTHENTICATED) {
+        return m_username;
+    } else {
+        throw authentication_error_t(20, "No authenticated user");
+    }
 }
 
 /* static */ std::map<char, std::string> scram_authenticator_t::split_attributes(
@@ -174,25 +186,25 @@ std::string scram_authenticator_t::next_message(std::string const &message) {
     while (attribute_offset < message.size()) {
         size_t equals_sign_offset = message.find('=', attribute_offset);
         if (equals_sign_offset == std::string::npos) {
-            throw authentication_error_t("invalid-encoding");
+            throw authentication_error_t(10, "Invalid encoding");
         }
         if ((equals_sign_offset - attribute_offset) != 1) {
-            throw authentication_error_t("invalid-encoding");
+            throw authentication_error_t(10, "Invalid encoding");
         }
 
         char key = message[attribute_offset];
         if (attributes.count(key) != 0) {
-            throw authentication_error_t("invalid-encoding");
+            throw authentication_error_t(10, "Invalid encoding");
         }
 
         size_t value_offset = equals_sign_offset + 1;
         size_t comma_offset = message.find(',', value_offset);
         if (comma_offset == std::string::npos) {
-            attributes.emplace(key, message.substr(value_offset));
+            attributes.insert(std::make_pair(key, message.substr(value_offset)));
             attribute_offset = message.size();
         } else {
-            attributes.emplace(
-                key, message.substr(value_offset, comma_offset - value_offset));
+            attributes.insert(std::make_pair(
+                key, message.substr(value_offset, comma_offset - value_offset)));
             attribute_offset = comma_offset + 1;
         }
     }
@@ -209,7 +221,7 @@ std::string scram_authenticator_t::next_message(std::string const &message) {
         switch (saslname[offset]) {
             case '=':
                 if (offset + 2 >= saslname.size()) {
-                    throw authentication_error_t("invalid-username-encoding");
+                    throw authentication_error_t(18, "Invalid username encoding");
                 }
 
                 if (saslname[offset + 1] == '2' && saslname[offset + 2] == 'C') {
@@ -217,7 +229,7 @@ std::string scram_authenticator_t::next_message(std::string const &message) {
                 } else if (saslname[offset + 1] == '3' && saslname[offset + 2] == 'D') {
                     username.push_back('=');
                 } else {
-                    throw authentication_error_t("invalid-username-encoding");
+                    throw authentication_error_t(18, "Invalid username encoding");
                 }
 
                 offset += 2;
@@ -231,7 +243,7 @@ std::string scram_authenticator_t::next_message(std::string const &message) {
         // Note that the `username_t` constructor applies SASLPrep, and may throw
         return username_t(username);
     } catch (crypto::error_t const &) {
-        throw authentication_error_t("invalid-username-encoding");
+        throw authentication_error_t(18, "Invalid username encoding");
     }
 }
 

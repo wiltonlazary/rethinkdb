@@ -134,7 +134,7 @@ enum class admin_identifier_format_t {
 };
 
 namespace ql {
-    class reader_t;
+class reader_t;
 }
 
 class base_table_t : public slow_atomic_countable_t<base_table_t> {
@@ -241,6 +241,7 @@ public:
             signal_t *interruptor,
             counted_t<const ql::db_t> *db_out, admin_err_t *error_out) = 0;
     virtual bool db_config(
+            auth::user_context_t const &user_context,
             const counted_t<const ql::db_t> &db,
             ql::backtrace_id_t bt,
             ql::env_t *env,
@@ -280,6 +281,7 @@ public:
             std::vector<int64_t> *doc_counts_out,
             admin_err_t *error_out) = 0;
     virtual bool table_config(
+            auth::user_context_t const &user_context,
             counted_t<const ql::db_t> db,
             const name_string_t &name,
             ql::backtrace_id_t bt,
@@ -419,7 +421,9 @@ public:
     rdb_context_t();
     // Also used by unit tests.
     rdb_context_t(extproc_pool_t *_extproc_pool,
-                  reql_cluster_interface_t *_cluster_interface);
+                  reql_cluster_interface_t *_cluster_interface,
+                  boost::shared_ptr<semilattice_read_view_t<auth_semilattice_metadata_t>>
+                      auth_semilattice_view);
 
     // The "real" constructor used outside of unit tests.
     rdb_context_t(
@@ -463,6 +467,10 @@ public:
     clone_ptr_t<watchable_t<auth_semilattice_metadata_t>> get_auth_watchable() const;
 
 private:
+    void init_auth_watchables(
+        boost::shared_ptr<semilattice_read_view_t<auth_semilattice_metadata_t>>
+            auth_semilattice_view);
+
     std::vector<std::unique_ptr<cross_thread_watchable_variable_t<
         auth_semilattice_metadata_t>>> m_cross_thread_auth_watchables;
 

@@ -24,6 +24,7 @@
 #include "rpc/directory/write_manager.hpp"
 #include "rpc/semilattice/view/field.hpp"
 #include "rpc/semilattice/watchable.hpp"
+#include "unittest/dummy_metadata_controller.hpp"
 #include "unittest/unittest_utils.hpp"
 
 namespace unittest {
@@ -176,6 +177,7 @@ public:
                 signal_t *interruptor,
                 counted_t<const ql::db_t> *db_out, admin_err_t *error_out);
         bool db_config(
+                auth::user_context_t const &user_context,
                 const counted_t<const ql::db_t> &db,
                 ql::backtrace_id_t bt,
                 ql::env_t *env,
@@ -214,6 +216,7 @@ public:
                 std::vector<int64_t> *doc_counts_out,
                 admin_err_t *error_out);
         bool table_config(
+                auth::user_context_t const &user_context,
                 counted_t<const ql::db_t> db,
                 const name_string_t &name,
                 ql::backtrace_id_t bt,
@@ -343,6 +346,7 @@ public:
 
     private:
         extproc_pool_t extproc_pool;
+        dummy_semilattice_controller_t<auth_semilattice_metadata_t> auth_manager;
         rdb_context_t rdb_ctx;
         std::map<name_string_t, database_id_t> databases;
         std::map<std::pair<database_id_t, name_string_t>,

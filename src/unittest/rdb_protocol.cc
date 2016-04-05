@@ -24,6 +24,7 @@
 #include "stl_utils.hpp"
 #include "store_subview.hpp"
 #include "unittest/dummy_namespace_interface.hpp"
+#include "unittest/dummy_metadata_controller.hpp"
 #include "unittest/gtest.hpp"
 #include "unittest/unittest_utils.hpp"
 
@@ -74,7 +75,8 @@ void run_with_namespace_interface(
     }
 
     extproc_pool_t extproc_pool(2);
-    rdb_context_t ctx(&extproc_pool, nullptr);
+    dummy_semilattice_controller_t<auth_semilattice_metadata_t> auth_manager;
+    rdb_context_t ctx(&extproc_pool, nullptr, auth_manager.get_view());
 
     for (int rep = 0; rep < num_restarts; ++rep) {
         const bool do_create = rep == 0;
@@ -157,7 +159,7 @@ void run_get_set_test(
 
         cond_t interruptor;
         nsi->write(
-            auth::user_context_t(auth::permissions_t(false, true, false, false)),
+            auth::user_context_t(auth::permissions_t(true, true, false, false)),
             write,
             &response,
             osource->check_in("unittest::run_get_set_test(rdb_protocol.cc-A)"),
@@ -283,7 +285,7 @@ void run_create_drop_sindex_test(
 
         cond_t interruptor;
         nsi->write(
-            auth::user_context_t(auth::permissions_t(false, true, false, false)),
+            auth::user_context_t(auth::permissions_t(true, true, false, false)),
             write,
             &response,
             osource->check_in("unittest::run_create_drop_sindex_test(rdb_protocol.cc-A"),
@@ -335,7 +337,7 @@ void run_create_drop_sindex_test(
 
         cond_t interruptor;
         nsi->write(
-            auth::user_context_t(auth::permissions_t(false, true, false, false)),
+            auth::user_context_t(auth::permissions_t(true, true, false, false)),
             write,
             &response,
             osource->check_in("unittest::run_create_drop_sindex_test(rdb_protocol.cc-A"),
@@ -397,7 +399,7 @@ void populate_sindex(namespace_interface_t *nsi,
 
         cond_t interruptor;
         nsi->write(
-            auth::user_context_t(auth::permissions_t(false, true, false, false)),
+            auth::user_context_t(auth::permissions_t(true, true, false, false)),
             write,
             &response,
             osource->check_in(
@@ -459,7 +461,7 @@ void fuzz_sindex(namespace_interface_t *nsi,
 
         cond_t interruptor;
         nsi->write(
-            auth::user_context_t(auth::permissions_t(false, true, false, false)),
+            auth::user_context_t(auth::permissions_t(true, true, false, false)),
             write,
             &response,
             osource->check_in("unittest::fuzz_sindex(rdb_protocol.cc"),
@@ -767,7 +769,7 @@ void run_sindex_oversized_keys_test(
 
                 cond_t interruptor;
                 nsi->write(
-                    auth::user_context_t(auth::permissions_t(false, true, false, false)),
+                    auth::user_context_t(auth::permissions_t(true, true, false, false)),
                     write,
                     &response,
                     osource->check_in(
@@ -853,7 +855,7 @@ void run_sindex_missing_attr_test(
 
         cond_t interruptor;
         nsi->write(
-            auth::user_context_t(auth::permissions_t(false, true, false, false)),
+            auth::user_context_t(auth::permissions_t(true, true, false, false)),
             write,
             &response,
             osource->check_in(
@@ -900,6 +902,7 @@ TPTEST(RDBProtocol, ArtificialChangefeeds) {
                               "test",
                               false,
                               false,
+                              false,
                               ql::configured_limits_t(),
                               ql::datum_t::boolean(false),
                               keyspec_t::point_t{ql::datum_t(0.0)}),
@@ -912,6 +915,7 @@ TPTEST(RDBProtocol, ArtificialChangefeeds) {
                                make_counted<ql::vector_datum_stream_t>(
                                    bt, std::vector<ql::datum_t>(), boost::none),
                                "test",
+                               false,
                                false,
                                false,
                                ql::configured_limits_t(),
@@ -928,6 +932,7 @@ TPTEST(RDBProtocol, ArtificialChangefeeds) {
                             "test",
                             false,
                             false,
+                            false,
                             ql::configured_limits_t(),
                             ql::datum_t::boolean(false),
                             keyspec_t::range_t{
@@ -939,7 +944,8 @@ TPTEST(RDBProtocol, ArtificialChangefeeds) {
                                             ql::datum_t(0.0),
                                             key_range_t::closed,
                                             ql::datum_t(10.0),
-                                            key_range_t::open))}),
+                                            key_range_t::open)),
+                                    boost::none}),
                         "id",
                         std::vector<ql::datum_t>(),
                         bt)) { }

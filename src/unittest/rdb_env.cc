@@ -294,7 +294,8 @@ scoped_ptr_t<test_rdb_env_t::instance_t> test_rdb_env_t::make_env() {
 
 test_rdb_env_t::instance_t::instance_t(test_rdb_env_t &&test_env) :
     extproc_pool(2),
-    rdb_ctx(&extproc_pool, this)
+    auth_manager(auth_semilattice_metadata_t("")),
+    rdb_ctx(&extproc_pool, this, auth_manager.get_view())
 {
     env.init(
         new ql::env_t(
@@ -397,6 +398,7 @@ bool test_rdb_env_t::instance_t::db_find(const name_string_t &name,
 }
 
 bool test_rdb_env_t::instance_t::db_config(
+        UNUSED auth::user_context_t const &user_context,
         UNUSED const counted_t<const ql::db_t> &db,
         UNUSED ql::backtrace_id_t bt,
         UNUSED ql::env_t *local_env,
@@ -500,6 +502,7 @@ bool test_rdb_env_t::instance_t::table_estimate_doc_counts(
 }
 
 bool test_rdb_env_t::instance_t::table_config(
+        UNUSED auth::user_context_t const &user_context,
         UNUSED counted_t<const ql::db_t> db,
         UNUSED const name_string_t &name,
         UNUSED ql::backtrace_id_t bt,
