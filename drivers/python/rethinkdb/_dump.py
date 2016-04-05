@@ -105,7 +105,7 @@ def do_export(temp_dir, options):
     export_args.extend(["--connect", "%s:%s" % (options["host"], options["port"])])
     export_args.extend(["--directory", os.path.join(temp_dir, options["temp_filename"])])
     if options["password"]:
-        export_args.extend(["--password", ""])
+        export_args.append("--password")
     if options["password-file"]:
         export_args.extend(["--password-file", options["password-file"]])
     export_args.extend(["--clients", str(options["clients"])])
