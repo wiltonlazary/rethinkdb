@@ -167,7 +167,7 @@ def do_import(temp_dir, options):
     import_args.extend(["--connect", "%s:%s" % (options["host"], options["port"])])
     import_args.extend(["--directory", temp_dir])
     if options["password"]:
-        import_args.extend(["--password", ""])
+        import_args.append("--password")
     if options["password-file"]:
         import_args.extend(["--password-file", options["password-file"]])
     import_args.extend(["--clients", str(options["clients"])])
