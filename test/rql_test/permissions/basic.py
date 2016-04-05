@@ -252,7 +252,9 @@ class TestSpecialCases(TestPermissionsBase):
         res = r.db_create("d").pluck("dbs_created").run(self.adminConn)
         if res != {'dbs_created': 1}:
             raise Exception('Unable to create DB `d`, got: %s' % str(res))
-        self.assertNoPermissions(self.tbl.config().update({"db": "d"}))
+        res = self.tbl.config().update({"db": "d"}).pluck("first_error").run(self.userConn)
+        if res != {'first_error': "Only administrators may move a table to a different database."}:
+            raise Exception('Changing the database did not fail, got: %s' % str(res))
         res = r.db_drop("d").pluck("dbs_dropped").run(self.adminConn)
         if res != {'dbs_dropped': 1}:
             raise Exception('Unable to drop DB `d`, got: %s' % str(res))
