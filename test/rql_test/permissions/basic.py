@@ -92,7 +92,7 @@ class TestPermissionsBase(unittest.TestCase):
         if self.userConn is not None:
             self.userConn.close()
 
-class TestBasicPermissions(TestPermissionsBase):
+class TestRealTablePermissions(TestPermissionsBase):
     def test_read_scopes(self):
         self.assertNoPermissions(self.tbl)
 
@@ -258,14 +258,45 @@ class TestSpecialCases(TestPermissionsBase):
             raise Exception('Unable to drop DB `d`, got: %s' % str(res))
         self.setPermissions(self.db, {"config": None})
 
+class TestSystemTablePermissions(TestPermissionsBase):
+    def test_system(self):
+        self.setPermissions(self.db, {"config": True, "write": True, "read": True})
+        self.assertNoPermissions(r.db('rethinkdb').table('users'))
+        self.assertNoPermissions(r.db('rethinkdb').table('permissions'))
+        self.assertNoPermissions(r.db('rethinkdb').table('cluster_config'))
+        self.assertNoPermissions(r.db('rethinkdb').table('current_issues'))
+        self.assertNoPermissions(r.db('rethinkdb').table('db_config'))
+        self.assertNoPermissions(r.db('rethinkdb').table('jobs'))
+        self.assertNoPermissions(r.db('rethinkdb').table('logs'))
+        self.assertNoPermissions(r.db('rethinkdb').table('server_config'))
+        self.assertNoPermissions(r.db('rethinkdb').table('server_status'))
+        self.assertNoPermissions(r.db('rethinkdb').table('stats'))
+        self.assertNoPermissions(r.db('rethinkdb').table('table_config'))
+        self.assertNoPermissions(r.db('rethinkdb').table('table_status'))
+
+        self.assertNoPermissions(r.db('rethinkdb').table('users').insert({}))
+        self.assertNoPermissions(r.db('rethinkdb').table('permissions').insert({}))
+        self.assertNoPermissions(r.db('rethinkdb').table('cluster_config').insert({}))
+        self.assertNoPermissions(r.db('rethinkdb').table('current_issues').insert({}))
+        self.assertNoPermissions(r.db('rethinkdb').table('db_config').insert({}))
+        self.assertNoPermissions(r.db('rethinkdb').table('jobs').insert({}))
+        self.assertNoPermissions(r.db('rethinkdb').table('logs').insert({}))
+        self.assertNoPermissions(r.db('rethinkdb').table('server_config').insert({}))
+        self.assertNoPermissions(r.db('rethinkdb').table('server_status').insert({}))
+        self.assertNoPermissions(r.db('rethinkdb').table('stats').insert({}))
+        self.assertNoPermissions(r.db('rethinkdb').table('table_config').insert({}))
+        self.assertNoPermissions(r.db('rethinkdb').table('table_status').insert({}))
+        self.setPermissions(self.db, {"config": None, "write": None, "read": None})
+
 # -- Main function
 
 if __name__ == '__main__':
-    print("Running permissions test")
+    print("Running basic permissions test")
     suite = unittest.TestSuite()
     loader = unittest.TestLoader()
-    suite.addTest(loader.loadTestsFromTestCase(TestBasicPermissions))
+    suite.addTest(loader.loadTestsFromTestCase(TestRealTablePermissions))
     suite.addTest(loader.loadTestsFromTestCase(TestSpecialCases))
+    suite.addTest(loader.loadTestsFromTestCase(TestSystemTablePermissions))
 
     res = unittest.TextTestRunner(stream=sys.stdout, verbosity=2).run(suite)
     if not res.wasSuccessful():

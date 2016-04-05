@@ -11,4 +11,4 @@ if os.environ.get('RDB_DRIVER_PORT') is None:
     server = driver.Process(executable_path=executable_path)
     os.environ['RDB_DRIVER_PORT'] = str(server.driver_port)
 
-sys.exit(subprocess.call([os.environ.get('INTERPRETER_PATH', 'python'), os.path.join(os.path.dirname(__file__), 'real_tables.py')]))
+sys.exit(subprocess.call([os.environ.get('INTERPRETER_PATH', 'python'), os.path.join(os.path.dirname(__file__), 'basic.py')]))
