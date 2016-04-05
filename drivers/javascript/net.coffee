@@ -1038,7 +1038,8 @@ class TcpConnection extends Connection
 
             # We implement this ourselves because early versions of node will ignore the "sha256" option
             # and just return the hash for sha1.
-            pbkdf2_hmac = (password, salt, iterations) ->
+            pbkdf2_hmac = (password, salt, iterations) =>
+                return @rawSocket.salted_password if @rawSocket.salted_password?
                 mac = crypto.createHmac("sha256", password)
 
                 mac.update(salt)
@@ -1051,7 +1052,8 @@ class TcpConnection extends Connection
                     t = mac.digest()
                     u = xor_bytes(u, t)
 
-                return u
+                @rawSocket.salted_password = u
+                return @rawSocket.salted_password
 
             compare_digest = (a, b) ->
                 left = undefined
