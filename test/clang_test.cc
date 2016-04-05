@@ -1,11 +1,14 @@
 #include <iostream>
 
+
+int output = 1;
+
 class data_t {
 public:
     data_t(int num) {
     }
     ~data_t() {
-        std::cout << "Destructor called.\n";
+        output = 0;
     }
 };
 
@@ -15,8 +18,9 @@ struct data_struct_t {
 };
 
 int main() {
+  output = 1;
     {
         data_struct_t{1, 2};
     }
-    return 0;
+    return output;
 }
