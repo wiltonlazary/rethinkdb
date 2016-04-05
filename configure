@@ -99,7 +99,7 @@ configure () {
             *) var_append LDFLAGS -lstdc++ ;;
         esac
 
-        check_clang_bug
+        check_clang_bug_5424
 
     fi
     check_cxx11
@@ -1074,8 +1074,8 @@ fetch_allowed () {
          { can_fetch $1 && $allow_fetch ; } ; } || return 1
 }
 
-check_clang_bug () {
-    local tmpfile=$root/mk/gen/check_clang_bug
+check_clang_bug_5424 () {
+    local tmpfile=$root/mk/gen/check_clang_bug_5424
     cat > "$tmpfile.cc" <<EOF
 #include <iostream>
 int output = 1;
@@ -1104,10 +1104,9 @@ EOF
             -std=c++11 -o "$tmpfile.out" 1>"$tmpfile.log" 2>&1;
 	$tmpfile.out
     then
-	boolvar clang_bug false
+        :
     else
-	boolvar clang_bug true
-        error "You seem to be using a version of Clang with a bug that may affect Rethink DB. Please upgrade Clang or specify a different compiler."
+       error "You seem to be using a version of Clang with a bug that may affect Rethink DB. Please upgrade Clang or specify a different compiler."
     fi
 }
 
