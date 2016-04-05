@@ -29,7 +29,7 @@ except ImportError:
 
 info = "'rethinkdb export` exports data from a RethinkDB cluster into a directory"
 usage = "\
-  rethinkdb export [-c HOST:PORT] [-a AUTH_KEY] [-d DIR] [-e (DB | DB.TABLE)]...\n\
+  rethinkdb export [-c HOST:PORT] [--tls-cert filename] [-d DIR] [-e (DB | DB.TABLE)]...\n\
       [--format (csv | json | ndjson)] [--fields FIELD,FIELD...] [--delimiter CHARACTER]\n\
       [--clients NUM]"
 
@@ -41,7 +41,7 @@ def print_export_help():
     print("  -c [ --connect ] HOST:PORT       host and client port of a rethinkdb node to connect")
     print("                                   to (defaults to localhost:28015)")
     print("  -a [ --auth ] AUTH_KEY           authorization key for rethinkdb clients")
-    print("  -d [ --directory ] DIR           directory to output to (defaults to")
+    print("  --tls-cert FILENAME              certificate file to use for TLS encryption.")
     print("                                   rethinkdb_export_DATE_TIME)")
     print("  --format (csv | json | ndjson)   format to write (defaults to json.")
     print("                                   ndjson is newline delimited json.)")

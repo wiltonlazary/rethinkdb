@@ -6,7 +6,7 @@ from optparse import OptionParser
 from ._backup import *
 
 info = "'rethinkdb restore' loads data into a RethinkDB cluster from an archive"
-usage = "rethinkdb restore FILE [-c HOST:PORT] [-a AUTH_KEY] [--clients NUM] [--shards NUM_SHARDS] [--replicas NUM_REPLICAS] [--force] [-i (DB | DB.TABLE)]..."
+usage = "rethinkdb restore FILE [-c HOST:PORT] [--tls-cert FILENAME] [--clients NUM] [--shards NUM_SHARDS] [--replicas NUM_REPLICAS] [--force] [-i (DB | DB.TABLE)]..."
 
 def print_restore_help():
     print(info)
@@ -16,7 +16,7 @@ def print_restore_help():
     print("  -h [ --help ]                    print this help")
     print("  -c [ --connect ] HOST:PORT       host and client port of a rethinkdb node to connect")
     print("                                   to (defaults to localhost:28015)")
-    print("  -a [ --auth ] AUTH_KEY           authorization key for rethinkdb clients")
+    print("  --tls-cert FILENAME              certificate file to use for TLS encryption.")
     print("  -i [ --import ] (DB | DB.TABLE)  limit restore to the given database or table (may")
     print("                                   be specified multiple times)")
     print("  --clients NUM_CLIENTS            the number of client connections to use (defaults")

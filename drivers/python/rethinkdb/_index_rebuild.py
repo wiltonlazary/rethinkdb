@@ -8,7 +8,7 @@ from ._backup import *
 info = "'rethinkdb index-rebuild' recreates outdated secondary indexes in a cluster.\n" + \
        "  This should be used after upgrading to a newer version of rethinkdb.  There\n" + \
        "  will be a notification in the web UI if any secondary indexes are out-of-date."
-usage = "rethinkdb index-rebuild [-c HOST:PORT] [-a AUTH_KEY] [-n NUM] [-r (DB | DB.TABLE)]..."
+usage = "rethinkdb index-rebuild [-c HOST:PORT] [-n NUM] [-r (DB | DB.TABLE)] [--tls-cert FILENAME] ..."
 
 # Prefix used for indexes that are being rebuilt
 temp_index_prefix = '$reql_temp_index$_'
@@ -21,7 +21,7 @@ def print_restore_help():
     print("  -h [ --help ]                    print this help")
     print("  -c [ --connect ] HOST:PORT       host and client port of a rethinkdb node to connect")
     print("                                   to (defaults to localhost:28015)")
-    print("  -a [ --auth ] AUTH_KEY           authorization key for rethinkdb clients")
+    print("  --tls-cert FILENAME              certificate file to use for TLS encryption.")
     print("  -r [ --rebuild ] (DB | DB.TABLE) the databases or tables to rebuild indexes on")
     print("                                   (defaults to all databases and tables)")
     print("  -n NUM                           the number of concurrent indexes to rebuild")
