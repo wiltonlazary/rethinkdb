@@ -64,7 +64,7 @@ class TestPermissionsBase(unittest.TestCase):
         time.sleep(0.1)
 
     def setUp(self):
-        self.adminConn = r.connect(host=sharedServerHost, port=sharedServerDriverPort, username="admin", password="")
+        self.adminConn = r.connect(host=sharedServerHost, port=sharedServerDriverPort, user="admin", password="")
 
         # Create a regular user account that we will be using during testing
         res = r.db('rethinkdb').table('users').insert({"id": "user", "password": "secret"}).run(self.adminConn)
@@ -81,7 +81,7 @@ class TestPermissionsBase(unittest.TestCase):
             raise Exception('Unable to create table `test`, got: %s' % str(res))
         self.tbl = self.db.table('test')
 
-        self.userConn = r.connect(host=sharedServerHost, port=sharedServerDriverPort, username="user", password="secret")
+        self.userConn = r.connect(host=sharedServerHost, port=sharedServerDriverPort, user="user", password="secret")
 
     def tearDown(self):
         if self.adminConn is not None:
@@ -170,17 +170,71 @@ class TestBasicPermissions(TestPermissionsBase):
         self.assertPermissions(self.tbl.delete())
         self.setPermissions(self.tbl, {"read": None, "write": None})
 
+        # Even pure writes also require read permissions (otherwise
+        # something like `return_changes` could be used to leak data).
+        self.setPermissions(self.tbl, {"write": True})
+        self.assertNoPermissions(self.tbl.insert({"id": "a"}))
+        self.setPermissions(self.tbl, {"write": None})
+
     def test_write_special(self):
         self.assertNoPermissions(self.tbl.sync())
 
-        self.setPermissions(self.tbl, {"write": True})
+        self.setPermissions(self.tbl, {"write": True, "read": True})
         self.assertPermissions(self.tbl.sync())
-        self.setPermissions(self.tbl, {"write": None})
+        self.setPermissions(self.tbl, {"write": None, "read": None})
 
     def test_config(self):
-        pass
-        #self.assertNoPermissions(self.tbl.config())
-        # TODO!
+        self.assertNoPermissions(self.tbl.config())
+        self.assertNoPermissions(self.tbl.reconfigure(shards=2, replicas=1))
+        self.assertNoPermissions(self.tbl.rebalance())
+        self.assertNoPermissions(self.tbl.index_create("a"))
+        self.assertNoPermissions(self.tbl.index_drop("a"))
+        self.assertNoPermissions(self.db.table_create("t"))
+        self.assertNoPermissions(r.db_create("d"))
+
+        self.setPermissions(self.tbl, {"config": True})
+        self.assertPermissions(self.tbl.config())
+        self.assertPermissions(self.tbl.reconfigure(shards=2, replicas=1))
+        self.assertPermissions(self.tbl.rebalance())
+        self.assertPermissions(self.tbl.index_create("a"))
+        self.assertPermissions(self.tbl.index_drop("a"))
+        self.assertNoPermissions(self.db.table_create("t"))
+        res = self.db.table_create("t").pluck("tables_created").run(self.adminConn)
+        if res != {'tables_created': 1}:
+            raise Exception('Unable to create table `t`, got: %s' % str(res))
+        self.assertNoPermissions(self.db.table_drop("t"))
+        res = self.db.table_drop("t").pluck("tables_dropped").run(self.adminConn)
+        if res != {'tables_dropped': 1}:
+            raise Exception('Unable to drop table `t`, got: %s' % str(res))
+        self.assertNoPermissions(r.db_create("d"))
+        res = r.db_create("d").pluck("dbs_created").run(self.adminConn)
+        if res != {'dbs_created': 1}:
+            raise Exception('Unable to create DB `d`, got: %s' % str(res))
+        self.assertNoPermissions(r.db_drop("d"))
+        res = r.db_drop("d").pluck("dbs_dropped").run(self.adminConn)
+        if res != {'dbs_dropped': 1}:
+            raise Exception('Unable to drop DB `d`, got: %s' % str(res))
+        self.setPermissions(self.tbl, {"config": None})
+
+        self.setPermissions(self.db, {"config": True})
+        self.assertPermissions(self.db.table_create("t"))
+        self.assertPermissions(self.db.table_drop("t"))
+        self.assertNoPermissions(r.db_create("d"))
+        res = r.db_create("d").pluck("dbs_created").run(self.adminConn)
+        if res != {'dbs_created': 1}:
+            raise Exception('Unable to create DB `d`, got: %s' % str(res))
+        self.assertNoPermissions(r.db_drop("d"))
+        res = r.db_drop("d").pluck("dbs_dropped").run(self.adminConn)
+        if res != {'dbs_dropped': 1}:
+            raise Exception('Unable to drop DB `d`, got: %s' % str(res))
+        self.setPermissions(self.db, {"config": None})
+
+        self.setPermissions(r, {"config": True})
+        self.assertPermissions(self.db.table_create("t"))
+        self.assertPermissions(self.db.table_drop("t"))
+        self.assertPermissions(r.db_create("d"))
+        self.assertPermissions(r.db_drop("d"))
+        self.setPermissions(r, {"config": None})
 
     def test_connect(self):
         self.assertNoPermissions(r.http("http://localhost:12345").default(None))
@@ -189,6 +243,21 @@ class TestBasicPermissions(TestPermissionsBase):
         self.assertPermissions(r.http("http://localhost:12345").default(None))
         self.setPermissions(r, {"connect": None})
 
+class TestSpecialCases(TestPermissionsBase):
+    def test_db_change(self):
+        # Special case: A user must not be able to move a table into a
+        # database if they don't have config permissions on both the old
+        # and the new database.
+        self.setPermissions(self.db, {"config": True})
+        res = r.db_create("d").pluck("dbs_created").run(self.adminConn)
+        if res != {'dbs_created': 1}:
+            raise Exception('Unable to create DB `d`, got: %s' % str(res))
+        self.assertNoPermissions(self.tbl.config().update({"db": "d"}))
+        res = r.db_drop("d").pluck("dbs_dropped").run(self.adminConn)
+        if res != {'dbs_dropped': 1}:
+            raise Exception('Unable to drop DB `d`, got: %s' % str(res))
+        self.setPermissions(self.db, {"config": None})
+
 # -- Main function
 
 if __name__ == '__main__':
@@ -196,6 +265,7 @@ if __name__ == '__main__':
     suite = unittest.TestSuite()
     loader = unittest.TestLoader()
     suite.addTest(loader.loadTestsFromTestCase(TestBasicPermissions))
+    suite.addTest(loader.loadTestsFromTestCase(TestSpecialCases))
 
     res = unittest.TextTestRunner(stream=sys.stdout, verbosity=2).run(suite)
     if not res.wasSuccessful():
