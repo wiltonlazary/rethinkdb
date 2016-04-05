@@ -52,7 +52,12 @@ public class Connection implements Closeable {
 
     public Connection(Builder builder) {
         dbname = builder.dbname;
-        handshake = new Handshake(builder.username, builder.password);
+        if (builder.authKey.isPresent() && builder.username.isPresent()) {
+            throw new ReqlDriverError("Either `authKey` or `user` can be used, but not both.");
+        }
+        String username = builder.username.orElse("admin");
+        String password = builder.password.orElse(builder.authKey.orElse(""));
+        handshake = new Handshake(username, password);
         hostname = builder.hostname.orElse("localhost");
         port = builder.port.orElse(28015);
         // is certFile provided? if so, it has precedence over SSLContext
@@ -317,15 +322,30 @@ public class Connection implements Closeable {
     /**
      * Connection.Builder should be used to build a Connection instance.
      */
-    public static class Builder {
+    public static class Builder implements Cloneable {
         private Optional<String> hostname = Optional.empty();
         private Optional<Integer> port = Optional.empty();
         private Optional<String> dbname = Optional.empty();
         private Optional<InputStream> certFile = Optional.empty();
         private Optional<SSLContext> sslContext = Optional.empty();
         private Optional<Long> timeout = Optional.empty();
-        private String username = "admin";
-        private String password = "";
+        private Optional<String> authKey = Optional.empty();
+        private Optional<String> username = Optional.empty();
+        private Optional<String> password = Optional.empty();
+
+        public Builder clone() throws CloneNotSupportedException {
+            Builder c = (Builder)super.clone();
+            c.hostname = hostname;
+            c.port = port;
+            c.dbname = dbname;
+            c.certFile = certFile;
+            c.sslContext = sslContext;
+            c.timeout = timeout;
+            c.authKey = authKey;
+            c.username = username;
+            c.password = password;
+            return c;
+        }
 
         public Builder hostname(String val) {
             hostname = Optional.of(val);
@@ -343,14 +363,13 @@ public class Connection implements Closeable {
         }
 
         public Builder authKey(String key) {
-            username = "admin";
-            password = key;
+            authKey = Optional.of(key);
             return this;
         }
 
         public Builder user(String username, String password) {
-            this.username = username;
-            this.password = password;
+            this.username = Optional.of(username);
+            this.password = Optional.of(password);
             return this;
         }
 

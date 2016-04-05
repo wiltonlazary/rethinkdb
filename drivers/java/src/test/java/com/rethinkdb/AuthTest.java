@@ -1,7 +1,6 @@
 package com.rethinkdb;
 
-import com.rethinkdb.gen.exc.ReqlError;
-import com.rethinkdb.gen.exc.ReqlQueryLogicError;
+import com.rethinkdb.gen.exc.ReqlDriverError;
 import com.rethinkdb.model.MapObject;
 import com.rethinkdb.model.OptArgs;
 import com.rethinkdb.net.Connection;
@@ -15,16 +14,12 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 public class AuthTest {
     public static final RethinkDB r = RethinkDB.r;
-    static final String dbName = "javatests";
-    static final String tableName = "atest";
     static final String bogusUsername = "bogus_guy";
     static final String bogusPassword = "bogus_man+=,";
 
@@ -50,8 +45,14 @@ public class AuthTest {
 
     @Test
     public void testConnectWithNonAdminUser() throws Exception {
-        Connection bogusConn = TestingFramework.defaultConnectionBuilder()
+        Connection bogusConn = TestingFramework.defaultConnectionBuilder().clone()
                 .user(bogusUsername, bogusPassword).connect();
         bogusConn.close();
+    }
+
+    @Test (expected=ReqlDriverError.class)
+    public void testConnectWithBothAuthKeyAndUsername() throws Exception {
+        Connection bogusConn = TestingFramework.defaultConnectionBuilder().clone()
+                .user(bogusUsername, bogusPassword).authKey("test").connect();
     }
 }
