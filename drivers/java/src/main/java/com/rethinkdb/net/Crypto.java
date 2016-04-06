@@ -16,6 +16,7 @@ import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.security.spec.InvalidKeySpecException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static com.rethinkdb.net.Util.fromUTF8;
 import static com.rethinkdb.net.Util.toUTF8;
@@ -29,7 +30,7 @@ class Crypto {
     private static final Base64.Encoder encoder = Base64.getEncoder();
     private static final Base64.Decoder decoder = Base64.getDecoder();
     private static final SecureRandom secureRandom = new SecureRandom();
-    private static final Map<PasswordLookup, byte[]> pbkdf2Cache = new HashMap<>();
+    private static final Map<PasswordLookup, byte[]> pbkdf2Cache = new ConcurrentHashMap<>();
     private static final int NONCE_BYTES = 18;
 
     private static class PasswordLookup {
