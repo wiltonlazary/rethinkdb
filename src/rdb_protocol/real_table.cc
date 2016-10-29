@@ -2,6 +2,8 @@
 #include "rdb_protocol/real_table.hpp"
 
 #include "clustering/administration/auth/permission_error.hpp"
+#include "clustering/administration/tables/table_metadata.hpp"
+#include "clustering/table_manager/table_meta_client.hpp"
 #include "math.hpp"
 #include "rdb_protocol/geo/ellipsoid.hpp"
 #include "rdb_protocol/geo/distances.hpp"
@@ -12,59 +14,6 @@
 #include "rdb_protocol/math_utils.hpp"
 #include "rdb_protocol/protocol.hpp"
 
-namespace_interface_access_t::namespace_interface_access_t() :
-    nif(NULL), ref_tracker(NULL), thread(INVALID_THREAD)
-    { }
-
-namespace_interface_access_t::namespace_interface_access_t(
-        const namespace_interface_access_t& access) :
-    nif(access.nif), ref_tracker(access.ref_tracker), thread(access.thread)
-{
-    if (ref_tracker != NULL) {
-        rassert(get_thread_id() == thread);
-        ref_tracker->add_ref();
-    }
-}
-
-namespace_interface_access_t::namespace_interface_access_t(namespace_interface_t *_nif,
-        ref_tracker_t *_ref_tracker, threadnum_t _thread) :
-    nif(_nif), ref_tracker(_ref_tracker), thread(_thread)
-{
-    if (ref_tracker != NULL) {
-        rassert(get_thread_id() == thread);
-        ref_tracker->add_ref();
-    }
-}
-
-namespace_interface_access_t &namespace_interface_access_t::operator=(
-        const namespace_interface_access_t &access) {
-    if (this != &access) {
-        if (ref_tracker != NULL) {
-            rassert(get_thread_id() == thread);
-            ref_tracker->release();
-        }
-        nif = access.nif;
-        ref_tracker = access.ref_tracker;
-        thread = access.thread;
-        if (ref_tracker != NULL) {
-            rassert(get_thread_id() == thread);
-            ref_tracker->add_ref();
-        }
-    }
-    return *this;
-}
-
-namespace_interface_access_t::~namespace_interface_access_t() {
-    if (ref_tracker != NULL) {
-        rassert(get_thread_id() == thread);
-        ref_tracker->release();
-    }
-}
-
-namespace_interface_t *namespace_interface_access_t::get() {
-    rassert(thread == get_thread_id());
-    return nif;
-}
 
 namespace_id_t real_table_t::get_id() const {
     return uuid;
@@ -93,7 +42,10 @@ scoped_ptr_t<ql::reader_t> real_table_t::read_all_with_sindexes(
         const ql::datumspec_t &datumspec,
         sorting_t sorting,
         read_mode_t read_mode) {
-    // This alternative behavior exists to make eqJoin work.
+    // This is a separate method because we need the sindex values from the rget_reader_t
+    // in order to make the algorithm in eq_join work. The other method sometimes does
+    // not fill in this information.
+
     if (datumspec.is_empty()) {
         return make_scoped<ql::empty_reader_t>(
             counted_t<real_table_t>(this),
@@ -151,10 +103,10 @@ counted_t<ql::datum_stream_t> real_table_t::read_all(
 }
 
 counted_t<ql::datum_stream_t> real_table_t::read_changes(
-    ql::env_t *env,
-    const ql::changefeed::streamspec_t &ss,
-    ql::backtrace_id_t bt) {
-    return changefeed_client->new_stream(env, ss, uuid, bt, m_table_meta_client);
+        ql::env_t *env,
+        const ql::changefeed::streamspec_t &ss,
+        ql::backtrace_id_t bt) {
+    return changefeed_client->new_stream(env, ss, uuid, bt);
 }
 
 counted_t<ql::datum_stream_t> real_table_t::read_intersecting(
@@ -193,8 +145,7 @@ ql::datum_t real_table_t::read_nearest(
         geo_system,
         table_name,
         sindex,
-        env->get_all_optargs(),
-        env->get_user_context());
+        env->get_serializable_env());
     read_t read(geo_read, env->profile(), read_mode);
     read_response_t res;
     try {
@@ -266,12 +217,32 @@ std::vector<std::vector<T> > split(std::vector<T> &&v) {
     return out;
 }
 
+boost::optional<counted_t<const ql::func_t> > real_table_t::get_write_hook(
+    ql::env_t *env,
+    ignore_write_hook_t ignore_write_hook) {
+    boost::optional<counted_t<const ql::func_t> > write_hook;
+    table_config_and_shards_t config;
+
+    m_table_meta_client->get_config(uuid, env->interruptor, &config);
+
+    if (config.config.write_hook &&
+        ignore_write_hook == ignore_write_hook_t::NO) {
+        write_hook = config.config.write_hook->func.compile_wire_func();
+    }
+    return write_hook;
+}
+
 ql::datum_t real_table_t::write_batched_replace(
     ql::env_t *env,
     const std::vector<ql::datum_t> &keys,
     const counted_t<const ql::func_t> &func,
     return_changes_t return_changes,
-    durability_requirement_t durability) {
+    durability_requirement_t durability,
+    ignore_write_hook_t ignore_write_hook) {
+
+    // Get write_hook function
+    boost::optional<counted_t<const ql::func_t> > write_hook =
+        get_write_hook(env, ignore_write_hook);
 
     std::vector<store_key_t> store_keys;
     store_keys.reserve(keys.size());
@@ -289,8 +260,8 @@ ql::datum_t real_table_t::write_batched_replace(
                 std::move(batch),
                 pkey,
                 func,
-                env->get_all_optargs(),
-                env->get_user_context(),
+                write_hook,
+                env->get_serializable_env(),
                 return_changes);
             write_t w(std::move(write), durability, env->profile(), env->limits());
             write_response_t response;
@@ -324,7 +295,12 @@ ql::datum_t real_table_t::write_batched_insert(
     conflict_behavior_t conflict_behavior,
     boost::optional<counted_t<const ql::func_t> > conflict_func,
     return_changes_t return_changes,
-    durability_requirement_t durability) {
+    durability_requirement_t durability,
+    ignore_write_hook_t ignore_write_hook) {
+
+    // Get write_hook function
+    boost::optional<counted_t<const ql::func_t> > write_hook =
+        get_write_hook(env, ignore_write_hook);
 
     ql::datum_t stats((std::map<datum_string_t, ql::datum_t>()));
     std::set<std::string> conditions;
@@ -333,10 +309,11 @@ ql::datum_t real_table_t::write_batched_insert(
         batched_insert_t write(
             std::move(batch),
             pkey,
+            write_hook,
             conflict_behavior,
             conflict_func,
             env->limits(),
-            env->get_user_context(),
+            env->get_serializable_env(),
             return_changes);
         write_t w(std::move(write), durability, env->profile(), env->limits());
         write_response_t response;

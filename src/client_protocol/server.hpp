@@ -2,20 +2,16 @@
 #ifndef CLIENT_PROTOCOL_SERVER_HPP_
 #define CLIENT_PROTOCOL_SERVER_HPP_
 
-#include <openssl/ssl.h>
-
 #include <set>
 #include <map>
+#include <memory>
 #include <random>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-#include "errors.hpp"
-#include <boost/make_shared.hpp>
-#include <boost/shared_ptr.hpp>
-
 #include "arch/address.hpp"
+#include "arch/io/openssl.hpp"
 #include "arch/runtime/runtime.hpp"
 #include "arch/timing.hpp"
 #include "concurrency/auto_drainer.hpp"
@@ -107,7 +103,7 @@ public:
         int port,
         query_handler_t *_handler,
         uint32_t http_timeout_sec,
-        SSL_CTX* tls_ctx);
+        tls_ctx_t* tls_ctx);
     ~query_server_t();
 
     int get_port() const;
@@ -134,7 +130,7 @@ private:
                 http_res_t *result,
                 signal_t *interruptor);
 
-    SSL_CTX *tls_ctx;
+    tls_ctx_t *tls_ctx;
     rdb_context_t *const rdb_ctx;
     query_handler_t *const handler;
 

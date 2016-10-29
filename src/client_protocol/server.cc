@@ -191,7 +191,7 @@ query_server_t::query_server_t(rdb_context_t *_rdb_ctx,
                                int port,
                                query_handler_t *_handler,
                                uint32_t http_timeout_sec,
-                               SSL_CTX *_tls_ctx) :
+                               tls_ctx_t *_tls_ctx) :
         tls_ctx(_tls_ctx),
         rdb_ctx(_rdb_ctx),
         handler(_handler),
@@ -264,19 +264,19 @@ void query_server_t::handle_conn(const scoped_ptr_t<tcp_conn_descriptor_t> &ncon
     } catch (const interrupted_exc_t &) {
         // TLS handshake was interrupted.
         return;
-    } catch (const tcp_conn_t::connect_failed_exc_t &err) {
+    } catch (const crypto::openssl_error_t &err) {
         // TLS handshake failed.
-        logWRN("Driver connection TLS handshake failed: %d - %s", err.error, err.info.c_str());
+        logWRN("Driver connection TLS handshake failed: %s", err.what());
         return;
     }
-
-    conn->enable_keepalive();
 
     uint8_t version = 0;
     std::unique_ptr<auth::base_authenticator_t> authenticator;
     uint32_t error_code = 0;
     std::string error_message;
     try {
+        conn->enable_keepalive();
+
         int32_t client_magic_number;
         conn->read_buffered(
             &client_magic_number, sizeof(client_magic_number), &ct_keepalive);
@@ -649,7 +649,7 @@ void query_server_t::handle(const http_req_t &req,
         return;
     }
 
-    int64_t token;
+    int64_t token = 0;
     if (req.body.size() < sizeof(token)) {
         *result = http_res_t(http_status_code_t::BAD_REQUEST, "application/text",
                              "Client is buggy (request too small).");

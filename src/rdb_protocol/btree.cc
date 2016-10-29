@@ -118,7 +118,7 @@ void kv_location_delete(keyvalue_location_t *kv_location,
     // As noted above, we can be sure that buf is valid.
     const max_block_size_t block_size = kv_location->buf.cache()->max_block_size();
 
-    if (mod_info_out != NULL) {
+    if (mod_info_out != nullptr) {
         guarantee(mod_info_out->deleted.second.empty());
 
         mod_info_out->deleted.second.assign(
@@ -166,7 +166,7 @@ kv_location_set(keyvalue_location_t *kv_location,
     if (kv_location->value.has()) {
         deletion_context->in_tree_deleter()->delete_value(
                 buf_parent_t(&kv_location->buf), kv_location->value.get());
-        if (mod_info_out != NULL) {
+        if (mod_info_out != nullptr) {
             guarantee(mod_info_out->deleted.second.empty());
             mod_info_out->deleted.second.assign(
                     kv_location->value_as<rdb_value_t>()->value_ref(),
@@ -320,6 +320,54 @@ batched_replace_response_t rdb_replace_and_return_superblock(
     }
 }
 
+ql::datum_t btree_batched_replacer_t::apply_write_hook(
+    ql::env_t *env,
+    const datum_string_t &pkey,
+    const ql::datum_t &d,
+    const ql::datum_t &res_,
+    const counted_t<const ql::func_t> &write_hook) const {
+    ql::datum_t res = res_;
+    if (write_hook.has()) {
+        ql::datum_t primary_key;
+        if (res.get_type() != ql::datum_t::type_t::R_NULL) {
+            primary_key = res.get_field(pkey, ql::throw_bool_t::NOTHROW);
+        } else if (d.get_type() != ql::datum_t::type_t::R_NULL) {
+            primary_key = d.get_field(pkey, ql::throw_bool_t::NOTHROW);
+        }
+        if (!primary_key.has()) {
+            primary_key = ql::datum_t::null();
+        }
+        ql::datum_t modified;
+        try {
+            modified = write_hook->call(env,
+                                        std::vector<ql::datum_t>{
+                                            primary_key,
+                                                d,
+                                                res})->as_datum();
+        } catch (ql::exc_t &e) {
+            throw ql::exc_t(e.get_type(),
+                            strprintf("Error in write hook: %s", e.what()),
+                            e.backtrace(),
+                            e.dummy_frames());
+        } catch (ql::datum_exc_t &e) {
+            throw ql::datum_exc_t(e.get_type(),
+                                  strprintf("Error in write hook: %s", e.what()));
+        }
+
+        rcheck_toplevel(!(res.get_type() == ql::datum_t::type_t::R_NULL &&
+                          modified.get_type() != ql::datum_t::type_t::R_NULL),
+                        ql::base_exc_t::OP_FAILED,
+                        "A write hook function must not turn a deletion into a "
+                        "replace/insert.");
+        rcheck_toplevel(!(res.get_type() != ql::datum_t::type_t::R_NULL &&
+                          modified.get_type() == ql::datum_t::type_t::R_NULL),
+                        ql::base_exc_t::OP_FAILED,
+                        "A write hook function must not turn a replace/insert "
+                        "into a deletion.");
+        res = modified;
+    }
+    return res;
+}
 
 class one_replace_t : public btree_point_replacer_t {
 public:
@@ -722,7 +770,7 @@ continue_bool_t rget_cb_t::handle_pair(
     // STUFF THAT CAN HAPPEN OUT OF ORDER GOES HERE //
     //////////////////////////////////////////////////
     sampler->new_sample();
-    if (bad_init || boost::get<ql::exc_t>(&io.response->result) != NULL) {
+    if (bad_init || boost::get<ql::exc_t>(&io.response->result) != nullptr) {
         return continue_bool_t::ABORT;
     }
     // Load the key and value.
@@ -756,8 +804,7 @@ continue_bool_t rget_cb_t::handle_pair(
     // are out of order because of truncation.
     bool remember_key_for_sindex_batching = sindex
         ? (ql::datum_t::extract_secondary(key_to_unescaped_str(key)).size()
-           >= ql::datum_t::max_trunc_size(
-               ql::skey_version_from_reql_version(sindex->func_reql_version)))
+           >= ql::datum_t::max_trunc_size())
         : false;
     if (last_truncated_secondary_for_abort) {
         std::string cur_truncated_secondary =
@@ -855,9 +902,7 @@ continue_bool_t rget_cb_t::handle_pair(
                 of copies to 0. We do the slightly less optimal but simpler thing and
                 just check the number of copies in this case, so that we can share the
                 code path with case 1. */
-            const size_t max_trunc_size =
-                ql::datum_t::max_trunc_size(
-                    ql::skey_version_from_reql_version(sindex->func_reql_version));
+            const size_t max_trunc_size = ql::datum_t::max_trunc_size();
             sindex->datumspec.visit<void>(
             [&](const ql::datum_range_t &r) {
                 bool must_check_copies = false;
@@ -970,7 +1015,7 @@ void rdb_rget_slice(
         sorting_t sorting,
         rget_read_response_t *response,
         release_superblock_t release_superblock) {
-    r_sanity_check(boost::get<ql::exc_t>(&response->result) == NULL);
+    r_sanity_check(boost::get<ql::exc_t>(&response->result) == nullptr);
     PROFILE_STARTER_IF_ENABLED(
         ql_env->profile() == profile_bool_t::PROFILE,
         "Do range scan on primary index.",
@@ -1045,7 +1090,7 @@ void rdb_rget_secondary_slice(
         const sindex_disk_info_t &sindex_info,
         rget_read_response_t *response,
         release_superblock_t release_superblock) {
-    r_sanity_check(boost::get<ql::exc_t>(&response->result) == NULL);
+    r_sanity_check(boost::get<ql::exc_t>(&response->result) == nullptr);
     guarantee(sindex_info.geo == sindex_geo_bool_t::REGULAR);
     PROFILE_STARTER_IF_ENABLED(
         ql_env->profile() == profile_bool_t::PROFILE,
@@ -1194,7 +1239,7 @@ void rdb_get_nearest_slice(
         } else {
             auto partial_res = boost::get<nearest_geo_read_response_t::result_t>(
                 &partial_response.results_or_error);
-            guarantee(partial_res != NULL);
+            guarantee(partial_res != nullptr);
             auto full_res = boost::get<nearest_geo_read_response_t::result_t>(
                 &response->results_or_error);
             std::move(partial_res->begin(), partial_res->end(),
@@ -1299,7 +1344,7 @@ bool rdb_modification_report_cb_t::has_pkey_cfeeds(
         auto cservers = store_->access_changefeed_servers();
         for (auto &&pair : *cservers.first) {
             if (pair.first.inner.overlaps(range)
-                && pair.second->has_limit(boost::optional<std::string>(),
+                && pair.second->has_limit(boost::none,
                                           pair.second->get_keepalive())) {
                 return true;
             }
@@ -1313,7 +1358,8 @@ void rdb_modification_report_cb_t::finish(
     auto cservers = store_->access_changefeed_servers();
     for (auto &&pair : *cservers.first) {
         pair.second->foreach_limit(
-            boost::optional<std::string>(),
+            boost::none,
+            boost::none,
             nullptr,
             [&](rwlock_in_line_t *clients_spot,
                 rwlock_in_line_t *limit_clients_spot,
@@ -1360,7 +1406,8 @@ void rdb_modification_report_cb_t::on_mod_report(
         auto cserver = store_->changefeed_server(report.primary_key);
         if (update_pkey_cfeeds && cserver.first != nullptr) {
             cserver.first->foreach_limit(
-                boost::optional<std::string>(),
+                boost::none,
+                boost::none,
                 &report.primary_key,
                 [&](rwlock_in_line_t *clients_spot,
                     rwlock_in_line_t *limit_clients_spot,
@@ -1444,7 +1491,6 @@ std::vector<std::string> expand_geo_key(
             //   support: We must be able to truncate geo keys and handle such
             //   truncated keys.
             rassert(grid_keys[i].length() <= ql::datum_t::trunc_size(
-                        ql::skey_version_from_reql_version(reql_version),
                         key_to_unescaped_str(primary_key).length()));
 
             result.push_back(
@@ -1609,7 +1655,8 @@ void deserialize_sindex_info(
     case cluster_version_t::v2_0:
     case cluster_version_t::v2_1:
     case cluster_version_t::v2_2:
-    case cluster_version_t::v2_3_is_latest:
+    case cluster_version_t::v2_3:
+    case cluster_version_t::v2_4_is_latest:
         success = deserialize_reql_version(
                 &read_stream,
                 &info_out->mapping_version_info.original_reql_version,
@@ -1645,7 +1692,8 @@ void deserialize_sindex_info(
     case cluster_version_t::v2_0: // fallthru
     case cluster_version_t::v2_1: // fallthru
     case cluster_version_t::v2_2: // fallthru
-    case cluster_version_t::v2_3_is_latest:
+    case cluster_version_t::v2_3: // fallthru
+    case cluster_version_t::v2_4_is_latest:
         success = deserialize_for_version(cluster_version, &read_stream, &info_out->geo);
         throw_if_bad_deserialization(success, "sindex description");
         break;
@@ -1726,6 +1774,7 @@ void rdb_update_single_sindex(
             if (cserver.first != nullptr) {
                 cserver.first->foreach_limit(
                     sindex->name.name,
+                    sindex->sindex.id,
                     &modification->primary_key,
                     [&](rwlock_in_line_t *clients_spot,
                         rwlock_in_line_t *limit_clients_spot,
@@ -1801,6 +1850,7 @@ void rdb_update_single_sindex(
             if (cserver.first != nullptr) {
                 cserver.first->foreach_limit(
                     sindex->name.name,
+                    sindex->sindex.id,
                     &modification->primary_key,
                     [&](rwlock_in_line_t *clients_spot,
                         rwlock_in_line_t *limit_clients_spot,
@@ -1872,6 +1922,7 @@ void rdb_update_single_sindex(
     if (cserver.first != nullptr) {
         cserver.first->foreach_limit(
             sindex->name.name,
+            sindex->sindex.id,
             &modification->primary_key,
             [&](rwlock_in_line_t *clients_spot,
                 rwlock_in_line_t *limit_clients_spot,
@@ -1931,15 +1982,15 @@ void rdb_update_sindexes(
                         &counter,
                         auto_drainer_t::lock_t(&drainer),
                         keys_available_cond,
-                        cfeed_old_keys_out == NULL
-                            ? NULL
+                        cfeed_old_keys_out == nullptr
+                            ? nullptr
                             : &(*cfeed_old_keys_out)[sindex->name.name],
-                        cfeed_new_keys_out == NULL
-                            ? NULL
+                        cfeed_new_keys_out == nullptr
+                            ? nullptr
                             : &(*cfeed_new_keys_out)[sindex->name.name]));
             }
         }
-        if (counter == 0 && keys_available_cond != NULL) {
+        if (counter == 0 && keys_available_cond != nullptr) {
             keys_available_cond->pulse();
         }
     }
@@ -1972,6 +2023,13 @@ public:
         // (this acquisition should never block)
         new_mutex_acq_t wtxn_acq(&wtxn_lock_);
         start_write_transaction(&wtxn_acq);
+    }
+
+    ~post_construct_traversal_helper_t() {
+        sindexes_.clear();
+        if (wtxn_.has()) {
+            wtxn_->commit();
+        }
     }
 
     continue_bool_t handle_pair(
@@ -2015,9 +2073,9 @@ public:
                                 &mod_report,
                                 wtxn_.get(),
                                 &deletion_context,
-                                NULL,
-                                NULL,
-                                NULL);
+                                nullptr,
+                                nullptr,
+                                nullptr);
         }
 
         // Account for the sindex writes in the stats
@@ -2026,7 +2084,9 @@ public:
 
         // Update the traversed range boundary (everything below here will happen in
         // key order).
-        waiter.wait_interruptible();
+        // This can't be interrupted, because we have already called rdb_update_sindexes,
+        // so now we /must/ update traversed_right_bound.
+        waiter.wait();
         traversed_right_bound_ = primary_key;
 
         // Release the write transaction and secondary index locks once we've reached the
@@ -2038,6 +2098,7 @@ public:
             if (current_chunk_size_ >= MAX_CHUNK_SIZE) {
                 current_chunk_size_ = 0;
                 sindexes_.clear();
+                wtxn_->commit();
                 wtxn_.reset();
                 start_write_transaction(&wtxn_acq);
             }

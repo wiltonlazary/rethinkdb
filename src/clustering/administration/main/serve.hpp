@@ -2,8 +2,6 @@
 #ifndef CLUSTERING_ADMINISTRATION_MAIN_SERVE_HPP_
 #define CLUSTERING_ADMINISTRATION_MAIN_SERVE_HPP_
 
-#include <openssl/ssl.h>
-
 #include <set>
 #include <string>
 #include <utility>
@@ -14,6 +12,7 @@
 #include "clustering/administration/persist/file.hpp"
 #include "clustering/administration/main/version_check.hpp"
 #include "arch/address.hpp"
+#include "arch/io/openssl.hpp"
 
 class os_signal_cond_t;
 
@@ -99,7 +98,7 @@ struct service_address_ports_t {
     int port_offset;
 };
 
-typedef std::shared_ptr<SSL_CTX> shared_ssl_ctx_t;
+typedef std::shared_ptr<tls_ctx_t> shared_ssl_ctx_t;
 
 class tls_configs_t {
 public:
@@ -120,6 +119,7 @@ public:
                  boost::optional<std::string> _config_file,
                  std::vector<std::string> &&_argv,
                  const int _join_delay_secs,
+                 const int _node_reconnect_timeout_secs,
                  tls_configs_t _tls_configs) :
         joins(std::move(_joins)),
         reql_http_proxy(std::move(_reql_http_proxy)),
@@ -128,7 +128,8 @@ public:
         ports(_ports),
         config_file(_config_file),
         argv(std::move(_argv)),
-        join_delay_secs(_join_delay_secs)
+        join_delay_secs(_join_delay_secs),
+        node_reconnect_timeout_secs(_node_reconnect_timeout_secs)
     {
         tls_configs = _tls_configs;
     }
@@ -148,6 +149,7 @@ public:
     argument parsing has already been completed at this point. */
     std::vector<std::string> argv;
     int join_delay_secs;
+    int node_reconnect_timeout_secs;
     tls_configs_t tls_configs;
 };
 

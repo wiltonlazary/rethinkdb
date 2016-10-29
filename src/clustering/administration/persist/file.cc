@@ -25,7 +25,7 @@ ATTR_PACKED(struct metadata_disk_superblock_t {
 
 // Etymology: In version 1.13, the magic was 'RDmd', for "(R)ethink(D)B (m)eta(d)ata".
 // Every subsequent version, the last character has been incremented.
-static const block_magic_t metadata_sb_magic = { { 'R', 'D', 'm', 'k' } };
+static const block_magic_t metadata_sb_magic = { { 'R', 'D', 'm', 'l' } };
 
 void init_metadata_superblock(void *sb_void, size_t block_size) {
     memset(sb_void, 0, block_size);
@@ -55,13 +55,14 @@ cluster_version_t magic_to_version(block_magic_t magic) {
     case 'i': return cluster_version_t::v2_1;
     case 'j': return cluster_version_t::v2_2;
     case 'k': return cluster_version_t::v2_3;
+    case 'l': return cluster_version_t::v2_4;
     default:
         fail_due_to_user_error("You're trying to use an earlier version of RethinkDB "
             "to open a database created by a later version of RethinkDB.");
     }
     // This is here so you don't forget to add new versions above.
     // Please also update the value of metadata_sb_magic at the top of this file!
-    static_assert(cluster_version_t::LATEST_DISK == cluster_version_t::v2_3,
+    static_assert(cluster_version_t::LATEST_DISK == cluster_version_t::v2_4,
         "Please add new version to magic_to_version.");
 }
 
@@ -251,9 +252,9 @@ void metadata_file_t::read_txn_t::read_many_bin(
 }
 
 metadata_file_t::write_txn_t::write_txn_t(
-        metadata_file_t *file,
+        metadata_file_t *_file,
         signal_t *interruptor) :
-    read_txn_t(file, write_access_t::write, interruptor)
+    read_txn_t(_file, write_access_t::write, interruptor)
     { }
 
 void metadata_file_t::write_txn_t::write_bin(
@@ -306,20 +307,26 @@ metadata_file_t::metadata_file_t(
     cache_conn.init(new cache_conn_t(cache.get()));
 
     /* Migrate data if necessary */
-    write_txn_t write_txn(this, interruptor);
-    object_buffer_t<buf_lock_t> sb_lock;
-    sb_lock.create(buf_parent_t(&write_txn.txn), SUPERBLOCK_ID, access_t::write);
-    object_buffer_t<buf_write_t> sb_write;
-    sb_write.create(sb_lock.get());
-    void *sb_data = sb_write->get_data_write();
+    if (interruptor->is_pulsed()) {
+        throw interrupted_exc_t();
+    }
+    cond_t non_interruptor;
+    write_txn_t write_txn(this, &non_interruptor);
+    {
+        object_buffer_t<buf_lock_t> sb_lock;
+        sb_lock.create(
+            buf_parent_t(&write_txn.txn), SUPERBLOCK_ID, access_t::write);
+        object_buffer_t<buf_write_t> sb_write;
+        sb_write.create(sb_lock.get());
+        void *sb_data = sb_write->get_data_write();
 
-    cluster_version_t metadata_version =
-        magic_to_version(*static_cast<block_magic_t *>(sb_data));
-    switch (metadata_version) {
-    case cluster_version_t::v1_14: // fallthrough intentional
-    case cluster_version_t::v1_15: // fallthrough intentional
-    case cluster_version_t::v1_16: // fallthrough intentional
-    case cluster_version_t::v2_0: {
+        cluster_version_t metadata_version =
+            magic_to_version(*static_cast<block_magic_t *>(sb_data));
+        switch (metadata_version) {
+        case cluster_version_t::v1_14: // fallthrough intentional
+        case cluster_version_t::v1_15: // fallthrough intentional
+        case cluster_version_t::v1_16: // fallthrough intentional
+        case cluster_version_t::v2_0: {
             scoped_malloc_t<void> sb_copy(cache->max_block_size().value());
             memcpy(sb_copy.get(), sb_data, cache->max_block_size().value());
             init_metadata_superblock(sb_data, cache->max_block_size().value());
@@ -330,13 +337,13 @@ metadata_file_t::metadata_file_t(
             migrate_cluster_metadata_to_v2_1(
                 io_backender, base_path,
                 buf_parent_t(&write_txn.txn), sb_copy.get(), &write_txn,
-                interruptor);
+                &non_interruptor);
 
             // The metadata is now serialized using the latest serialization version
             metadata_version = cluster_version_t::LATEST_DISK;
         }                         // fallthrough intentional
-    case cluster_version_t::v2_1: // fallthrough intentional
-    case cluster_version_t::v2_2: {
+        case cluster_version_t::v2_1: // fallthrough intentional
+        case cluster_version_t::v2_2: {
             if (sb_lock.has()) {
                 update_metadata_superblock_version(sb_data);
                 sb_write.reset();
@@ -344,12 +351,18 @@ metadata_file_t::metadata_file_t(
             }
 
             logNTC("Migrating cluster metadata to v2.3");
-            migrate_metadata_v2_1_to_v2_3(metadata_version, &write_txn, interruptor);
+            migrate_metadata_v2_1_to_v2_3(
+                metadata_version, &write_txn, &non_interruptor);
         } break;
-    case cluster_version_t::v2_3_is_latest_disk:
-        break; // Up-to-date, do nothing
-    default: unreachable();
+        case cluster_version_t::v2_3:
+            // TODO migration to 2.4
+            break;
+        case cluster_version_t::v2_4_is_latest:
+            break; // Up-to-date, do nothing
+        default: unreachable();
+        }
     }
+    write_txn.commit();
 }
 
 metadata_file_t::metadata_file_t(
@@ -370,14 +383,19 @@ metadata_file_t::metadata_file_t(
     cache_conn.init(new cache_conn_t(cache.get()));
 
     {
-        write_txn_t write_txn(this, interruptor);
+        if (interruptor->is_pulsed()) {
+            throw interrupted_exc_t();
+        }
+        cond_t non_interruptor;
+        write_txn_t write_txn(this, &non_interruptor);
         {
             buf_lock_t sb_lock(&write_txn.txn, SUPERBLOCK_ID, alt_create_t::create);
             buf_write_t sb_write(&sb_lock);
             void *sb_data = sb_write.get_data_write();
             init_metadata_superblock(sb_data, cache->max_block_size().value());
         }
-        initializer(&write_txn, interruptor);
+        initializer(&write_txn, &non_interruptor);
+        write_txn.commit();
     }
 
     file_opener.move_serializer_file_to_permanent_location();

@@ -6,7 +6,7 @@
 #include "boost_utils.hpp"
 #include "btree/reql_specific.hpp"
 #include "clustering/administration/auth/user_context.hpp"
-#include "clustering/table_manager/table_meta_client.hpp"
+#include "clustering/administration/tables/name_resolver.hpp"
 #include "concurrency/cross_thread_signal.hpp"
 #include "concurrency/interruptor.hpp"
 #include "containers/archive/boost_types.hpp"
@@ -429,6 +429,7 @@ void server_t::add_limit_client(
         const client_t::addr_t &addr,
         const region_t &region,
         const std::string &table,
+        const boost::optional<uuid_u> &sindex_id,
         rdb_context_t *ctx,
         global_optargs_t optargs,
         auth::user_context_t user_context,
@@ -451,6 +452,7 @@ void server_t::add_limit_client(
             &spot,
             region,
             table,
+            sindex_id,
             ctx,
             std::move(optargs),
             std::move(user_context),
@@ -577,7 +579,7 @@ uuid_u server_t::get_uuid() {
 }
 
 bool server_t::has_limit(
-        const boost::optional<std::string> &sindex,
+        const boost::optional<std::string> &sindex_name,
         const auto_drainer_t::lock_t &keepalive) {
     keepalive.assert_is_holding(&drainer);
     auto spot = make_scoped<rwlock_in_line_t>(&clients_lock, access_t::read);
@@ -588,7 +590,7 @@ bool server_t::has_limit(
         rwlock_in_line_t lspot(client.second.limit_clients_lock.get(), access_t::read);
         lspot.read_signal()->wait_lazily_unordered();
         client_info_t *info = &client.second;
-        auto it = info->limit_clients.find(sindex);
+        auto it = info->limit_clients.find(sindex_name);
         if (it != info->limit_clients.end()) {
             return true;
         }
@@ -601,7 +603,8 @@ auto_drainer_t::lock_t server_t::get_keepalive() {
 }
 
 void server_t::foreach_limit(
-        const boost::optional<std::string> &sindex,
+        const boost::optional<std::string> &sindex_name,
+        const boost::optional<uuid_u> &sindex_id,
         const store_key_t *pkey,
         std::function<void(rwlock_in_line_t *,
                            rwlock_in_line_t *,
@@ -617,7 +620,7 @@ void server_t::foreach_limit(
         rwlock_in_line_t lspot(client.second.limit_clients_lock.get(), access_t::read);
         lspot.read_signal()->wait_lazily_unordered();
         client_info_t *info = &client.second;
-        auto it = info->limit_clients.find(sindex);
+        auto it = info->limit_clients.find(sindex_name);
         if (it == info->limit_clients.end()) {
             continue;
         }
@@ -631,10 +634,24 @@ void server_t::foreach_limit(
             auto_drainer_t::lock_t lc_lock(&(*lc)->drainer);
             rwlock_in_line_t lc_spot(&(*lc)->lock, access_t::write);
             lc_spot.write_signal()->wait_lazily_unordered();
+            boost::optional<exc_t> error;
             try {
+                if ((*lc)->sindex_id != sindex_id) {
+                    // Abort limit managers that don't match the index ID.
+                    // This can happen if an index is replaced by a different
+                    // index under the same name.
+                    r_sanity_check(sindex_name != boost::none);
+                    rfail_toplevel(
+                        base_exc_t::OP_FAILED,
+                        "The secondary index `%s` was replaced by a different one.",
+                        sindex_name->c_str());
+                }
                 f(spot.get(), &lspot, &lc_spot, (*lc).get());
             } catch (const exc_t &e) {
-                (*lc)->abort(e);
+                error = e;
+            }
+            if (error) {
+                (*lc)->abort(*error);
                 auto_drainer_t::lock_t sub_keepalive(keepalive);
                 auto sub_spot = make_scoped<rwlock_in_line_t>(
                     &clients_lock, access_t::read);
@@ -642,7 +659,7 @@ void server_t::foreach_limit(
                 // We spawn immediately so it can steal our locks.
                 coro_t::spawn_now_dangerously(
                     std::bind(&server_t::prune_dead_limit,
-                              this, &sub_keepalive, &sub_spot, info, sindex, i));
+                              this, &sub_keepalive, &sub_spot, info, sindex_name, i));
                 guarantee(!sub_keepalive.has_lock());
                 guarantee(!sub_spot.has());
             }
@@ -843,6 +860,7 @@ limit_manager_t::limit_manager_t(
     rwlock_in_line_t *clients_lock,
     region_t _region,
     std::string _table,
+    boost::optional<uuid_u> _sindex_id,
     rdb_context_t *ctx,
     global_optargs_t optargs,
     auth::user_context_t user_context,
@@ -854,6 +872,7 @@ limit_manager_t::limit_manager_t(
     std::vector<item_t> &&item_vec)
     : region(std::move(_region)),
       table(std::move(_table)),
+      sindex_id(std::move(_sindex_id)),
       uuid(std::move(_uuid)),
       parent(_parent),
       parent_client(std::move(_parent_client)),
@@ -863,13 +882,14 @@ limit_manager_t::limit_manager_t(
       aborted(false) {
     guarantee(clients_lock->read_signal()->is_pulsed());
 
-    // The final `NULL` argument means we don't profile any work done with this `env`.
+    // The final `nullptr` argument means we don't profile any work done with this `env`.
     env = make_scoped<env_t>(
         ctx,
         return_empty_normal_batches_t::NO,
         drainer.get_drain_signal(),
         std::move(optargs),
         std::move(user_context),
+        datum_t(),
         nullptr);
 
     guarantee(ops.size() == 0);
@@ -896,10 +916,11 @@ void limit_manager_t::add(
     if ((is_primary == is_primary_t::YES && region.inner.contains_key(sk))
         || (is_primary == is_primary_t::NO && spec.range.datumspec.copies(key) != 0)) {
         if (boost::optional<datum_t> d = apply_ops(val, ops, env.get(), key)) {
-            added.push_back(
+            auto pair = added.insert(
                 std::make_pair(
                     key_to_mangled_primary(sk, is_primary),
                     std::make_pair(std::move(key), *d)));
+            guarantee(pair.second);
         }
     }
 }
@@ -909,7 +930,16 @@ void limit_manager_t::del(
     store_key_t sk,
     is_primary_t is_primary) THROWS_NOTHING {
     guarantee(spot->write_signal()->is_pulsed());
-    deleted.push_back(key_to_mangled_primary(sk, is_primary));
+    std::string key = key_to_mangled_primary(sk, is_primary);
+    size_t erased = added.erase(key);
+    // Note that we don't actually have to check whether or not the thing we're
+    // deleting matches any predicates that might be in the operations, because
+    // we already have to handle the case where we're deleting something that
+    // isn't in the top `n`, so trying to delete too much doesn't hurt anything.
+    if (erased == 0) {
+        auto pair = deleted.insert(std::move(key));
+        guarantee(pair.second);
+    }
 }
 
 class ref_visitor_t : public boost::static_visitor<std::vector<item_t>> {
@@ -919,15 +949,15 @@ public:
                   const key_range_t *_pk_range,
                   const keyspec_t::limit_t *_spec,
                   sorting_t _sorting,
-                  boost::optional<item_queue_t::iterator> _start,
-                  size_t _n)
+                  boost::optional<item_t> _start,
+                  const item_queue_t *_item_queue)
         : env(_env),
           ops(_ops),
           pk_range(_pk_range),
           spec(_spec),
           sorting(_sorting),
           start(std::move(_start)),
-          n(_n) { }
+          item_queue(_item_queue) { }
 
     std::vector<item_t> operator()(const primary_ref_t &ref) {
         rget_read_response_t resp;
@@ -935,14 +965,14 @@ public:
         switch (sorting) {
         case sorting_t::ASCENDING: {
             if (start) {
-                store_key_t start_key = mangled_primary_to_pkey((**start)->first);
+                store_key_t start_key = mangled_primary_to_pkey(start->first);
                 start_key.increment(); // open bound
                 range.left = std::move(start_key);
             }
         } break;
         case sorting_t::DESCENDING: {
             if (start) {
-                store_key_t start_key = mangled_primary_to_pkey((**start)->first);
+                store_key_t start_key = mangled_primary_to_pkey(start->first);
                 // right bound is open by default
                 range.right = key_range_t::right_bound_t(std::move(start_key));
             }
@@ -950,6 +980,7 @@ public:
         case sorting_t::UNORDERED: // fallthru
         default: unreachable();
         }
+        size_t n = spec->limit - item_queue->size();
         rdb_rget_slice(
             ref.btree,
             region_t(),
@@ -1004,17 +1035,26 @@ public:
                 [](const datum_range_t &) { return true; },
                 [](const std::map<datum_t, uint64_t> &) { return false; }));
         datum_range_t srange = spec->range.datumspec.covering_range();
+        size_t n = spec->limit - item_queue->size();
         if (start) {
-            datum_t dstart = (**start)->second.first;
+            datum_t dstart = start->second.first;
             switch (sorting) {
             case sorting_t::ASCENDING:
-                srange = srange.with_left_bound(dstart, key_range_t::bound_t::open);
+                srange = srange.with_left_bound(dstart, key_range_t::bound_t::closed);
                 break;
             case sorting_t::DESCENDING:
-                srange = srange.with_right_bound(dstart, key_range_t::bound_t::open);
+                srange = srange.with_right_bound(dstart, key_range_t::bound_t::closed);
                 break;
             case sorting_t::UNORDERED: // fallthru
             default: unreachable();
+            }
+
+            // Because we're using closed bounds, we have to make sure to read enough.
+            for (const auto &pair : *item_queue) {
+                if (pair->second.first != dstart) {
+                    break;
+                }
+                n += 1;
             }
         }
         reql_version_t reql_version =
@@ -1071,16 +1111,16 @@ private:
     const key_range_t *pk_range;
     const keyspec_t::limit_t *spec;
     sorting_t sorting;
-    boost::optional<item_queue_t::iterator> start;
-    size_t n;
+    boost::optional<item_t> start;
+    const item_queue_t *item_queue;
 };
 
 std::vector<item_t> limit_manager_t::read_more(
     const boost::variant<primary_ref_t, sindex_ref_t> &ref,
-    sorting_t sorting,
-    const boost::optional<item_queue_t::iterator> &start,
-    size_t n) {
-    ref_visitor_t visitor(env.get(), &ops, &region.inner, &spec, sorting, start, n);
+    const boost::optional<item_t> &start) {
+    guarantee(item_queue.size() < spec.limit);
+    ref_visitor_t visitor(
+        env.get(), &ops, &region.inner, &spec, spec.range.sorting, start, &item_queue);
     return boost::apply_visitor(visitor, ref);
 }
 
@@ -1091,30 +1131,43 @@ void limit_manager_t::commit(
     if (added.size() == 0 && deleted.size() == 0) {
         return;
     }
+
+    // Before we delete anything, we get the boundary between the active set and
+    // the data that didn't make it into the set.  Anything <= that according to
+    // our ordering could never be kicked out of the set because of a read from
+    // disk.
+    boost::optional<item_t> active_boundary;
+    auto item_queue_it = item_queue.begin();
+    if (item_queue_it != item_queue.end()) {
+        active_boundary = **item_queue_it;
+    }
+
     item_queue_t real_added(gt);
     std::set<std::string> real_deleted;
-    for (auto &&id : deleted) {
+    for (const auto &id : deleted) {
         bool data_deleted = item_queue.del_id(id);
         if (data_deleted) {
-            bool inserted = real_deleted.insert(std::move(id)).second;
+            bool inserted = real_deleted.insert(id).second;
             guarantee(inserted);
         }
     }
     deleted.clear();
-    for (auto &&pair : added) {
-        auto it = item_queue.find_id(pair.first);
-        if (it != item_queue.end()) {
-            // We can enter this branch if we're doing a batched update and the
-            // same row is changed multiple times.  We use the later row.
-            auto sub_it = real_added.find_id(pair.first);
-            guarantee(sub_it != real_added.end());
-            item_queue.erase(it);
-            real_added.erase(sub_it);
+    bool added_on_disk = false;
+    for (const auto &pair : added) {
+        // We only add to the set if we know we beat anything that might be read
+        // off of disk below.  This is fine because if the resulting set is
+        // still too small, and the things we didn't add happen to beat the
+        // other things in the table, we'll read them first.
+        if (!(active_boundary && gt(item_t(pair), *active_boundary))) {
+            bool inserted = item_queue.insert(pair).second;
+            // We can never get two additions for the same key without a deletion
+            // in-between.
+            guarantee(inserted);
+            inserted = real_added.insert(pair).second;
+            guarantee(inserted);
+        } else {
+            added_on_disk = true;
         }
-        bool inserted = item_queue.insert(pair).second;
-        guarantee(inserted);
-        inserted = real_added.insert(std::move(pair)).second;
-        guarantee(inserted);
     }
     added.clear();
 
@@ -1128,20 +1181,13 @@ void limit_manager_t::commit(
             guarantee(inserted);
         }
     }
-    // TODO: we should try to avoid this read if we know we only added rows.
-    if (item_queue.size() < spec.limit) {
-        auto data_it = item_queue.begin();
-        boost::optional<item_queue_t::iterator> start;
-        if (data_it != item_queue.end()) {
-            start = data_it;
-        }
+
+    bool anything_on_disk = real_deleted.size() != 0 || added_on_disk;
+    if (item_queue.size() < spec.limit && anything_on_disk) {
         std::vector<item_t> s;
         boost::optional<exc_t> exc;
         try {
-            s = read_more(sindex_ref,
-                          spec.range.sorting,
-                          start,
-                          spec.limit - item_queue.size());
+            s = read_more(sindex_ref, active_boundary);
         } catch (const exc_t &e) {
             exc = e;
         }
@@ -1151,14 +1197,24 @@ void limit_manager_t::commit(
             abort(*exc);
             return;
         }
-        guarantee(s.size() <= spec.limit - item_queue.size());
         for (auto &&pair : s) {
-            bool ins = item_queue.insert(pair).second;
-            guarantee(ins);
-            size_t erased = real_deleted.erase(pair.first);
-            if (erased == 0) {
-                ins = real_added.insert(pair).second;
-                guarantee(ins);
+            bool inserted = item_queue.insert(pair).second;
+            // Reading duplicates from disk is fine.
+            if (inserted) {
+                bool added_insert = real_added.insert(pair).second;
+                guarantee(added_insert);
+            }
+        }
+        // We need to truncate again because `read_more` may read too much in
+        // the secondary index case.
+        std::vector<std::string> read_trunc = item_queue.truncate_top(spec.limit);
+        for (auto &&id : read_trunc) {
+            auto it = real_added.find_id(id);
+            if (it != real_added.end()) {
+                real_added.erase(it);
+            } else {
+                bool inserted = real_deleted.insert(std::move(id)).second;
+                guarantee(inserted);
             }
         }
     }
@@ -1557,7 +1613,7 @@ class limit_sub_t;
 
 class feed_t : public home_thread_mixin_t, public slow_atomic_countable_t<feed_t> {
 public:
-    feed_t(namespace_id_t const &, table_meta_client_t *);
+    feed_t(namespace_id_t const &, lifetime_t<name_resolver_t const &>);
     virtual ~feed_t();
 
     void add_point_sub(point_sub_t *sub, const store_key_t &key) THROWS_NOTHING;
@@ -1598,8 +1654,8 @@ public:
         return table_id;
     }
 
-    table_meta_client_t *get_table_meta_client() const {
-        return table_meta_client;
+    name_resolver_t const &get_name_resolver() const {
+        return name_resolver;
     }
 protected:
     bool detached;
@@ -1654,7 +1710,7 @@ private:
     one_per_thread_t<stamps_t> stamps;
 
     namespace_id_t table_id;
-    table_meta_client_t *table_meta_client;
+    name_resolver_t const &name_resolver;
 };
 
 void feed_t::update_stamps(uuid_u server_uuid, uint64_t stamp) {
@@ -1683,7 +1739,7 @@ public:
                 namespace_interface_t *ns_if,
                 namespace_id_t const &table_id,
                 signal_t *interruptor,
-                table_meta_client_t *table_meta_client);
+                lifetime_t<name_resolver_t const &> name_resolver);
     ~real_feed_t();
 
     client_t::addr_t get_addr() const;
@@ -1733,8 +1789,8 @@ real_feed_t::real_feed_t(auto_drainer_t::lock_t _client_lock,
                          namespace_interface_t *ns_if,
                          namespace_id_t const &_table_id,
                          signal_t *interruptor,
-                         table_meta_client_t *table_meta_client)
-    : feed_t(_table_id, table_meta_client),
+                         lifetime_t<name_resolver_t const &> _name_resolver)
+    : feed_t(_table_id, _name_resolver),
       client_lock(std::move(_client_lock)),
       client(_client),
       table_id(_table_id),
@@ -1822,7 +1878,7 @@ void real_feed_t::constructor_cb() {
     // longer than necessary.
     disconnect_watchers.clear();
     if (!detached) {
-        scoped_ptr_t<feed_t> self = client->detach_feed(client_lock, table_id);
+        scoped_ptr_t<feed_t> self = client->detach_feed(client_lock, this);
         guarantee(detached);
         if (self.has()) {
             guarantee(lock.has());
@@ -1840,26 +1896,26 @@ void real_feed_t::constructor_cb() {
 
 class empty_sub_t : public flat_sub_t {
 public:
-    empty_sub_t(rdb_context_t *rdb_context,
-                const auth::user_context_t &user_context,
-                feed_t *feed,
-                configured_limits_t limits,
-                const datum_t &squash,
-                bool include_states,
-                bool include_types)
+    empty_sub_t(rdb_context_t *_rdb_context,
+                const auth::user_context_t &_user_context,
+                feed_t *_feed,
+                configured_limits_t _limits,
+                const datum_t &_squash,
+                bool _include_states,
+                bool _include_types)
     // There will never be any changes, safe to start squashing right away.
     : flat_sub_t(init_squashing_queue_t::YES,
-                 rdb_context,
-                 user_context,
-                 feed,
-                 std::move(limits),
-                 squash,
-                 include_states,
-                 include_types),
+                 _rdb_context,
+                 _user_context,
+                 _feed,
+                 std::move(_limits),
+                 _squash,
+                 _include_states,
+                 _include_types),
       state(state_t::INITIALIZING),
       sent_state(state_t::NONE),
       include_initial(false) {
-        feed->add_empty_sub(this);
+        _feed->add_empty_sub(this);
     }
     virtual ~empty_sub_t() {
         destructor_cleanup(std::bind(&feed_t::del_empty_sub, feed, this));
@@ -1923,30 +1979,30 @@ private:
 class point_sub_t : public flat_sub_t {
 public:
     // Throws QL exceptions.
-    point_sub_t(rdb_context_t *rdb_context,
-                const auth::user_context_t &user_context,
-                feed_t *feed,
-                configured_limits_t limits,
-                const datum_t &squash,
-                bool include_states,
-                bool include_types,
+    point_sub_t(rdb_context_t *_rdb_context,
+                const auth::user_context_t &_user_context,
+                feed_t *_feed,
+                configured_limits_t _limits,
+                const datum_t &_squash,
+                bool _include_states,
+                bool _include_types,
                 datum_t _pkey)
         // For point changefeeds we start squashing right away.
         : flat_sub_t(init_squashing_queue_t::YES,
-                     rdb_context,
-                     user_context,
-                     feed,
-                     std::move(limits),
-                     squash,
-                     include_states,
-                     include_types),
+                     _rdb_context,
+                     _user_context,
+                     _feed,
+                     std::move(_limits),
+                     _squash,
+                     _include_states,
+                     _include_types),
           pkey(std::move(_pkey)),
           stamp(0),
           started(false),
           state(state_t::INITIALIZING),
           sent_state(state_t::NONE),
           include_initial(false) {
-        feed->add_point_sub(this, store_key_t(pkey.print_primary()));
+        _feed->add_point_sub(this, store_key_t(pkey.print_primary()));
     }
     virtual ~point_sub_t() {
         destructor_cleanup(std::bind(&feed_t::del_point_sub, feed, this,
@@ -2111,25 +2167,25 @@ counted_t<splice_stream_t> make_splice_stream(Args &&...args) {
 class range_sub_t : public flat_sub_t {
 public:
     // Throws QL exceptions.
-    range_sub_t(rdb_context_t *rdb_context,
-                const auth::user_context_t &user_context,
-                feed_t *feed,
-                configured_limits_t limits,
-                const datum_t &squash,
-                bool include_states,
-                bool include_types,
+    range_sub_t(rdb_context_t *_rdb_context,
+                const auth::user_context_t &_user_context,
+                feed_t *_feed,
+                configured_limits_t _limits,
+                const datum_t &_squash,
+                bool _include_states,
+                bool _include_types,
                 env_t *outer_env,
                 keyspec_t::range_t _spec)
         // We don't turn on squashing until later for range subs.  (We need to
         // wait until we've purged and all the initial values are reconciled.)
         : flat_sub_t(init_squashing_queue_t::NO,
-                     rdb_context,
-                     user_context,
-                     feed,
-                     std::move(limits),
-                     squash,
-                     include_states,
-                     include_types),
+                     _rdb_context,
+                     _user_context,
+                     _feed,
+                     std::move(_limits),
+                     _squash,
+                     _include_states,
+                     _include_types),
           spec(std::move(_spec)),
           state(state_t::READY),
           sent_state(state_t::NONE),
@@ -2142,7 +2198,7 @@ public:
         if (!store_keys) {
             store_key_range = spec.datumspec.covering_range().to_primary_keyrange();
         }
-        feed->add_range_sub(this);
+        _feed->add_range_sub(this);
     }
     feed_type_t cfeed_type() const final { return feed_type_t::stream; }
     virtual ~range_sub_t() {
@@ -2346,8 +2402,10 @@ private:
                 outer_env->get_rdb_ctx(),
                 outer_env->return_empty_normal_batches,
                 drainer.get_drain_signal(),
-                outer_env->get_all_optargs(),
-                outer_env->get_user_context(),
+                serializable_env_t{
+                    outer_env->get_all_optargs(),
+                    outer_env->get_user_context(),
+                    outer_env->get_deterministic_time()},
                 nullptr/*don't profile*/);
     }
 
@@ -2376,22 +2434,22 @@ class limit_sub_t : public subscription_t {
     };
 public:
     // Throws QL exceptions.
-    limit_sub_t(rdb_context_t *rdb_context,
-                const auth::user_context_t &user_context,
-                feed_t *feed,
-                configured_limits_t limits,
-                const datum_t &squash,
+    limit_sub_t(rdb_context_t *_rdb_context,
+                const auth::user_context_t &_user_context,
+                feed_t *_feed,
+                configured_limits_t _limits,
+                const datum_t &_squash,
                 bool _include_offsets,
-                bool include_states,
-                bool include_types,
+                bool _include_states,
+                bool _include_types,
                 keyspec_t::limit_t _spec)
-        : subscription_t(rdb_context,
-                         user_context,
-                         feed,
-                         limits,
-                         squash,
-                         include_states,
-                         include_types),
+        : subscription_t(_rdb_context,
+                         _user_context,
+                         _feed,
+                         _limits,
+                         _squash,
+                         _include_states,
+                         _include_types),
           uuid(generate_uuid()),
           need_init(-1),
           got_init(0),
@@ -2401,7 +2459,7 @@ public:
           active_data(gt),
           include_initial(false),
           include_offsets(_include_offsets) {
-        feed->add_limit_sub(this, uuid);
+        _feed->add_limit_sub(this, uuid);
     }
 
     virtual ~limit_sub_t() {
@@ -2703,8 +2761,7 @@ public:
                        uuid,
                        spec,
                        std::move(table),
-                       env->get_all_optargs(),
-                       env->get_user_context(),
+                       env->get_serializable_env(),
                        spec.range.sindex
                            ? region_t::universe()
                            : region_t(
@@ -3301,23 +3358,23 @@ subscription_t::get_els(batcher_t *batcher,
         r_sanity_check(false);
     }
 
-    // FIXME changefeeds on artificial tables
-    if (feed != nullptr &&
-            !feed->get_table_id().is_nil() &&
-            feed->get_table_meta_client() != nullptr &&
-            rdb_context != nullptr) {
+    if (feed != nullptr && rdb_context != nullptr) {
         try {
-            table_basic_config_t table_basic_config;
-            feed->get_table_meta_client()->get_name(
-                feed->get_table_id(), &table_basic_config);
-
-            user_context.require_read_permission(
-                rdb_context, table_basic_config.database, feed->get_table_id());
-        } catch (no_such_table_exc_t const &no_such_table_exc) {
-            stop(
-                std::make_exception_ptr(
-                    datum_exc_t(base_exc_t::OP_FAILED, no_such_table_exc.what())),
-                detach_t::NO);
+            boost::optional<table_basic_config_t> table_basic_config =
+                feed->get_name_resolver().table_id_to_basic_config(
+                    feed->get_table_id());
+            if (!static_cast<bool>(table_basic_config)) {
+                stop(
+                    // The error message below is copied from `no_such_table_exc_t`.
+                    std::make_exception_ptr(
+                        datum_exc_t(
+                            base_exc_t::OP_FAILED,
+                            "There is no table with the given name / UUID.")),
+                    detach_t::NO);
+            } else {
+                user_context.require_read_permission(
+                    rdb_context, table_basic_config->database, feed->get_table_id());
+            }
         } catch (auth::permission_error_t const permission_error) {
             stop(
                 std::make_exception_ptr(
@@ -3405,7 +3462,8 @@ void map_add_sub(Map *map, const Key &key, Sub *sub) THROWS_NOTHING {
         auto pair = std::make_pair(key, decltype(it->second)(get_num_threads()));
         it = map->insert(std::move(pair)).first;
     }
-    (it->second)[sub->home_thread().threadnum].insert(sub);
+    auto pair = (it->second)[sub->home_thread().threadnum].insert(sub);
+    guarantee(pair.second);
 }
 
 void feed_t::del_sub_with_lock(
@@ -3438,6 +3496,9 @@ void feed_t::del_sub_with_lock(
 template<class Map, class Key, class Sub>
 size_t map_del_sub(Map *map, const Key &key, Sub *sub) THROWS_NOTHING {
     auto subvec_it = map->find(key);
+    if (subvec_it == map->end()) {
+        return 0;
+    }
     size_t erased = (subvec_it->second)[sub->home_thread().threadnum].erase(sub);
     // If there are no more subscribers, remove the key from the map.
     auto it = subvec_it->second.begin();
@@ -3469,7 +3530,8 @@ void feed_t::del_point_sub(point_sub_t *sub, const store_key_t &key) THROWS_NOTH
 // If this throws we might leak the increment to `num_subs`.
 void feed_t::add_range_sub(range_sub_t *sub) THROWS_NOTHING {
     add_sub_with_lock(&range_subs_lock, [this, sub]() {
-            range_subs[sub->home_thread().threadnum].insert(sub);
+            auto pair = range_subs[sub->home_thread().threadnum].insert(sub);
+            guarantee(pair.second);
         });
 }
 
@@ -3483,7 +3545,8 @@ void feed_t::del_range_sub(range_sub_t *sub) THROWS_NOTHING {
 // If this throws we might leak the increment to `num_subs`.
 void feed_t::add_empty_sub(empty_sub_t *sub) THROWS_NOTHING {
     add_sub_with_lock(&empty_subs_lock, [this, sub]() {
-        empty_subs[sub->home_thread().threadnum].insert(sub);
+        auto pair = empty_subs[sub->home_thread().threadnum].insert(sub);
+        guarantee(pair.second);
     });
 }
 
@@ -3526,24 +3589,13 @@ void feed_t::each_sub_in_vec(
         }
     }
     pmap(subscription_threads.size(),
-         std::bind(&feed_t::each_sub_in_vec_cb<Sub>,
-                   this,
-                   std::cref(f),
-                   std::cref(vec),
-                   std::cref(subscription_threads),
-                   ph::_1));
-}
-
-template<class Sub>
-void feed_t::each_sub_in_vec_cb(const std::function<void(Sub *)> &f,
-                                const std::vector<std::set<Sub *> > &vec,
-                                const std::vector<int> &subscription_threads,
-                                int i) {
-    guarantee(vec[subscription_threads[i]].size() != 0);
-    on_thread_t th((threadnum_t(subscription_threads[i])));
-    for (Sub *sub : vec[subscription_threads[i]]) {
-        f(sub);
-    }
+         [&f, &vec, &subscription_threads](int i) {
+             guarantee(vec[subscription_threads[i]].size() != 0);
+             on_thread_t th((threadnum_t(subscription_threads[i])));
+             for (Sub *sub : vec[subscription_threads[i]]) {
+                 f(sub);
+             }
+         });
 }
 
 void feed_t::each_range_sub(
@@ -3681,16 +3733,18 @@ void feed_t::stop_subs(const auto_drainer_t::lock_t &lock) {
         }
         limit_subs.clear();
     }
-    r_sanity_check(num_subs == 0);
+    guarantee(num_subs == 0);
 }
 
-feed_t::feed_t(namespace_id_t const &_table_id, table_meta_client_t *_table_meta_client)
+feed_t::feed_t(
+        namespace_id_t const &_table_id,
+        lifetime_t<name_resolver_t const &>_name_resolver)
   : detached(false),
     num_subs(0),
     empty_subs(get_num_threads()),
     range_subs(get_num_threads()),
     table_id(_table_id),
-    table_meta_client(_table_meta_client) { }
+    name_resolver(_name_resolver) { }
 
 feed_t::~feed_t() {
     guarantee(num_subs == 0);
@@ -3703,9 +3757,11 @@ client_t::client_t(
             namespace_interface_access_t(
                 const namespace_id_t &,
                 signal_t *)
-            > &_namespace_source) :
+            > &_namespace_source,
+        lifetime_t<name_resolver_t const &> _name_resolver) :
     manager(_manager),
-    namespace_source(_namespace_source)
+    namespace_source(_namespace_source),
+    name_resolver(_name_resolver)
 {
     guarantee(manager != NULL);
 }
@@ -3798,8 +3854,7 @@ counted_t<datum_stream_t> client_t::new_stream(
     env_t *env,
     const streamspec_t &ss,
     const namespace_id_t &table_id,
-    backtrace_id_t bt,
-    table_meta_client_t *table_meta_client) {
+    backtrace_id_t bt) {
     bool is_second_try = false;
     uuid_u last_feed_uuid;
     for (;;) {
@@ -3846,9 +3901,15 @@ counted_t<datum_stream_t> client_t::new_stream(
                     // only be run for the first one.  Rather than mess
                     // about, just use the defaults.
                     auto val = make_scoped<real_feed_t>(
-                        lock, this, manager, access.get(), table_id, &interruptor,
-                        table_meta_client);
-                    feed_it = feeds.insert(std::make_pair(table_id, std::move(val))).first;
+                        lock,
+                        this,
+                        manager,
+                        access.get(),
+                        table_id,
+                        &interruptor,
+                        make_lifetime(name_resolver));
+                    feed_it = feeds.insert(
+                        std::make_pair(table_id, std::move(val))).first;
                 }
 
                 guarantee(feed_it != feeds.end());
@@ -3908,7 +3969,7 @@ void client_t::maybe_remove_feed(
 }
 
 scoped_ptr_t<real_feed_t> client_t::detach_feed(
-    const auto_drainer_t::lock_t &lock, const uuid_u &uuid) {
+        const auto_drainer_t::lock_t &lock, real_feed_t *expected_feed) {
     assert_thread();
     lock.assert_is_holding(&drainer);
     scoped_ptr_t<real_feed_t> ret;
@@ -3916,8 +3977,10 @@ scoped_ptr_t<real_feed_t> client_t::detach_feed(
     spot.write_signal()->wait_lazily_unordered();
     // The feed might have been removed in `maybe_remove_feed`, in which case
     // there's nothing to detach.
-    auto feed_it = feeds.find(uuid);
-    if (feed_it != feeds.end()) {
+    // It's also possible that the feed had been removed and a new feed has since been
+    // added for this table uuid, so we need to compare the pointer to `expected_feed`.
+    auto feed_it = feeds.find(expected_feed->get_table_id());
+    if (feed_it != feeds.end() && feed_it->second.get_or_null() == expected_feed) {
         ret.swap(feed_it->second);
         ret->mark_detached();
         feeds.erase(feed_it);
@@ -3927,8 +3990,11 @@ scoped_ptr_t<real_feed_t> client_t::detach_feed(
 
 class artificial_feed_t : public feed_t {
 public:
-    explicit artificial_feed_t(artificial_t *_parent)
-        : feed_t(nil_uuid(), nullptr),
+    artificial_feed_t(
+            namespace_id_t const &table_id,
+            lifetime_t<name_resolver_t const &> name_resolver,
+            artificial_t *_parent)
+        : feed_t(table_id, name_resolver),
           parent(_parent) { }
     ~artificial_feed_t() { detached = true; }
     virtual auto_drainer_t::lock_t get_drainer_lock() { return drainer.lock(); }
@@ -3947,8 +4013,12 @@ private:
     auto_drainer_t drainer;
 };
 
-artificial_t::artificial_t()
-    : stamp(0), uuid(generate_uuid()), feed(make_scoped<artificial_feed_t>(this)) { }
+artificial_t::artificial_t(
+        namespace_id_t const &table_id,
+        lifetime_t<name_resolver_t const &> name_resolver)
+    : stamp(0),
+      uuid(generate_uuid()),
+      feed(make_scoped<artificial_feed_t>(table_id, name_resolver, this)) { }
 artificial_t::~artificial_t() { }
 
 counted_t<datum_stream_t> artificial_t::subscribe(
@@ -3963,11 +4033,17 @@ counted_t<datum_stream_t> artificial_t::subscribe(
     // threads, make sure that the `subscription_t` and `stream_t` are allocated
     // on the thread you want to use them on.
     guarantee(feed.has());
-    r_sanity_check(ss.squash == datum_t::boolean(false));
-    scoped_ptr_t<subscription_t> sub = new_sub(env, feed.get(), ss);
+    const streamspec_t *unsquashed_ss = &ss;
+    scoped_ptr_t<streamspec_t> dup;
+    if (ss.squash != datum_t::boolean(false)) {
+        dup = make_scoped<streamspec_t>(ss);
+        dup->squash = datum_t::boolean(false);
+        unsquashed_ss = &*dup;
+    }
+    scoped_ptr_t<subscription_t> sub = new_sub(env, feed.get(), *unsquashed_ss);
     return sub->to_artificial_stream(
         uuid, primary_key_name, initial_values,
-        ss.maybe_src.has(), std::move(sub), bt);
+        unsquashed_ss->maybe_src.has(), std::move(sub), bt);
 }
 
 void artificial_t::send_all(const msg_t &msg) {

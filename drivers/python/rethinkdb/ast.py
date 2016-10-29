@@ -1,6 +1,6 @@
-# Copyright 2010-2015 RethinkDB, all rights reserved.
+# Copyright 2010-2016 RethinkDB, all rights reserved.
 
-__all__ = ['expr', 'RqlQuery', 'ReQLEncoder', 'ReQLDecoder']
+__all__ = ['expr', 'RqlQuery', 'ReQLEncoder', 'ReQLDecoder', 'Repl']
 
 import datetime
 import collections
@@ -44,7 +44,12 @@ class Repl(object):
     def set(cls, conn):
         cls.threadData.repl = conn
         cls.replActive = True
-
+    
+    @classmethod
+    def clear(cls):
+        if 'repl' in cls.threadData.__dict__:
+            del cls.threadData.repl
+        cls.replActive = False
 
 # This is both an external function and one used extensively
 # internally to convert coerce python values to RQL types
@@ -1153,6 +1158,12 @@ class Table(RqlQuery):
     def get_all(self, *args, **kwargs):
         return GetAll(self, *args, **kwargs)
 
+    def set_write_hook(self, *args, **kwargs):
+        return SetWriteHook(self, *args, **kwargs)
+
+    def get_write_hook(self, *args, **kwargs):
+        return GetWriteHook(self, *args, **kwargs)
+
     def index_create(self, *args, **kwargs):
         if len(args) > 1:
             args = [args[0]] + [func_wrap(arg) for arg in args[1:]]
@@ -1443,6 +1454,13 @@ class TableListTL(RqlTopLevelQuery):
     tt = pTerm.TABLE_LIST
     st = "table_list"
 
+class SetWriteHook(RqlMethodQuery):
+    tt = pTerm.SET_WRITE_HOOK
+    st = 'set_write_hook'
+
+class GetWriteHook(RqlMethodQuery):
+    tt = pTerm.GET_WRITE_HOOK
+    st = 'get_write_hook'
 
 class IndexCreate(RqlMethodQuery):
     tt = pTerm.INDEX_CREATE

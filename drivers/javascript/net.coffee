@@ -94,6 +94,13 @@ aropt = util.aropt
 mkAtom = util.mkAtom
 mkErr = util.mkErr
 
+# These are the default hostname and port used by RethinkDB
+DEFAULT_HOST = 'localhost'
+DEFAULT_PORT = 28015
+
+module.exports.DEFAULT_HOST = DEFAULT_HOST
+module.exports.DEFAULT_PORT = DEFAULT_PORT
+
 # These are strings returned by the server after a handshake
 # request. Since they must match exactly they're defined in
 # "constants" here at the top
@@ -121,10 +128,7 @@ HANDSHAKE_AUTHFAIL = "ERROR: Incorrect authorization key.\n"
 # - `"timeout"` will be emitted by the `TcpConnection` subclass if the
 #    underlying socket times out for any reason.
 class Connection extends events.EventEmitter
-
-    # These are the default hostname and port used by RethinkDB
-    DEFAULT_HOST: 'localhost'
-    DEFAULT_PORT: 28015
+    
     # By default, RethinkDB doesn't use an authorization key.
     DEFAULT_AUTH_KEY: ''
     # Each connection has a timeout (in seconds) for the initial handshake with the
@@ -145,8 +149,8 @@ class Connection extends events.EventEmitter
             host = {host: host}
 
         # Here we set all of the connection parameters to their defaults.
-        @host = host.host || @DEFAULT_HOST
-        @port = host.port || @DEFAULT_PORT
+        @host = host.host || DEFAULT_HOST
+        @port = host.port || DEFAULT_PORT
 
         # One notable exception to defaulting is the db name. If the
         # user doesn't specify it, we leave it undefined. On the
@@ -1000,16 +1004,16 @@ class TcpConnection extends Connection
 
             r_string = new Buffer(crypto.randomBytes(18)).toString('base64')
 
-            @rawSocket.username = host["username"]
+            @rawSocket.user = host["user"]
             @rawSocket.password = host["password"]
 
             # Default to admin user with no password if none is given.
-            if @rawSocket.username is undefined
-                @rawSocket.username = "admin"
+            if @rawSocket.user is undefined
+                @rawSocket.user = "admin"
             if @rawSocket.password is undefined
                 @rawSocket.password = ""
 
-            client_first_message_bare = "n=" + @rawSocket.username + ",r=" + r_string
+            client_first_message_bare = "n=" + @rawSocket.user + ",r=" + r_string
 
             message = JSON.stringify({
                 protocol_version: protoVersionNumber,
@@ -1063,6 +1067,7 @@ class TcpConnection extends Connection
                 pbkdf2_cache[cache_string] = u
                 return u
 
+            # a, b should be strings
             compare_digest = (a, b) ->
                 left = undefined
                 right = b
@@ -1070,13 +1075,13 @@ class TcpConnection extends Connection
                 if a.length is b.length
                     left = a
                     result = 0
-                else
+                if a.length != b.length
                     left = b
                     result = 1
 
-                len = Math.min(a.length, b.length)
+                len = Math.min(left.length, right.length)
                 for i in [0...len]
-                    result |= xor_bytes(a[i],b[i])
+                    result |= left[i] ^ right[i]
 
                 return result is 0
 
@@ -1109,7 +1114,10 @@ class TcpConnection extends Connection
                         j = i+1
                         status_str = status_buf.toString()
                         # Get the reply from the server, and parse it as JSON
-                        server_reply = JSON.parse(status_str)
+                        try
+                            server_reply = JSON.parse(status_str)
+                        catch json_error
+                            throw new err.ReqlDriverError(status_str)
 
                         if state is 1
                             if not server_reply.success
@@ -1139,7 +1147,7 @@ class TcpConnection extends Connection
                             auth_salt = new Buffer(authentication.s, 'base64')
                             auth_i = parseInt(authentication.i)
 
-                            if not auth_r.substr(0, r_string) == r_string
+                            if not (auth_r.substr(0, r_string.length) == r_string)
                                 throw new err.ReqlAuthError("Invalid nonce from server")
 
                             client_final_message_without_proof = "c=biws,r=" + auth_r
@@ -1626,7 +1634,7 @@ module.exports.connect = varar 0, 2, (hostOrCallback, callback) ->
         # Otherwise, the `callback` variable is already correctly
         # holding the callback, and the host variable is the first
         # argument
-        host = hostOrCallback
+        host = hostOrCallback || {}
 
     # `r.connect` returns a Promise which does the following:
     #
@@ -1636,11 +1644,17 @@ module.exports.connect = varar 0, 2, (hostOrCallback, callback) ->
     # 2. Initializes the connection, and when it's complete invokes
     #    the user's callback
     new Promise( (resolve, reject) ->
-        if host.authKey? && (host.password? || host.user?)
+        if host.authKey? && (host.password? || host.user? || host.username?)
             throw new err.ReqlDriverError "Cannot use both authKey and password"
+        if host.user && host.username
+            throw new err.ReqlDriverError "Cannot use both user and username"
         else if host.authKey
             host.user = "admin"
             host.password = host.authKey
+        else
+            # Fixing mismatch between drivers
+            if host.username?
+                host.user = host.username
         create_connection = (host, callback) =>
             if TcpConnection.isAvailable()
                 new TcpConnection host, callback
@@ -1656,3 +1670,8 @@ module.exports.connect = varar 0, 2, (hostOrCallback, callback) ->
                 resolve(result)
         create_connection(host, wrappedCb)
     ).nodeify callback
+
+# Exposing the connection classes
+module.exports.Connection = Connection
+module.exports.HttpConnection = HttpConnection
+module.exports.TcpConnection = TcpConnection
